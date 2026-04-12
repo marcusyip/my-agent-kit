@@ -1,6 +1,6 @@
 # Benchmark Results — tdd-contract-review
 
-**Sample app:** Rails 7.1 API (transactions, wallets, users) with 3 test files and 13 known gaps
+**Sample app:** Rails 7.1 API (transactions, wallets, users) with 3 test files and 17 known gaps
 
 **Convention:** Each run writes to `reports-v{version}/`. Raw stdout goes to `stdout-summary.md`, per-file reports keep their original names.
 
@@ -36,7 +36,7 @@
 | Balance validation on amount | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **No** |
 | Common field type scenarios | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Partial** |
 
-## Gap Detection (13 known gaps)
+## Gap Detection (17 known gaps)
 
 | # | Known Gap | Priority | Baseline | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 |
 |---|-----------|----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -53,8 +53,12 @@
 | 11 | Missing duplicate currency test | MEDIUM | Found | Found | Not found | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
 | 12 | Missing name-too-long test | LOW | Found | Found | Not found | Found + stubs | Found + stubs | Found | **Found** |
 | 13 | Missing reversed status scenario | LOW | Not found | Found | Not found | Found | Found | Found | **Found** |
+| 14 | No insufficient balance test (amount > balance) | HIGH | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| 15 | No exact balance test (amount == balance → zero) | MEDIUM | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| 16 | No start_date/end_date filter tests | MEDIUM | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| 17 | Error response leaks balance and user_id | HIGH | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 
-## Fintech Gap Detection (18 expected findings — v0.9.0+)
+## Fintech Gap Detection (21 expected findings — v0.9.0+)
 
 | # | Category | Expected Finding | Priority | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 |
 |---|----------|-----------------|----------|:---:|:---:|:---:|:---:|:---:|
@@ -74,8 +78,11 @@
 | F14 | Security | IDOR: other user's transaction | HIGH | Found | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
 | F15 | Security | IDOR: other user's wallet | MEDIUM | Found | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
 | F16 | Security | No rate limiting | MEDIUM | Not found | Not found | Found | Found | **Found** |
-| F17 | Security | Error response data leak risk | LOW | Not found | Found | Found | Found | **Not found** |
+| F17 | Security | Error response leaks balance/user_id | HIGH | Not found | Found | Found | Found | **Not found** |
 | F18 | Compliance | No audit trail fields | MEDIUM | Not found | Not found | Found | Found | **Found** |
+| F19 | Balance | Amount > balance not tested (insufficient balance) | HIGH | N/A | N/A | N/A | N/A | N/A |
+| F20 | Balance | Amount == balance not tested (exact boundary → zero) | MEDIUM | N/A | N/A | N/A | N/A | N/A |
+| F21 | Balance | Balance-on-amount: exceeds balance shown in amount field tree | MEDIUM | N/A | N/A | N/A | N/A | N/A |
 
 **v0.9.0: 8/18** — strong on concurrency, missed money/precision.
 **v0.10.0: 14/18** — recovered money/precision, lost concurrency.

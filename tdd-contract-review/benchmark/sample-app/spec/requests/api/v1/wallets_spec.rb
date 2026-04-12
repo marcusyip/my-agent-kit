@@ -5,6 +5,7 @@
 # - Index test is minimal
 # - Missing: duplicate currency scenario
 # - Missing: status field scenarios (suspended, closed)
+# - PATCH error response leaks wallet balance and user_id (data leak bug)
 
 RSpec.describe 'Api::V1::Wallets', type: :request do
   let(:user) { create(:user) }

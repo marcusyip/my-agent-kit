@@ -12,9 +12,12 @@ class TransactionService
   def call
     validate_wallet_active!
     validate_currency_match!
+    validate_sufficient_balance!
 
     transaction = build_transaction
     transaction.save!
+
+    deduct_balance!(transaction)
 
     if transaction.payment?
       charge_payment_gateway(transaction)
@@ -27,6 +30,9 @@ class TransactionService
     Result.new(success?: false, error: e.message, details: ['Wallet must be active'])
   rescue CurrencyMismatchError => e
     Result.new(success?: false, error: e.message, details: ['Currency must match wallet currency'])
+  rescue InsufficientBalanceError => e
+    Result.new(success?: false, error: e.message,
+               details: ["Current balance: #{@wallet.balance}, requested: #{@params[:amount]}"])
   rescue PaymentGateway::ChargeError => e
     Result.new(success?: false, error: 'Payment processing failed', details: [e.message])
   end
@@ -41,6 +47,20 @@ class TransactionService
     return if @params[:currency] == @wallet.currency
 
     raise CurrencyMismatchError, 'Currency does not match wallet'
+  end
+
+  def validate_sufficient_balance!
+    amount = BigDecimal(@params[:amount].to_s)
+    return if @wallet.balance >= amount
+
+    raise InsufficientBalanceError,
+          "Insufficient balance (need #{amount}, have #{@wallet.balance})"
+  end
+
+  def deduct_balance!(transaction)
+    return if transaction.deposit?
+
+    @wallet.withdraw!(transaction.amount)
   end
 
   def build_transaction
@@ -71,4 +91,5 @@ class TransactionService
 
   class WalletInactiveError < StandardError; end
   class CurrencyMismatchError < StandardError; end
+  class InsufficientBalanceError < StandardError; end
 end

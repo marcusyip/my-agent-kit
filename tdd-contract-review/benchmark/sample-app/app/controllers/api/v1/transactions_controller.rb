@@ -11,6 +11,15 @@ module Api
         transactions = current_user.transactions
           .includes(:wallet)
           .order(created_at: :desc)
+
+        # Date range filters
+        transactions = transactions.where('created_at >= ?', Time.zone.parse(params[:start_date])) if params[:start_date]
+        transactions = transactions.where('created_at <= ?', Time.zone.parse(params[:end_date]).end_of_day) if params[:end_date]
+
+        # Status filter
+        transactions = transactions.where(status: params[:status]) if params[:status]
+
+        transactions = transactions
           .page(params[:page])
           .per(params[:per_page] || 25)
 

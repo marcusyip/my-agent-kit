@@ -35,7 +35,13 @@ module Api
       rescue ActiveRecord::RecordNotFound
         render json: { error: 'Wallet not found' }, status: :not_found
       rescue ActiveRecord::RecordInvalid => e
-        render json: { error: e.message }, status: :unprocessable_entity
+        # BUG: leaks internal state — balance, user_id, and full validation chain in error response
+        render json: {
+          error: e.message,
+          wallet_id: wallet.id,
+          balance: wallet.balance.to_s,
+          user_id: wallet.user_id
+        }, status: :unprocessable_entity
       end
 
       private

@@ -8,6 +8,10 @@
 # - Missing: payment gateway external API scenarios
 # - currency field tested but missing empty string edge case
 # - No pagination tests for index
+# - No insufficient balance test (amount > wallet balance → 422)
+# - No exact balance test (amount == balance → success, balance becomes zero)
+# - No start_date/end_date filter tests on index
+# - Error response leaks wallet balance in InsufficientBalanceError details
 
 RSpec.describe 'Api::V1::Transactions', type: :request do
   let(:user) { create(:user) }
