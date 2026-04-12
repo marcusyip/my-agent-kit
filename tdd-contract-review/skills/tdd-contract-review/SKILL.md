@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash]
-version: 0.9.0
+version: 0.11.0
 ---
 
 # TDD Contract Review
@@ -63,6 +63,8 @@ Locate test files by convention:
 4. **Check project conventions.** Read config files (CLAUDE.md, jest.config, .rspec, Makefile) for testing rules.
 
 5. **Detect mixed frameworks.** If multiple test frameworks are present, note all of them and analyze each separately.
+
+6. **Detect fintech domain.** Scan source files for fintech indicators: money/amount/balance/currency fields, payment/transaction/ledger/wallet models, payment gateway integrations, decimal/money types (`BigDecimal`, `decimal.Decimal`, `Decimal`, `money` gem, `dinero.js`), idempotency key params, or ledger/double-entry patterns. If detected, enable **fintech mode** which adds domain-specific contract extraction and gap analysis (see Step 3 and Step 6 fintech sections).
 
 ### Step 3: Contract Extraction
 
@@ -125,6 +127,21 @@ How to extract: read React/Vue component prop types/interfaces, conditional rend
 - **MEDIUM**: Inferred from usage patterns (e.g. response body shape from `render json:`, DB query patterns)
 - **LOW**: Guessed from naming conventions or indirect references
 
+#### Fintech Contract Extraction (when fintech mode detected)
+
+When fintech domain is detected in Step 2, extract these additional contract dimensions on top of the standard extraction above. **Read `fintech-checklists.md` (in the same directory as this file) for detailed per-field extraction guidance.** The 8 dimensions to extract:
+
+1. **Money & Precision** — field types (must be exact, not float), currency pairing, decimal scale, rounding
+2. **Idempotency** — idempotency key fields, unique constraints, which mutating endpoints have them
+3. **Transaction State Machine** — all enum values, valid/invalid transitions, terminal states, side effects per transition
+4. **Balance & Ledger Integrity** — balance update method, locking strategy, double-entry patterns, check-then-act timing
+5. **External Payment Integrations** — gateway calls, webhook contracts, retry/reconciliation, settlement flow
+6. **Regulatory & Compliance** — KYC/AML fields, transaction limits, audit trail fields, PII fields
+7. **Concurrency & Data Integrity** — TOCTOU paths, locking strategy per resource, multi-resource deadlock prevention, job deduplication, DB transaction isolation
+8. **Security & Access Control** — auth requirements per endpoint, authorization/ownership rules, IDOR-vulnerable endpoints, rate limits, sensitive data in responses, payment credential handling
+
+Include fintech-specific fields in the Contract Extraction Summary grouped under their dimension name (e.g. "Money & Precision:", "Concurrency:", "Security:").
+
 #### Contract Extraction Summary
 
 After extracting all contracts, produce a summary listing every contract field found BEFORE proceeding to Steps 4-6. This makes the analysis chain auditable and mitigates non-determinism.
@@ -162,6 +179,8 @@ Outbound API:
     - Expected: { success: boolean, transaction_id: string }
 ============================
 ```
+
+**GATE — Contract Extraction Completeness:** Before proceeding, count the total contract fields extracted. A typical single-endpoint Rails controller produces 15-30 fields (request params + response fields + status codes + DB columns + enum values + outbound API params). If you extracted fewer than 10 contract fields total, re-read the source files — you likely missed DB schema fields, enum values, or response shape fields. Do not proceed until the extraction is complete.
 
 ### Step 4: Test Structure Audit
 
@@ -461,6 +480,46 @@ Assign priority to each gap:
 - **MEDIUM**: Field tested but missing important scenarios (edge cases, error paths)
 - **LOW**: Rare corner case or defensive scenario
 
+#### Fintech Gap Analysis (when fintech mode detected)
+
+When fintech domain is detected, check every extracted fintech contract field against the scenario checklists in `fintech-checklists.md` (section "Gap Analysis Scenario Checklists"). These are HIGH priority by default because financial bugs cause real money loss.
+
+For each category below, produce gap entries in the report. The top scenarios (must-check) are listed inline; read the reference file for the full checklist per category.
+
+**1. Money/amount fields:**
+- Precision overflow: amount with more decimals than schema allows → round, truncate, or reject?
+- Zero amount: allowed or rejected? (transfers reject, queries allow)
+- Boundary at max: exactly at configured limit → 201; one above → 422
+
+**2. Idempotency:**
+- Duplicate POST with same idempotency key → must return original response, not create second record
+- Missing key on mutating financial endpoint → flag as design gap if no key exists
+
+**3. State machine:**
+- Every valid transition tested with correct side effects
+- At least one invalid transition tested (e.g. `completed → pending` → rejected)
+- Terminal states: no further transitions allowed
+
+**4. Balance/ledger:**
+- Insufficient balance → rejected
+- Exact balance value asserted after operation (not just "changed")
+
+**5. Concurrency** (check even if no tests exist — flag the absence):
+- TOCTOU: if code reads balance then writes in separate steps without a lock, flag as HIGH gap. Test: two concurrent requests that both pass balance check individually but together exceed balance — only one should succeed
+- Double-submit: two rapid identical POSTs must not create duplicate financial records
+- If the code uses `with_lock`, `FOR UPDATE`, or optimistic locking: flag that no test verifies the lock actually prevents concurrent corruption
+
+**6. Security & access control:**
+- Authentication: at least one test per endpoint for missing/expired auth token → 401
+- IDOR: at least one test per endpoint that accepts a resource ID — access other user's resource → 403/404
+- Sensitive data: error responses must not leak balances, account numbers, or internal IDs
+
+**7. Absence flagging** — flag these as gaps even if the feature doesn't exist in source:
+- No rate limiting on financial mutation endpoints → flag as MEDIUM gap ("no rate limiting detected — consider adding to prevent brute-force/card testing attacks")
+- No audit trail table/fields for financial mutations → flag as MEDIUM gap ("no audit trail detected — financial operations should be auditable")
+- No idempotency key on mutating endpoints → flag as HIGH gap (as above)
+- These are infrastructure-level findings. Include them in the gap analysis under a "Missing infrastructure" section, separate from per-field gaps.
+
 ### Step 7: Auto-Generate Test Stubs
 
 For each HIGH-priority gap from Step 6, generate test code that follows the project's existing test patterns.
@@ -514,7 +573,11 @@ end
 - Per-file reports: kebab-case of the test file name, e.g. `reports/post-transactions-spec.md`, `reports/wallet-model-spec.md`
 - Summary: `reports/summary.md`
 
-Do all analysis (reading files, extracting contracts, auditing tests) first, then write all report files. After writing, print a short summary to the conversation showing the files created and scores.
+Do all analysis (reading files, extracting contracts, auditing tests) first, then write all report files.
+
+**GATE — Report Files Must Be Written:** You MUST write per-file report files using the Write tool before printing any summary to the conversation. The report files are the primary output — the conversation summary is secondary. After writing, verify the files exist by listing the `reports/` directory. If no files exist in `reports/` after this step, you have not completed the review — go back and write them. Each per-file report MUST include: Contract Extraction Summary, Test Structure Tree, Contract Map, Gap Analysis with auto-generated stubs, Anti-Patterns table, Score breakdown.
+
+After writing and verifying report files, print a short summary to the conversation showing the files created and scores.
 
 **If file writes are blocked**, fall back to printing all reports inline in a single response. Do not retry blocked writes.
 
