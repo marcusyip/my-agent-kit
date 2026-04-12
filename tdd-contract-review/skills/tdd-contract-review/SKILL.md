@@ -173,28 +173,58 @@ Framework: Rails/RSpec
 API Contract (inbound):
   POST /api/v1/transactions
     Request params:
-      - currency (string, required) [HIGH confidence]
-      - amount (decimal, required) [HIGH confidence]
+      - currency (string, required, in: USD/EUR/GBP/BTC/ETH) [HIGH confidence]
+      - amount (decimal, required, > 0, <= 1_000_000) [HIGH confidence]
       - wallet_id (integer, required) [HIGH confidence]
+      - description (string, optional, max: 500) [HIGH confidence]
+      - category (string, optional, enum: transfer/payment/deposit/withdrawal, default: transfer) [HIGH confidence]
     Response fields:
       - id (integer) [HIGH confidence]
+      - amount (string, decimal-as-string) [HIGH confidence]
+      - currency (string) [HIGH confidence]
       - status (string) [HIGH confidence]
-      - created_at (datetime) [MEDIUM confidence]
+      - description (string, nullable) [HIGH confidence]
+      - category (string) [HIGH confidence]
+      - wallet_id (integer) [HIGH confidence]
+      - created_at (datetime, ISO8601) [HIGH confidence]
     Status codes: 201, 422, 401, 500
+    Auth: before_action :authenticate_user!
+
+  GET /api/v1/transactions
+    Request params:
+      - page (integer, optional) [MEDIUM confidence]
+      - per_page (integer, optional, default: 25) [MEDIUM confidence]
+    Response fields:
+      - transactions (array) [HIGH confidence]
+      - meta.total (integer) [HIGH confidence]
+      - meta.page (integer) [HIGH confidence]
+    Status codes: 200, 401
 
 DB Contract:
   Transaction model:
     - user_id (integer, NOT NULL, FK) [HIGH confidence]
     - wallet_id (integer, NOT NULL, FK) [HIGH confidence]
-    - amount (decimal, NOT NULL) [HIGH confidence]
+    - amount (decimal(20,8), NOT NULL) [HIGH confidence]
     - currency (string, NOT NULL) [HIGH confidence]
-    - status (string, enum: pending/completed/failed) [HIGH confidence]
+    - status (string, enum: pending/completed/failed/reversed) [HIGH confidence]
+    - description (string, nullable) [HIGH confidence]
+    - category (string, enum: transfer/payment/deposit/withdrawal) [HIGH confidence]
+
+  Business rules:
+    - amount must be > 0 and <= 1_000_000 [HIGH confidence]
+    - currency must match wallet currency [HIGH confidence]
+    - wallet must be active [HIGH confidence]
+    - amount constrained by wallet balance (service checks balance >= amount) [HIGH confidence]
 
 Outbound API:
-  PaymentGateway.charge:
+  PaymentGateway.charge (when category == 'payment'):
     - amount (decimal) [HIGH confidence]
     - currency (string) [HIGH confidence]
-    - Expected: { success: boolean, transaction_id: string }
+    - user_id (integer) [HIGH confidence]
+    - Expected: { success?: boolean }
+    - On success: status → completed [HIGH confidence]
+    - On failure: status → failed [HIGH confidence]
+    - On ChargeError: returns 422 [HIGH confidence]
 ============================
 ```
 
@@ -275,9 +305,14 @@ Feature (top-level describe/context)
     |   +-- when wallet belongs to another user -> 403, no DB write
     |   +-- when wallet is suspended -> 422, no external API call
     +-- field: third-party API response (external API)
-        +-- when API returns error response -> 422, no DB status change
-        +-- when API times out -> 503, no DB status change
-        +-- when API is unavailable -> 503, no DB status change
+    |   +-- when API returns error response -> 422, no DB status change
+    |   +-- when API times out -> 503, no DB status change
+    |   +-- when API is unavailable -> 503, no DB status change
+    +-- security: authentication
+    |   +-- missing auth token -> 401
+    |   +-- expired auth token -> 401
+    +-- security: error response data
+        +-- 422 response does not leak balances, internal IDs, or stack trace
 ```
 
 For frontend/UI tests, the same pattern applies with component props as fields:
@@ -748,17 +783,18 @@ POST /api/v1/transactions
 │   ├── ✗ max (1_000_000) → should succeed
 │   ├── ✗ over max (1_000_001) → 422
 │   ├── ✗ non-numeric string
-│   ├── ✗ exceeds available balance → 422 (when balance-constrained)
+│   ├── ✗ exceeds available balance → 422 (balance-constrained)
 │   ├── ✗ exactly equals balance → success, balance becomes zero
-│   └── ✗ exceeds current position → 422 (when position-constrained)
+│   └── ✗ precision overflow (0.123456789 when schema is decimal(20,8))
 ├── field: currency
 │   ├── ✓ nil → 422
 │   ├── ✓ invalid → 422
 │   ├── ✗ empty string
-│   └── ✗ each valid value verified
+│   ├── ✗ each valid value (USD, EUR, GBP, BTC, ETH) verified
+│   └── ✗ mismatch with wallet currency → 422
 ├── field: wallet_id
 │   ├── ✓ not found → 422
-│   └── ✗ another user's wallet → 422
+│   └── ✗ another user's wallet → 422 (IDOR)
 ├── field: description — NO TESTS
 │   ├── ✗ nil (optional, should succeed)
 │   ├── ✗ max length (500) → should succeed
@@ -774,12 +810,31 @@ POST /api/v1/transactions
 ├── business: wallet must be active
 │   ├── ✗ suspended wallet → 422
 │   └── ✗ closed wallet → 422
-├── business: currency must match wallet
-│   └── ✗ mismatch → 422
-└── external: PaymentGateway.charge
-    ├── ✗ success → transaction completed
-    ├── ✗ failure → transaction failed
-    └── ✗ ChargeError → 422
+├── external: PaymentGateway.charge — NO TESTS
+│   ├── ✗ success → transaction completed
+│   ├── ✗ failure → transaction failed
+│   └── ✗ ChargeError → 422
+├── security: authentication — NO TESTS
+│   ├── ✗ missing auth token → 401
+│   └── ✗ expired auth token → 401
+├── security: IDOR — NO TESTS
+│   └── ✗ wallet_id belonging to another user → 422/403
+└── security: error response data — NO TESTS
+    └── ✗ 422 response does not leak balance, internal IDs, or stack trace
+
+GET /api/v1/transactions
+├── field: page (pagination) — NO TESTS
+│   ├── ✗ page=0 → rejected or default
+│   ├── ✗ page=-1 → rejected
+│   └── ✗ beyond last page → empty array
+├── field: per_page (pagination) — NO TESTS
+│   ├── ✗ per_page=0 → rejected or default
+│   ├── ✗ very large (999999) → capped or rejected
+│   └── ✗ default 25 when omitted
+├── security: authentication — NO TESTS
+│   └── ✗ missing auth token → 401
+└── security: data isolation — NO TESTS
+    └── ✗ only returns current user's transactions
 
 Wallet#deposit!
 ├── ✓ positive amount → increases balance
@@ -797,24 +852,47 @@ Every contract field from the extraction summary MUST appear in this table — A
 
 | Contract | Field | Confidence | Test Group | Scenarios Covered | Gaps |
 |---|---|---|---|---|---|
-| POST /api/transactions (request) | currency | HIGH | Yes | nil, invalid | missing: empty string |
+| POST /api/transactions (request) | amount | HIGH | Yes | nil, negative | HIGH: zero, max, over-max, exceeds balance, precision overflow |
+| POST /api/transactions (request) | currency | HIGH | Yes | nil, invalid | MEDIUM: empty string, each valid value, mismatch with wallet |
+| POST /api/transactions (request) | wallet_id | HIGH | Yes | not found | HIGH: another user's wallet (IDOR) |
+| POST /api/transactions (request) | description | HIGH | No | -- | HIGH: untested (nil, max length, over-max) |
+| POST /api/transactions (request) | category | HIGH | No | -- | HIGH: untested (each value, invalid, nil default) |
 | POST /api/transactions (response) | id | HIGH | No | -- | HIGH: untested |
-| Transaction (DB) | status | HIGH | Yes | pending, completed | missing: failed, reversed |
-| Transaction (DB) | amount | HIGH | Yes | positive | missing: zero, negative |
+| POST /api/transactions (response) | amount | HIGH | No | -- | HIGH: untested |
+| POST /api/transactions (response) | status | HIGH | No | -- | HIGH: untested |
+| Transaction (DB) | status | HIGH | No | -- | HIGH: enum pending/completed/failed/reversed untested |
+| Transaction (DB) | amount | HIGH | No | -- | HIGH: not asserted in happy path |
 | Wallet (DB) | status | HIGH | Yes | active, suspended | missing: closed |
-| PaymentGateway.charge (outbound) | amount | MEDIUM | Yes | zero, negative | -- |
-| PaymentGateway.charge (outbound) | currency | MEDIUM | No | -- | HIGH: untested |
+| Business rule | wallet active | HIGH | No | -- | HIGH: suspended, closed untested |
+| Business rule | currency match | HIGH | No | -- | HIGH: mismatch untested |
+| PaymentGateway.charge (outbound) | amount | HIGH | No | -- | HIGH: untested |
+| PaymentGateway.charge (outbound) | success/failure | HIGH | No | -- | HIGH: untested |
+| Security | auth (POST) | HIGH | No | -- | HIGH: no 401 test |
+| Security | error response data | HIGH | No | -- | HIGH: no test that 422 doesn't leak sensitive data |
+| GET /transactions (request) | page | MEDIUM | No | -- | MEDIUM: pagination untested (zero, negative, beyond last) |
+| GET /transactions (request) | per_page | MEDIUM | No | -- | MEDIUM: untested (very large, default) |
 
 ### Gap Analysis by Priority
 
 **HIGH** (core contract fields with no tests)
-- [ ] `POST /api/transactions` response field `id` -- no test verifies response
+- [ ] `POST /api/transactions` response body -- no test asserts any response field
+
+  Suggested test:
+  [auto-generated test stub from Step 7]
+
+- [ ] `POST /api/transactions` amount field -- no test for exceeds balance, zero, or max boundary
+
+  Suggested test:
+  [auto-generated test stub from Step 7]
+
+- [ ] `POST /api/transactions` security -- no test that error responses (422) don't leak balances, internal IDs, or stack traces
 
   Suggested test:
   [auto-generated test stub from Step 7]
 
 **MEDIUM** (tested but missing scenarios)
-- [ ] `POST /api/transactions` request field `currency` -- missing empty string
+- [ ] `POST /api/transactions` request field `currency` -- missing empty string, each valid value
+- [ ] `GET /api/transactions` pagination -- missing page=0, page=-1, per_page=999999, beyond last page
 
 **LOW** (rare corner cases)
 - [ ] ...
