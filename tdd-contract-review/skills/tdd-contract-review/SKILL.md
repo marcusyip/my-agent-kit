@@ -2,8 +2,8 @@
 name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
-allowed-tools: [Read, Glob, Grep, Bash]
-version: 0.6.0
+allowed-tools: [Read, Write, Glob, Grep, Bash]
+version: 0.9.0
 ---
 
 # TDD Contract Review
@@ -369,11 +369,21 @@ func TestCreateTransaction(t *testing.T) {
 - **Happy path** asserts every field's expected value in the success case (response fields, DB state, outbound API params). This establishes the baseline so each scenario in section 2 only overrides one field and checks the delta
 - **Scenarios per field** treats everything as a field: API params, DB state, external API responses, and UI props are all just fields with scenarios to cover -- edge cases, corner cases, and error paths. This unified view makes gap analysis trivial -- if a field exists but has no test group, that's a gap
 
-#### Do not test the service layer
+#### Only review contract boundary test files
 
-Test through the API endpoint. The service, DB operations, and business logic are exercised implicitly. Only mock external API calls (third-party services).
+Only produce full reports for test files that cover **contract boundaries**:
+- API endpoints (controllers/handlers)
+- Jobs (workers, ActiveJob, Sidekiq, Celery, BullMQ)
+- Message consumers (Kafka, RabbitMQ, SQS)
 
-Exception: if the service layer IS the contract boundary (e.g., internal service-to-service calls where the service is the public API), then testing at the service level is appropriate.
+**Do NOT produce full reports for:**
+- Model specs (e.g. `spec/models/wallet_spec.rb`) — models are internal, tested implicitly through endpoints
+- Service specs (e.g. `spec/services/transaction_service_spec.rb`) — services are internal implementation
+- Unit tests for internal modules, helpers, utilities
+
+When these non-boundary test files are found in scope, **flag them as anti-patterns in the summary** with a one-line recommendation (e.g. "Delete `transaction_service_spec.rb` — test through `POST /api/v1/transactions` instead"). Do not produce a per-file report for them.
+
+**Exception — when internals ARE contract boundaries:** A contract is an agreement between teams, services, or systems. If a service or model is consumed across team boundaries (e.g., a shared library, a public SDK, an internal service called by other teams' code), then it IS a contract boundary and deserves a full report. The test is: "would changing this break someone outside my team?" If yes, it's a contract.
 
 **Flag these problems:**
 - Multiple endpoints in one test file (should be one endpoint per file)
@@ -383,7 +393,7 @@ Exception: if the service layer IS the contract boundary (e.g., internal service
 - Missing test foundation (no defaults, no subject/runTest helper)
 - Flat test structure without grouping by field
 - Tests named after implementation rather than behavior
-- Service layer tested separately instead of through the API (unless the service IS the API)
+- Model/service specs that should be tested through the API endpoint
 
 ### Step 5: Test Case Quality Audit
 
@@ -498,7 +508,19 @@ end
 
 ### Step 8: Score and Report
 
-Score across 6 categories and produce the report.
+**One report per test file, written to separate files.** Each test file gets its own report file with its own contract extraction, test structure tree, gap analysis, and score. A summary file is also written.
+
+**Write reports to a `reports/` directory** in the project root (create it if it doesn't exist). File naming convention:
+- Per-file reports: kebab-case of the test file name, e.g. `reports/post-transactions-spec.md`, `reports/wallet-model-spec.md`
+- Summary: `reports/summary.md`
+
+Do all analysis (reading files, extracting contracts, auditing tests) first, then write all report files. After writing, print a short summary to the conversation showing the files created and scores.
+
+**If file writes are blocked**, fall back to printing all reports inline in a single response. Do not retry blocked writes.
+
+If a test file contains multiple endpoints (anti-pattern), still produce one report for that file but flag the multi-endpoint issue prominently.
+
+Score each report across 6 categories:
 
 | Category | Weight | Focus |
 |---|---|---|
@@ -520,12 +542,12 @@ Score across 6 categories and produce the report.
 #### Full Report Template
 
 ```markdown
-## TDD Contract Review Report
+## TDD Contract Review: [test file path]
 
-**Scope:** [files/directories reviewed]
+**Test file:** [e.g. spec/requests/api/v1/post_transactions_spec.rb]
+**Endpoint:** [e.g. POST /api/v1/transactions]
+**Source files:** [list of source files this test covers]
 **Framework:** [detected framework and language]
-**Test files analyzed:** [count]
-**Source files in scope:** [count]
 
 ### How to Read This Report
 
@@ -650,6 +672,26 @@ Every scenario is its own line. Use `✓` for covered, `✗` for missing. Fields
 3. [Third]
 4. [Fourth]
 5. [Fifth]
+```
+
+#### Multi-File Summary
+
+When the scope includes multiple test files, write one report file per test file, then write `reports/summary.md`:
+
+```markdown
+## TDD Contract Review — Summary
+
+| Test File | Endpoint | Score | Verdict | HIGH Gaps | MEDIUM Gaps |
+|---|---|---|---|---|---|
+| spec/requests/api/v1/post_transactions_spec.rb | POST /api/v1/transactions | 3.7/10 | WEAK | 8 | 4 |
+| spec/requests/api/v1/get_transactions_spec.rb | GET /api/v1/transactions | 5.2/10 | NEEDS IMPROVEMENT | 2 | 3 |
+| spec/requests/api/v1/post_wallets_spec.rb | POST /api/v1/wallets | 6.5/10 | ADEQUATE | 1 | 2 |
+
+**Missing test files** (source exists but no test file):
+- PATCH /api/v1/wallets/:id — no test file exists
+- ProcessPaymentJob — no test file exists
+
+**Overall: X files reviewed, X HIGH gaps, X MEDIUM gaps**
 ```
 
 #### Quick Mode Template
