@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash]
-version: 0.12.0
+version: 0.13.0
 ---
 
 # TDD Contract Review
@@ -140,7 +140,25 @@ When fintech domain is detected in Step 2, extract these additional contract dim
 7. **Concurrency & Data Integrity** — TOCTOU paths, locking strategy per resource, multi-resource deadlock prevention, job deduplication, DB transaction isolation
 8. **Security & Access Control** — auth requirements per endpoint, authorization/ownership rules, IDOR-vulnerable endpoints, rate limits, sensitive data in responses, payment credential handling
 
-Include fintech-specific fields in the Contract Extraction Summary grouped under their dimension name (e.g. "Money & Precision:", "Concurrency:", "Security:").
+**Fintech Dimension Template (mandatory when fintech mode detected):**
+
+Include this table in the Contract Extraction Summary. Fill in every row — no row may be omitted:
+
+| # | Dimension | Status | Fields Found | Notes |
+|---|-----------|--------|-------------|-------|
+| 1 | Money & Precision | Extracted / Not detected | [list fields or "—"] | |
+| 2 | Idempotency | Extracted / Not detected | [list fields or "—"] | |
+| 3 | Transaction State Machine | Extracted / Not detected | [list fields or "—"] | |
+| 4 | Balance & Ledger Integrity | Extracted / Not detected | [list fields or "—"] | |
+| 5 | External Payment Integrations | Extracted / Not detected / Not applicable | [list fields or "—"] | [if N/A: rationale] |
+| 6 | Regulatory & Compliance | Extracted / Not detected | [list fields or "—"] | |
+| 7 | Concurrency & Data Integrity | Extracted / Not detected | [list fields or "—"] | |
+| 8 | Security & Access Control | Extracted / Not detected | [list fields or "—"] | |
+
+Status rules:
+- **Extracted**: Fields found in source code. List them in the Fields Found column.
+- **Not detected**: No fields found but the dimension is relevant to financial code. Write: "No fields detected — will be flagged in gap analysis."
+- **Not applicable**: Only valid for dimensions where the prerequisite feature doesn't exist in source (e.g., "External Payment Integrations" when no payment gateway code exists at all). Must include rationale in the Notes column.
 
 #### Contract Extraction Summary
 
@@ -514,11 +532,19 @@ For each category below, produce gap entries in the report. The top scenarios (m
 - IDOR: at least one test per endpoint that accepts a resource ID — access other user's resource → 403/404
 - Sensitive data: error responses must not leak balances, account numbers, or internal IDs
 
-**7. Absence flagging** — flag these as gaps even if the feature doesn't exist in source:
-- No rate limiting on financial mutation endpoints → flag as MEDIUM gap ("no rate limiting detected — consider adding to prevent brute-force/card testing attacks")
-- No audit trail table/fields for financial mutations → flag as MEDIUM gap ("no audit trail detected — financial operations should be auditable")
-- No idempotency key on mutating endpoints → flag as HIGH gap (as above)
-- These are infrastructure-level findings. Include them in the gap analysis under a "Missing infrastructure" section, separate from per-field gaps.
+**7. Absence flagging** — flag missing infrastructure when the prerequisite source patterns exist. Only fire each flag when its condition is met (avoids false positives for features that genuinely don't exist in the codebase). Include these in the gap analysis under a "Missing infrastructure" section, separate from per-field gaps.
+
+**HIGH priority:**
+- No idempotency key on mutating endpoints → flag when mutating financial endpoints exist ("no idempotency key on mutating endpoints — duplicate requests can create duplicate financial records")
+- No concurrency protection on financial write paths → flag when balance updates, transfers, or other financial write paths exist ("no database locking or atomic updates detected on financial write paths — concurrent requests can cause double-debit or overdraw")
+
+**MEDIUM priority:**
+- No rate limiting on financial mutation endpoints → flag when financial mutation endpoints exist ("no rate limiting detected — consider adding to prevent brute-force/card testing attacks")
+- No audit trail table/fields for financial mutations → flag when financial mutations exist ("no audit trail detected — financial operations should be auditable")
+- No explicit state machine or transition guards → flag when financial entities with status/state fields exist ("no explicit state machine or transition guards detected for financial entities — invalid state transitions can corrupt financial data")
+- No balance validation or ledger consistency patterns → flag when balance/wallet fields exist ("no balance validation or ledger consistency patterns detected — balance integrity depends on application-level checks")
+- No webhook signature verification or payment gateway error handling → flag when payment gateway code is detected ("no webhook signature verification or payment gateway error handling detected — external payment events can be spoofed or silently lost")
+- No KYC/AML fields, transaction limits, or compliance validations → flag when financial user accounts or transactions exist ("no KYC/AML fields, transaction limits, or compliance validations detected — financial operations may lack regulatory safeguards")
 
 ### Step 7: Auto-Generate Test Stubs
 
@@ -646,6 +672,23 @@ Score each report across 6 categories:
 
 [Include the full contract extraction summary from Step 3. MUST include ALL contract types found: API (inbound) request/response fields, DB table fields and enum values, outbound API call params and response shapes, job/consumer payloads, UI props. If a contract type was extracted in Step 3, it MUST appear here. Do not omit DB or outbound contracts.]
 
+### Fintech Dimensions Summary
+
+When fintech mode is active, include this table in every per-file report. Copy the status from the Step 3 extraction template. For "Not detected" dimensions, show the gap count from the absence flagging in Step 6. For "Not applicable" dimensions, show "—" in both Fields and Gaps columns.
+
+| # | Dimension | Status | Fields | Gaps |
+|---|-----------|--------|--------|------|
+| 1 | Money & Precision | Extracted | 4 fields | 2 HIGH, 1 MEDIUM |
+| 2 | Idempotency | Extracted | 2 fields | 1 HIGH |
+| 3 | Transaction State Machine | Not detected — flagged | — | Infrastructure gap |
+| 4 | Balance & Ledger Integrity | Extracted | 3 fields | 1 HIGH, 2 MEDIUM |
+| 5 | External Payment Integrations | Not applicable | — | — |
+| 6 | Regulatory & Compliance | Not detected — flagged | — | Infrastructure gap |
+| 7 | Concurrency & Data Integrity | Not detected — flagged | — | Infrastructure gap |
+| 8 | Security & Access Control | Extracted | 5 fields | 3 HIGH |
+
+**Fintech mode:** Active — all 8 dimensions evaluated.
+
 ### Test Structure Tree
 
 Visual map of contract fields and their test coverage. Each endpoint/model is a root node. Fields are branches. Every scenario is its own line — both covered (`✓`) and missing (`✗`) — so gaps are immediately visible.
@@ -762,6 +805,21 @@ When the scope includes multiple test files, write one report file per test file
 - ProcessPaymentJob — no test file exists
 
 **Overall: X files reviewed, X HIGH gaps, X MEDIUM gaps**
+
+### Fintech Dimensions (aggregated)
+
+When fintech mode is active, aggregate the dimension status across all per-file reports:
+
+| # | Dimension | Status | Files With Gaps | Total Gaps |
+|---|-----------|--------|----------------|------------|
+| 1 | Money & Precision | Extracted | 2 of 3 | 4 HIGH, 2 MEDIUM |
+| 2 | Idempotency | Extracted | 1 of 3 | 1 HIGH |
+| 3 | Transaction State Machine | Not detected — flagged | — | Infrastructure gap |
+| 4 | Balance & Ledger Integrity | Extracted | 2 of 3 | 1 HIGH, 2 MEDIUM |
+| 5 | External Payment Integrations | Not applicable | — | — |
+| 6 | Regulatory & Compliance | Not detected — flagged | — | Infrastructure gap |
+| 7 | Concurrency & Data Integrity | Not detected — flagged | — | Infrastructure gap |
+| 8 | Security & Access Control | Extracted | 3 of 3 | 3 HIGH |
 ```
 
 #### Quick Mode Template
