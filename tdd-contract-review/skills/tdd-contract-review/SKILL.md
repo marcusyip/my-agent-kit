@@ -569,13 +569,13 @@ end
 
 **One report per test file, written to separate files.** Each test file gets its own report file with its own contract extraction, test structure tree, gap analysis, and score. A summary file is also written.
 
-**Write reports to a `reports/` directory** in the project root (create it if it doesn't exist). File naming convention:
-- Per-file reports: kebab-case of the test file name, e.g. `reports/post-transactions-spec.md`, `reports/wallet-model-spec.md`
-- Summary: `reports/summary.md`
+**Write reports to `tdd-contract-review/{datetime}-report/`** in the project root (create it if it doesn't exist). Use the current date and time for `{datetime}` in `YYYYMMDD-HHMM` format (e.g. `tdd-contract-review/20260412-1630-report/`). Get the current time by running `date +%Y%m%d-%H%M` via Bash. File naming convention:
+- Per-file reports: kebab-case of the test file name, e.g. `tdd-contract-review/20260412-1630-report/post-transactions-spec.md`
+- Summary: `tdd-contract-review/20260412-1630-report/summary.md`
 
 Do all analysis (reading files, extracting contracts, auditing tests) first, then write all report files.
 
-**GATE — Report Files Must Be Written:** You MUST write per-file report files using the Write tool before printing any summary to the conversation. The report files are the primary output — the conversation summary is secondary. After writing, verify the files exist by listing the `reports/` directory. If no files exist in `reports/` after this step, you have not completed the review — go back and write them. Each per-file report MUST include: Contract Extraction Summary (all contract types: API, DB, outbound, jobs), Test Structure Tree, Contract Map (every extracted field gets a row), Gap Analysis with auto-generated stubs, Anti-Patterns table, Score breakdown.
+**GATE — Report Files Must Be Written:** You MUST write per-file report files using the Write tool before printing any summary to the conversation. The report files are the primary output — the conversation summary is secondary. After writing, verify the files exist by listing the report directory. If no files exist after this step, you have not completed the review — go back and write them. Each per-file report MUST include: Contract Extraction Summary (all contract types: API, DB, outbound, jobs), Test Structure Tree, Contract Map (every extracted field gets a row), Gap Analysis with auto-generated stubs, Anti-Patterns table, Score breakdown.
 
 After writing and verifying report files, print a short summary to the conversation showing the files created and scores.
 
@@ -744,7 +744,7 @@ Every contract field from the extraction summary MUST appear in this table — A
 
 #### Multi-File Summary
 
-When the scope includes multiple test files, write one report file per test file, then write `reports/summary.md`.
+When the scope includes multiple test files, write one report file per test file, then write `summary.md` in the same report directory.
 
 **The summary is strictly a rollup.** Every finding, gap, anti-pattern, and recommendation MUST appear in a per-file report first. The summary MUST NOT contain details, findings, or analysis not already in a per-file report. If a finding doesn't belong to a specific test file (e.g. missing infrastructure, cross-cutting concerns), include it in the most relevant per-file report.
 
