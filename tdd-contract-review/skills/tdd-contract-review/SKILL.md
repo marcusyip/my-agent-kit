@@ -538,7 +538,7 @@ For each HIGH-priority gap from Step 6, generate test code that follows the proj
 If no test files exist for the scope, generate test stubs using framework-specific defaults from the examples in Step 4. Note in the output: "No existing tests found. Generated stubs use default patterns."
 
 **Output format:**
-For each HIGH gap, output the generated test as a fenced code block inline in the report, immediately after the gap entry:
+For each HIGH gap, output the generated test as a fenced code block inline in the report, immediately after the gap entry. Use the full gap description as the heading — never use shorthand labels like "Stub H1", "Stub H4", etc. The reader should understand what each stub tests without cross-referencing the gap list.
 
 ```
 HIGH: POST /api/transactions request field `currency` -- no test verifies this field
