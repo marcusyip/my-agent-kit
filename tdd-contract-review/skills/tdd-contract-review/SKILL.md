@@ -739,7 +739,9 @@ Every scenario is its own line. Use `✓` for covered, `✗` for missing. Fields
 
 #### Multi-File Summary
 
-When the scope includes multiple test files, write one report file per test file, then write `reports/summary.md`:
+When the scope includes multiple test files, write one report file per test file, then write `reports/summary.md`.
+
+**The summary is strictly a rollup.** Every finding, gap, anti-pattern, and recommendation MUST appear in a per-file report first. The summary MUST NOT contain details, findings, or analysis not already in a per-file report. If a finding doesn't belong to a specific test file (e.g. missing infrastructure, cross-cutting concerns), include it in the most relevant per-file report.
 
 ```markdown
 ## TDD Contract Review — Summary
