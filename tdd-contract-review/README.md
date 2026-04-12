@@ -72,11 +72,13 @@ Or manually copy the plugin directory into your Claude Code plugins location.
 tdd-contract-review/
 +-- .claude-plugin/
 |   +-- plugin.json
-+-- agents/
-|   +-- tdd-contract-review.md
 +-- skills/
 |   +-- tdd-contract-review/
 |       +-- SKILL.md
+|       +-- fintech-checklists.md
++-- benchmark/
+|   +-- sample-app/
+|   +-- reports-v*/
 +-- README.md
 +-- LICENSE
 ```

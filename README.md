@@ -52,7 +52,6 @@ my-agent-kit/
 ├── tdd-contract-review/          # Plugin directory
 │   ├── .claude-plugin/
 │   │   └── plugin.json           # Plugin manifest
-│   ├── agents/                   # Agent definitions
 │   ├── skills/                   # Skill definitions
 │   ├── benchmark/                # Test suite with sample app and version reports
 │   ├── README.md

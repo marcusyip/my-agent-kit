@@ -48,6 +48,14 @@ Reference file loaded on demand when fintech mode is detected. Contains detailed
 - Identify serialization points: DB transactions wrapping multi-step financial operations. Check isolation level if specified (`SERIALIZABLE`, `REPEATABLE READ`, `READ COMMITTED`)
 - Extract retry logic: which operations retry on conflict/deadlock? How many times? With backoff? Does retry preserve idempotency?
 
+### Position & Inventory
+- Identify position/holdings fields: `position`, `quantity`, `shares`, `lots`, `holdings`, `inventory`, `units_held`, `open_qty`
+- Identify order types that affect positions: buy/sell, open/close, increase/decrease, deposit/withdraw (for non-money assets)
+- Extract position lifecycle states: open, partially filled, closed, liquidated
+- Check for position constraints: max position size, short-selling allowed or prohibited, margin requirements
+- Identify position update method: direct update, ledger-based (trade log → derived position), or event-sourced
+- Check for position-balance coupling: does closing a position credit a cash balance? Does opening debit it?
+
 ### Security & Access Control
 - Extract authentication requirements per endpoint: which endpoints require auth? What auth method (JWT, API key, session, OAuth)?
 - Extract authorization rules: who can access which resources? Map resource ownership — user can only access their own wallets/transactions. Look for: `current_user`, `authorize!`, policy objects, middleware guards, `@login_required`, role checks
@@ -71,6 +79,8 @@ For each field type below, check every scenario. These are HIGH priority by defa
 - Very small amount: `0.01` (minimum monetary unit) — does it process correctly?
 - Currency mismatch: amount in USD but wallet/account in EUR — must be rejected or converted
 - Floating-point trap: if a test uses `0.1 + 0.2`, does the assertion account for IEEE 754? (flag as anti-pattern if float comparisons used on money)
+- Balance validation (when amount is constrained by a balance): amount > available balance must be rejected; amount == balance must succeed and leave zero balance; assert exact balance after operation, not just "decreased". (See also "For balance/ledger fields" below for full concurrency and ledger integrity scenarios — this entry covers the amount-field perspective; avoid double-flagging the same gap.)
+- Position validation (when amount affects a held position, e.g. shares, lots, inventory): sell/reduce qty > current position must be rejected; sell/reduce qty == position must succeed and close the position; partial fill must update position to exact remaining quantity; assert position state after operation (open, reduced, closed). (See also "For position/inventory fields" below for full position lifecycle scenarios.)
 
 ### For every idempotency key field
 - Duplicate request with same key: must return the original response, not create a second record
@@ -92,6 +102,16 @@ For each field type below, check every scenario. These are HIGH priority by defa
 - Balance after operation: assert the exact balance value after credit/debit, not just "changed"
 - Negative balance prevention: assert balance cannot go below zero (or below configured minimum)
 - Ledger consistency: if double-entry, assert that sum of all entries equals zero after every operation
+
+### For position/inventory fields
+- Sell/reduce more than held: sell qty > current position must be rejected (unless short-selling is explicitly allowed — test both paths)
+- Sell/reduce exactly held: qty == position must succeed and close the position (position goes to zero, status becomes closed)
+- Partial fill: order partially filled must update position to exact remaining quantity, not just "decreased"
+- Open new position: buy/deposit creates a position record with correct quantity, asset, and status
+- Position after operation: assert exact position quantity after every trade, not just "changed"
+- Concurrent trades on same position: two simultaneous sells that individually pass position check but together exceed it — only one should succeed (same pattern as concurrent debit on balance)
+- Position-balance coupling: if closing a position credits cash, assert both position closed AND balance increased by correct amount in a single test
+- Zero position cleanup: after position reaches zero, is the record marked closed/deleted? Test that subsequent operations on a zero position are rejected
 
 ### For webhook/callback endpoints
 - Signature verification: invalid signature must be rejected (401/403)

@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.14.0] - 2026-04-12
+
+### tdd-contract-review
+
+#### Added
+- Balance and position validation scenarios for amount fields in gap analysis
+- Position & Inventory extraction guidance and gap checklist in fintech-checklists.md
+- Common Field Type Scenarios section (pagination, date/time, array, formatted string, file upload)
+- Cross-dimension rule: amount fields show balance/position constraints in test tree
+- Stronger error response data leak check in security gap analysis
+
+#### Changed
+- Cross-reference notes between amount-level and balance/ledger-level checks to avoid double-flagging
+- Updated test structure tree example to include balance/position scenarios
+
+## [0.13.0] - 2026-04-12
+
+### tdd-contract-review
+
+#### Added
+- Full fintech dimension coverage across all 8 categories
+- Benchmark reports for v0.13.0 validating complete gap detection
+
+#### Changed
+- Expanded SKILL.md fintech analysis instructions for broader scenario coverage
+
 ## [0.12.0] - 2026-04-12
 
 ### tdd-contract-review

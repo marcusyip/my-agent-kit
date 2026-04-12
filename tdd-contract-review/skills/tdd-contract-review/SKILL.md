@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash]
-version: 0.13.0
+version: 0.14.0
 ---
 
 # TDD Contract Review
@@ -267,6 +267,9 @@ Feature (top-level describe/context)
     |   +-- negative -> 422, no DB write, no external API call
     |   +-- zero (boundary) -> success or 422 depending on rules
     |   +-- very large -> success or 422 depending on rules
+    |   +-- exceeds available balance -> 422, no DB write (when balance-constrained)
+    |   +-- exactly equals balance -> success, balance becomes zero
+    |   +-- exceeds current position -> 422 (when position-constrained, e.g. sell qty > held qty)
     +-- field: wallet (DB data state)
     |   +-- when wallet not exists -> 422, no external API call
     |   +-- when wallet belongs to another user -> 403, no DB write
@@ -498,6 +501,45 @@ Assign priority to each gap:
 - **MEDIUM**: Field tested but missing important scenarios (edge cases, error paths)
 - **LOW**: Rare corner case or defensive scenario
 
+#### Common Field Type Scenarios (always applied)
+
+When checking scenario coverage per field, use these type-specific checklists in addition to the generic edge cases above. Match the field's type to the relevant checklist.
+
+**Pagination fields** (`page`, `limit`, `offset`, `cursor`, `per_page`):
+- Zero value: `page=0` or `limit=0` — rejected or treated as default?
+- Negative value: `page=-1` — must be rejected
+- Very large limit: `limit=999999` — capped or rejected? Must not return unbounded results
+- Beyond last page: page number past total pages — empty result set, not error
+- Invalid cursor: malformed or expired cursor token — rejected with clear error
+- Default values: omitted params use documented defaults
+
+**Date/time fields** (`created_at`, `start_date`, `expires_at`, `scheduled_for`):
+- Invalid format: non-ISO-8601 string — rejected with format guidance
+- Future date: when only past dates are valid (e.g. `date_of_birth`) — rejected
+- Past date: when only future dates are valid (e.g. `scheduled_for`) — rejected
+- Timezone handling: dates with and without timezone offset — consistent behavior
+- Boundary dates: start of day, end of day, month/year boundaries
+
+**Array fields** (request params that accept lists):
+- Empty array: `[]` — allowed or rejected depends on context
+- Single item: `[item]` — processes correctly (no off-by-one)
+- Max items: at configured limit — succeeds; one above — rejected
+- Duplicate items in array: handled or rejected?
+- Invalid item within valid array: one bad item in a list of valid ones — partial success or full rejection?
+
+**String fields with format constraints** (`email`, `url`, `phone`, `uuid`):
+- Valid format: at least one representative value per format
+- Invalid format: structurally wrong (missing `@` in email, no protocol in URL)
+- Edge format: technically valid but unusual (`user+tag@domain.com`, unicode domain)
+- Max length: at schema limit — succeeds; one over — rejected
+- Empty string vs. null: often behave differently — test both
+
+**File upload fields** (`avatar`, `document`, `attachment`):
+- File too large: exceeds size limit — rejected with clear error
+- Wrong MIME type: `.exe` when only images allowed — rejected
+- Empty file: zero-byte upload — rejected or accepted?
+- Missing file: required upload field omitted — rejected
+
 #### Fintech Gap Analysis (when fintech mode detected)
 
 When fintech domain is detected, check every extracted fintech contract field against the scenario checklists in `fintech-checklists.md` (section "Gap Analysis Scenario Checklists"). These are HIGH priority by default because financial bugs cause real money loss.
@@ -508,6 +550,10 @@ For each category below, produce gap entries in the report. The top scenarios (m
 - Precision overflow: amount with more decimals than schema allows → round, truncate, or reject?
 - Zero amount: allowed or rejected? (transfers reject, queries allow)
 - Boundary at max: exactly at configured limit → 201; one above → 422
+- Balance validation: amount > available balance → rejected; amount == balance → success with zero remaining
+- Position validation: sell/reduce qty > held position → rejected; qty == position → closes position
+
+**Cross-dimension rule for amount fields:** When an amount field's endpoint has a balance check or position check in its code path (e.g., service validates `balance >= amount`, controller checks `position >= qty`), add "exceeds balance → 422" and/or "exceeds position → 422" as scenarios **under the amount field in the Test Structure Tree**, not only under Balance/Ledger or Position dimensions. The amount field tree should show every constraint that can cause the amount to be rejected.
 
 **2. Idempotency:**
 - Duplicate POST with same idempotency key → must return original response, not create second record
@@ -530,7 +576,7 @@ For each category below, produce gap entries in the report. The top scenarios (m
 **6. Security & access control:**
 - Authentication: at least one test per endpoint for missing/expired auth token → 401
 - IDOR: at least one test per endpoint that accepts a resource ID — access other user's resource → 403/404
-- Sensitive data: error responses must not leak balances, account numbers, or internal IDs
+- Sensitive data in error responses: test that 422/500 responses do not leak balances, account numbers, internal user IDs, SQL errors, or stack traces. Error body should contain only an error code and generic message. Flag if no test asserts error response body content
 
 **7. Absence flagging** — flag missing infrastructure when the prerequisite source patterns exist. Only fire each flag when its condition is met (avoids false positives for features that genuinely don't exist in the codebase). Include these in the gap analysis under a "Missing infrastructure" section, separate from per-field gaps.
 
@@ -701,7 +747,10 @@ POST /api/v1/transactions
 │   ├── ✗ zero (boundary)
 │   ├── ✗ max (1_000_000) → should succeed
 │   ├── ✗ over max (1_000_001) → 422
-│   └── ✗ non-numeric string
+│   ├── ✗ non-numeric string
+│   ├── ✗ exceeds available balance → 422 (when balance-constrained)
+│   ├── ✗ exactly equals balance → success, balance becomes zero
+│   └── ✗ exceeds current position → 422 (when position-constrained)
 ├── field: currency
 │   ├── ✓ nil → 422
 │   ├── ✓ invalid → 422
