@@ -18,9 +18,6 @@
     "vitest",
     "go-testing"
   ],
-  "agents": [
-    "./agents/tdd-contract-review.md"
-  ],
   "skills": [
     "./skills/tdd-contract-review/"
   ]
