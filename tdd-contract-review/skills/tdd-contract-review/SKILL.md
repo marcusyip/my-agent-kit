@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash]
-version: 0.11.0
+version: 0.12.0
 ---
 
 # TDD Contract Review
@@ -575,7 +575,7 @@ end
 
 Do all analysis (reading files, extracting contracts, auditing tests) first, then write all report files.
 
-**GATE — Report Files Must Be Written:** You MUST write per-file report files using the Write tool before printing any summary to the conversation. The report files are the primary output — the conversation summary is secondary. After writing, verify the files exist by listing the `reports/` directory. If no files exist in `reports/` after this step, you have not completed the review — go back and write them. Each per-file report MUST include: Contract Extraction Summary, Test Structure Tree, Contract Map, Gap Analysis with auto-generated stubs, Anti-Patterns table, Score breakdown.
+**GATE — Report Files Must Be Written:** You MUST write per-file report files using the Write tool before printing any summary to the conversation. The report files are the primary output — the conversation summary is secondary. After writing, verify the files exist by listing the `reports/` directory. If no files exist in `reports/` after this step, you have not completed the review — go back and write them. Each per-file report MUST include: Contract Extraction Summary (all contract types: API, DB, outbound, jobs), Test Structure Tree, Contract Map (every extracted field gets a row), Gap Analysis with auto-generated stubs, Anti-Patterns table, Score breakdown.
 
 After writing and verifying report files, print a short summary to the conversation showing the files created and scores.
 
@@ -644,7 +644,7 @@ Score each report across 6 categories:
 
 ### Contract Extraction Summary
 
-[Include the full contract extraction summary from Step 3]
+[Include the full contract extraction summary from Step 3. MUST include ALL contract types found: API (inbound) request/response fields, DB table fields and enum values, outbound API call params and response shapes, job/consumer payloads, UI props. If a contract type was extracted in Step 3, it MUST appear here. Do not omit DB or outbound contracts.]
 
 ### Test Structure Tree
 
@@ -701,12 +701,17 @@ Every scenario is its own line. Use `✓` for covered, `✗` for missing. Fields
 
 ### Contract Map
 
+Every contract field from the extraction summary MUST appear in this table — API request/response fields, DB table fields, outbound API params, job payloads. If a field was extracted, it gets a row. Missing rows mean the report is incomplete.
+
 | Contract | Field | Confidence | Test Group | Scenarios Covered | Gaps |
 |---|---|---|---|---|---|
 | POST /api/transactions (request) | currency | HIGH | Yes | nil, invalid | missing: empty string |
 | POST /api/transactions (response) | id | HIGH | No | -- | HIGH: untested |
+| Transaction (DB) | status | HIGH | Yes | pending, completed | missing: failed, reversed |
+| Transaction (DB) | amount | HIGH | Yes | positive | missing: zero, negative |
 | Wallet (DB) | status | HIGH | Yes | active, suspended | missing: closed |
-| ExternalService.call (external API) | amount | MEDIUM | Yes | zero, negative | -- |
+| PaymentGateway.charge (outbound) | amount | MEDIUM | Yes | zero, negative | -- |
+| PaymentGateway.charge (outbound) | currency | MEDIUM | No | -- | HIGH: untested |
 
 ### Gap Analysis by Priority
 

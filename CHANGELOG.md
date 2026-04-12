@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.12.0] - 2026-04-12
+
+### tdd-contract-review
+
+#### Added
+- Contract Map now requires every extracted field to have a row (DB fields, outbound API params, not just API request/response)
+- Contract Extraction Summary in reports must include all contract types found
+
+#### Changed
+- Stub headings use full gap descriptions instead of shorthand labels like "Stub H4"
+- Summary enforced as strict rollup — every finding must appear in a per-file report first
+- Removed agent definition; skill is the sole entry point (fixes "Agent type not found" on fresh installs)
+
+#### Fixed
+- DB table fields and outbound API contracts now consistently appear in Contract Map
+- Summary no longer contains findings absent from per-file reports
+
 ## [0.11.0] - 2026-04-12
 
 ### tdd-contract-review

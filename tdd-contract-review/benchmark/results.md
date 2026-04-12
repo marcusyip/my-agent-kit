@@ -10,68 +10,74 @@
 | `reports-v0.9.0/` | 2026-04-12 | v0.9.0 (fintech/concurrency/security) |
 | `reports-v0.10.0/` | 2026-04-12 | v0.10.0 (reference file + gates) |
 | `reports-v0.11.0/` | 2026-04-12 | v0.11.0 (inline scenarios + absence flagging) |
+| `reports-v0.12.0/` | 2026-04-12 | v0.12.0 (report quality: full contract map, readable stubs, strict summary) |
 
 ## Version Comparison
 
-| Metric | Baseline (no skill) | v0.1.0 | v0.2.0 | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 |
-|---|---|---|---|---|---|---|---|
-| Duration | 88s | 168s | 171s | 125s | 336s | 406s | 440s |
-| Cost | $0.39 | $0.58 | $0.60 | $0.43 | ~$0.70 | ~$0.85 | ~$0.90 |
-| Output tokens | 3,301 | 10,907 | 11,723 | 8,069 | ~2,000 (summary only) | ~46,000 (full reports) | ~55,000 |
-| Known gaps found | 12/13 | 12/13 | 13/13 | 13/13 | 7/13 | 13/13 | **13/13** |
-| Fintech gaps found | N/A | N/A | N/A | N/A | 8/18 | 14/18 | **18/18** |
-| `reversed` enum found | No | No | Yes | Yes | No | Yes | **Yes** |
-| Test Structure Tree | No | No | No | Yes | No (not written) | Yes | **Yes** |
-| Report files written | No | Yes | Yes | Yes | No (regression) | Yes (3 files) | **Yes (3 files)** |
-| Fintech mode detected | N/A | N/A | N/A | N/A | Yes | Yes | Yes |
-| Scoring anchors | No | No | Yes | Yes | Summary scores only | Yes | **Yes** |
-| Auto-generated stubs | No | Yes | Yes | Yes | No | Yes | **Yes** |
-| Missing infra flagged | No | No | No | No | No | No | **Yes** |
+| Metric | Baseline (no skill) | v0.1.0 | v0.2.0 | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 |
+|---|---|---|---|---|---|---|---|---|
+| Duration | 88s | 168s | 171s | 125s | 336s | 406s | 440s | ~450s |
+| Cost | $0.39 | $0.58 | $0.60 | $0.43 | ~$0.70 | ~$0.85 | ~$0.90 | ~$0.95 |
+| Output tokens | 3,301 | 10,907 | 11,723 | 8,069 | ~2,000 (summary only) | ~46,000 (full reports) | ~55,000 | ~55,000 |
+| Known gaps found | 12/13 | 12/13 | 13/13 | 13/13 | 7/13 | 13/13 | 13/13 | **13/13** |
+| Fintech gaps found | N/A | N/A | N/A | N/A | 8/18 | 14/18 | 18/18 | **18/18** |
+| `reversed` enum found | No | No | Yes | Yes | No | Yes | Yes | **Yes** |
+| Test Structure Tree | No | No | No | Yes | No (not written) | Yes | Yes | **Yes** |
+| Report files written | No | Yes | Yes | Yes | No (regression) | Yes (3 files) | Yes (3 files) | **Yes (3 files)** |
+| Fintech mode detected | N/A | N/A | N/A | N/A | Yes | Yes | Yes | **Yes** |
+| Scoring anchors | No | No | Yes | Yes | Summary scores only | Yes | Yes | **Yes** |
+| Auto-generated stubs | No | Yes | Yes | Yes | No | Yes | Yes | **Yes** |
+| Missing infra flagged | No | No | No | No | No | No | Yes | **Yes** |
+| DB fields in contract map | No | No | No | No | No | Partial | Partial | **Full** |
+| Outbound API in contract map | No | No | No | No | No | Partial | Partial | **Full** |
+| Stub labels readable | N/A | N/A | N/A | N/A | N/A | No | No | **Yes** |
+| Summary = strict rollup | N/A | N/A | N/A | N/A | N/A | No | No | **Yes** |
 
 ## Gap Detection (13 known gaps)
 
-| # | Known Gap | Priority | Baseline | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 |
-|---|-----------|----------|:---:|:---:|:---:|:---:|:---:|
-| 1 | Happy path assertions incomplete | HIGH | Found | Found | Found | Found + stubs | Found + stubs |
-| 2 | No PaymentGateway external API scenarios | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs |
-| 3 | No PATCH /wallets/:id tests | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs |
-| 4 | No wallet-belongs-to-another-user test | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs |
-| 5 | No suspended/closed wallet scenarios | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs |
-| 6 | No currency mismatch test | MEDIUM | Found | Found + stubs | Found | Found + stubs | Found + stubs |
-| 7 | Missing description/category fields | MEDIUM | Found | Found + stubs | Not found | Found + stubs | Found + stubs |
-| 8 | No pagination/ordering tests | MEDIUM | Found | Found | Not found | Found | Found |
-| 9 | No txn-belongs-to-another-user (show) | MEDIUM | Found | Found | Found | Found + stubs | Found + stubs |
-| 10 | Missing boundary cases (amount=0, max) | MEDIUM | Found | Found | Not found | Found | Found |
-| 11 | Missing duplicate currency test | MEDIUM | Found | Found | Not found | Found + stubs | Found + stubs |
-| 12 | Missing name-too-long test | LOW | Found | Found | Not found | Found + stubs | Found + stubs |
-| 13 | Missing reversed status scenario | LOW | Not found | Found | Not found | Found | Found |
+| # | Known Gap | Priority | Baseline | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 |
+|---|-----------|----------|:---:|:---:|:---:|:---:|:---:|:---:|
+| 1 | Happy path assertions incomplete | HIGH | Found | Found | Found | Found + stubs | Found + stubs | Found + stubs |
+| 2 | No PaymentGateway external API scenarios | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs |
+| 3 | No PATCH /wallets/:id tests | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs |
+| 4 | No wallet-belongs-to-another-user test | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs |
+| 5 | No suspended/closed wallet scenarios | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs |
+| 6 | No currency mismatch test | MEDIUM | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs |
+| 7 | Missing description/category fields | MEDIUM | Found | Found + stubs | Not found | Found + stubs | Found + stubs | Found + stubs |
+| 8 | No pagination/ordering tests | MEDIUM | Found | Found | Not found | Found | Found | Found |
+| 9 | No txn-belongs-to-another-user (show) | MEDIUM | Found | Found | Found | Found + stubs | Found + stubs | Found + stubs |
+| 10 | Missing boundary cases (amount=0, max) | MEDIUM | Found | Found | Not found | Found | Found | Found + stubs |
+| 11 | Missing duplicate currency test | MEDIUM | Found | Found | Not found | Found + stubs | Found + stubs | Found + stubs |
+| 12 | Missing name-too-long test | LOW | Found | Found | Not found | Found + stubs | Found + stubs | Found |
+| 13 | Missing reversed status scenario | LOW | Not found | Found | Not found | Found | Found | Found |
 
 ## Fintech Gap Detection (18 expected findings — v0.9.0+)
 
-| # | Category | Expected Finding | Priority | v0.9.0 | v0.10.0 | v0.11.0 |
-|---|----------|-----------------|----------|:---:|:---:|:---:|
-| F1 | Money/Precision | decimal(20,8) correct type noted | INFO | Not found | Found | **Found** |
-| F2 | Money/Precision | No precision overflow test | HIGH | Not found | Found | **Found** |
-| F3 | Money/Precision | No zero amount test | MEDIUM | Not found | Found | **Found** |
-| F4 | Money/Precision | No max amount (1M) boundary test | MEDIUM | Not found | Found | **Found** |
-| F5 | Money/Precision | No over-max (1M+1) test | MEDIUM | Not found | Found | **Found** |
-| F6 | Idempotency | No idempotency key on POST | HIGH | Found | Found | **Found** |
-| F7 | State Machine | Transaction transitions untested | HIGH | Partial | Found | **Found** |
-| F8 | State Machine | No invalid transition test | HIGH | Not found | Found | **Found** |
-| F9 | State Machine | Wallet states untested | HIGH | Found | Found | **Found** |
-| F10 | Concurrency | TransactionService TOCTOU risk | HIGH | Found | Not found | **Found** |
-| F11 | Concurrency | No concurrent debit test | HIGH | Found | Not found | **Found** |
-| F12 | Concurrency | No double-submit prevention | MEDIUM | Found | Not found | **Found** |
-| F13 | Security | No auth tests (missing token → 401) | HIGH | Found | Found | **Found** |
-| F14 | Security | IDOR: other user's transaction | HIGH | Found | Found + stubs | **Found + stubs** |
-| F15 | Security | IDOR: other user's wallet | MEDIUM | Found | Found + stubs | **Found + stubs** |
-| F16 | Security | No rate limiting | MEDIUM | Not found | Not found | **Found** |
-| F17 | Security | Error response data leak risk | LOW | Not found | Found | **Found** |
-| F18 | Compliance | No audit trail fields | MEDIUM | Not found | Not found | **Found** |
+| # | Category | Expected Finding | Priority | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 |
+|---|----------|-----------------|----------|:---:|:---:|:---:|:---:|
+| F1 | Money/Precision | decimal(20,8) correct type noted | INFO | Not found | Found | Found | **Found** |
+| F2 | Money/Precision | No precision overflow test | HIGH | Not found | Found | Found | **Found** |
+| F3 | Money/Precision | No zero amount test | MEDIUM | Not found | Found | Found | **Found** |
+| F4 | Money/Precision | No max amount (1M) boundary test | MEDIUM | Not found | Found | Found | **Found** |
+| F5 | Money/Precision | No over-max (1M+1) test | MEDIUM | Not found | Found | Found | **Found** |
+| F6 | Idempotency | No idempotency key on POST | HIGH | Found | Found | Found | **Found** |
+| F7 | State Machine | Transaction transitions untested | HIGH | Partial | Found | Found | **Found** |
+| F8 | State Machine | No invalid transition test | HIGH | Not found | Found | Found | **Found** |
+| F9 | State Machine | Wallet states untested | HIGH | Found | Found | Found | **Found** |
+| F10 | Concurrency | TransactionService TOCTOU risk | HIGH | Found | Not found | Found | **Found** |
+| F11 | Concurrency | No concurrent debit test | HIGH | Found | Not found | Found | **Found** |
+| F12 | Concurrency | No double-submit prevention | MEDIUM | Found | Not found | Found | **Found** |
+| F13 | Security | No auth tests (missing token → 401) | HIGH | Found | Found | Found | **Found** |
+| F14 | Security | IDOR: other user's transaction | HIGH | Found | Found + stubs | Found + stubs | **Found + stubs** |
+| F15 | Security | IDOR: other user's wallet | MEDIUM | Found | Found + stubs | Found + stubs | **Found + stubs** |
+| F16 | Security | No rate limiting | MEDIUM | Not found | Not found | Found | **Found** |
+| F17 | Security | Error response data leak risk | LOW | Not found | Found | Found | **Found** |
+| F18 | Compliance | No audit trail fields | MEDIUM | Not found | Not found | Found | **Found** |
 
 **v0.9.0: 8/18** — strong on concurrency, missed money/precision.
 **v0.10.0: 14/18** — recovered money/precision, lost concurrency.
 **v0.11.0: 18/18** — all fintech criteria found. Inline scenarios + absence flagging closed the remaining gaps.
+**v0.12.0: 18/18** — maintained. Report quality improvements: full DB/outbound contract map, readable stub labels, strict summary rollup.
 
 ## Changes Per Version
 
@@ -100,6 +106,14 @@
 - Added "absence flagging" section: explicitly flag missing rate limiting, audit trail, idempotency as infrastructure gaps
 - Removed `[FINTECH]` tag from instructions — tree uses natural prefixes (`security:`, `concurrency:`, `business:`)
 - SKILL.md: 768 → 789 lines
+
+### v0.11.0 → v0.12.0
+- Removed agent definition — skill is the sole entry point (fixes "Agent type not found" on fresh installs)
+- Added explicit instruction for readable stub labels — "never use shorthand labels like Stub H1, Stub H4"
+- Enforced summary as strict rollup — every finding must appear in a per-file report first
+- Strengthened Contract Extraction Summary and Contract Map to require all contract types (API, DB, outbound, jobs)
+- Updated report gate to check for contract type completeness
+- SKILL.md: 789 → ~800 lines
 
 ## Value-Add Analysis (skill vs baseline)
 
@@ -166,14 +180,17 @@ The skill is now 933 lines. The added fintech/concurrency/security sections may 
 ### Net assessment
 v0.10.0 is the best version overall. The reference file + gates approach recovered the detailed per-field analysis that v0.9.0 lost while retaining most fintech findings. The concurrency gap (F10-F12) suggests the skill reads `fintech-checklists.md` for extraction but doesn't consistently apply all gap analysis categories.
 
-| | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 |
-|---|---|---|---|---|
-| Known gaps | 13/13 | 7/13 | 13/13 | **13/13** |
-| Fintech gaps | N/A | 8/18 | 14/18 | **18/18** |
-| Report files | Yes | No | Yes | **Yes** |
-| Test stubs | Yes | No | Yes | **Yes** |
-| Missing infra | No | No | No | **Yes** |
-| Duration | 125s | 336s | 406s | 440s |
+| | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 |
+|---|---|---|---|---|---|
+| Known gaps | 13/13 | 7/13 | 13/13 | 13/13 | **13/13** |
+| Fintech gaps | N/A | 8/18 | 14/18 | 18/18 | **18/18** |
+| Report files | Yes | No | Yes | Yes | **Yes** |
+| Test stubs | Yes | No | Yes | Yes | **Yes** |
+| Missing infra | No | No | No | Yes | **Yes** |
+| Full contract map | No | No | Partial | Partial | **Yes** |
+| Readable stubs | N/A | N/A | No | No | **Yes** |
+| Strict summary | N/A | N/A | No | No | **Yes** |
+| Duration | 125s | 336s | 406s | 440s | ~450s |
 
 ## v0.11.0 Analysis
 
@@ -195,3 +212,21 @@ v0.10.0 is the best version overall. The reference file + gates approach recover
 
 ### Cosmetic note
 The model still outputs `[FINTECH]` tags in some places despite removing the instruction. This is residual behavior from training/context — not actionable. The tree prefixes (`security:`, `concurrency:`, `business:`) appear alongside the tags.
+
+## v0.12.0 Analysis
+
+### What improved (vs v0.11.0)
+- **Contract Map now includes all contract types** — DB fields (Transaction: 7 rows, Wallet: 6 rows) and outbound API fields (PaymentGateway.charge: 5 rows) all have dedicated rows in the Contract Map table. Previously these were partially or inconsistently included.
+- **Stub labels are human-readable** — each stub uses the full gap description as its heading (e.g. "POST /api/v1/transactions happy path — no response body assertions") instead of shorthand like "Stub H4".
+- **Summary is a strict rollup** — summary.md contains only scores, critical findings, and counts. No unique analysis or findings that don't appear in per-file reports.
+- **Boundary cases got stubs** — amount=0, max boundary (1,000,000), over-max now have generated test code (previously just flagged as gaps without stubs).
+
+### What stayed the same
+- **Known gaps: 13/13** — maintained
+- **Fintech gaps: 18/18** — maintained
+- **Report file writing**: consistent (3 files)
+- **Duration**: ~450s (within noise of v0.11.0's 440s)
+- **`[FINTECH]` tags**: still appear in tree despite instruction removal (cosmetic, not actionable)
+
+### Net assessment
+v0.12.0 is a report quality release. Gap detection accuracy is unchanged from v0.11.0 (already at ceiling). The improvements are in report readability: readers can now understand stub headings without cross-referencing, the contract map is complete across all contract types, and the summary doesn't contain surprise findings.
