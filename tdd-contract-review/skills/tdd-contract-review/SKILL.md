@@ -328,10 +328,14 @@ Feature (top-level describe/context)
     |   +-- amount > balance -> 422, no DB write, no outbound API call, no data leak in error
     |   +-- amount == balance -> 201, db balance == 0, correct response fields
     |   +-- amount > position -> 422, no DB write (when position-constrained)
-    +-- outbound response field: ThirdPartyAPI.call
-        +-- success -> 201, assert params sent (amount, currency, user_id), db record.status == completed, db balance deducted
-        +-- error response -> 422, db record.status unchanged, db balance unchanged
-        +-- timeout -> 503, db record.status unchanged, db balance unchanged
+    +-- outbound response field: ThirdPartyAPI.call.status_code
+    |   +-- 200 -> parse body, proceed based on success?
+    |   +-- 500 -> db record.status unchanged, db balance unchanged, return 503
+    |   +-- timeout -> db record.status unchanged, db balance unchanged, return 503
+    +-- outbound response field: ThirdPartyAPI.call.success?
+        +-- true -> 201, assert params sent (amount, currency, user_id), db record.status == completed, db balance deducted
+        +-- false -> db record.status == failed, db balance unchanged
+        +-- ChargeError raised -> 422, db record.status unchanged, db balance unchanged
 ```
 
 For frontend/UI tests, the same pattern applies with component props as fields:
@@ -845,10 +849,14 @@ POST /api/v1/transactions
 │   └── ✗ currency mismatch with wallet → 422, no DB write
 ├── db field: transaction.status — NO TESTS
 │   └── ✗ enum pending/completed/failed/reversed transitions untested
-└── outbound response field: PaymentGateway.charge — NO TESTS
-    ├── ✗ success → 201, assert params sent (amount, currency, user_id), db transaction.status == completed, db wallet.balance deducted
-    ├── ✗ failure → db transaction.status == failed, db wallet.balance unchanged
-    └── ✗ ChargeError → 422, db transaction.status unchanged, db wallet.balance unchanged
+├── outbound response field: PaymentGateway.charge.status_code — NO TESTS
+│   ├── ✗ 200 → parse body, proceed based on success?
+│   ├── ✗ 500 → db transaction.status unchanged, db wallet.balance unchanged, return 503
+│   └── ✗ timeout → db transaction.status unchanged, db wallet.balance unchanged, return 503
+└── outbound response field: PaymentGateway.charge.success? — NO TESTS
+    ├── ✗ true → 201, assert params sent (amount, currency, user_id), db transaction.status == completed, db wallet.balance deducted
+    ├── ✗ false → db transaction.status == failed, db wallet.balance unchanged
+    └── ✗ ChargeError raised → 422, db transaction.status unchanged, db wallet.balance unchanged
 
 GET /api/v1/transactions
 ├── request field: page (pagination) — NO TESTS
@@ -891,9 +899,8 @@ Every contract field from the extraction summary MUST appear in this table — A
 | db field | wallet.status | HIGH | Yes | active, suspended | missing: closed |
 | db field | wallet.balance | HIGH | No | -- | HIGH: exceeds balance, equals balance untested |
 | db field | transaction.status | HIGH | No | -- | HIGH: enum pending/completed/failed/reversed untested |
-| outbound response field | PaymentGateway.charge → success | HIGH | No | -- | HIGH: params sent + db transaction.status + wallet.balance untested |
-| outbound response field | PaymentGateway.charge → failure | HIGH | No | -- | HIGH: db transaction.status untested |
-| outbound response field | PaymentGateway.charge → ChargeError | HIGH | No | -- | HIGH: 422 + no DB change untested |
+| outbound response field | PaymentGateway.charge.status_code | HIGH | No | -- | HIGH: 200/500/timeout handling untested |
+| outbound response field | PaymentGateway.charge.success? | HIGH | No | -- | HIGH: true/false/ChargeError scenarios + params sent + DB assertions untested |
 
 ### Gap Analysis by Priority
 
@@ -908,7 +915,8 @@ Every contract field from the extraction summary MUST appear in this table — A
   Suggested test:
   [auto-generated test stub from Step 7]
 
-- [ ] `outbound response field: PaymentGateway.charge` -- success/failure/error paths untested, no outbound param assertions, no DB assertions after response
+- [ ] `outbound response field: PaymentGateway.charge.status_code` -- 200/500/timeout handling untested
+- [ ] `outbound response field: PaymentGateway.charge.success?` -- true/false/ChargeError untested, no param assertions, no DB assertions
 
   Suggested test:
   [auto-generated test stub from Step 7]
