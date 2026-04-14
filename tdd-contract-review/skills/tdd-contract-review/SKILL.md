@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash]
-version: 0.15.0
+version: 0.16.0
 ---
 
 # TDD Contract Review
@@ -298,38 +298,40 @@ Feature (top-level describe/context)
     |
     |   For each error/invalid scenario, assert the FULL picture:
     |   - correct error response (status code, error message)
+    |   - error response does not leak sensitive data (balances, IDs, stack traces)
     |   - no DB records created or updated
     |   - no outbound API calls made
     |   - no side effects (emails, jobs, events)
     |
-    +-- field: email (API request param)
+    +-- request field: email
     |   +-- invalid format -> 422, no DB write, no external API call
     |   +-- null/empty -> 422, no DB write, no external API call
     |   +-- duplicate -> 422, no DB write, no external API call
-    +-- field: currency (API request param)
+    +-- request field: currency
     |   +-- each valid value (USD, EUR, GBP, JPY) -> correct tax rate
     |   +-- invalid value -> 422, no DB write
     |   +-- nil -> 422, no DB write
-    +-- field: amount (API request param)
+    +-- request field: amount
     |   +-- negative -> 422, no DB write, no external API call
     |   +-- zero (boundary) -> success or 422 depending on rules
     |   +-- very large -> success or 422 depending on rules
-    |   +-- exceeds available balance -> 422, no DB write (when balance-constrained)
-    |   +-- exactly equals balance -> success, balance becomes zero
-    |   +-- exceeds current position -> 422 (when position-constrained, e.g. sell qty > held qty)
-    +-- field: wallet (DB data state)
-    |   +-- when wallet not exists -> 422, no external API call
-    |   +-- when wallet belongs to another user -> 403, no DB write
-    |   +-- when wallet is suspended -> 422, no external API call
-    +-- field: third-party API response (external API)
-    |   +-- when API returns error response -> 422, no DB status change
-    |   +-- when API times out -> 503, no DB status change
-    |   +-- when API is unavailable -> 503, no DB status change
-    +-- security: authentication
+    +-- request field: wallet_id
+    |   +-- not found -> 422, no external API call
+    |   +-- belongs to another user -> 403, no DB write (IDOR)
+    +-- request header: Authorization
     |   +-- missing auth token -> 401
     |   +-- expired auth token -> 401
-    +-- security: error response data
-        +-- 422 response does not leak balances, internal IDs, or stack trace
+    +-- db field: wallet.status
+    |   +-- suspended -> 422, no DB write, no external API call
+    |   +-- closed -> 422, no DB write, no external API call
+    +-- db field: wallet.balance
+    |   +-- amount > balance -> 422, no DB write (when balance-constrained)
+    |   +-- amount == balance -> success, balance becomes zero
+    |   +-- amount > position -> 422 (when position-constrained, e.g. sell qty > held qty)
+    +-- outbound field: ThirdPartyAPI.call(amount, currency, user_id)
+        +-- API returns error response -> 422, no DB status change
+        +-- API times out -> 503, no DB status change
+        +-- API is unavailable -> 503, no DB status change
 ```
 
 For frontend/UI tests, the same pattern applies with component props as fields:
@@ -459,7 +461,7 @@ func TestCreateTransaction(t *testing.T) {
 
 - **Test foundation** with defaults means each test case only overrides what it tests -- gaps per field become immediately visible
 - **Happy path** asserts every field's expected value in the success case (response fields, DB state, outbound API params). This establishes the baseline so each scenario in section 2 only overrides one field and checks the delta
-- **Scenarios per field** treats everything as a field: API params, DB state, external API responses, and UI props are all just fields with scenarios to cover -- edge cases, corner cases, and error paths. This unified view makes gap analysis trivial -- if a field exists but has no test group, that's a gap
+- **Scenarios per field** uses typed prefixes to make contract types explicit: `request field:` (user input validation), `request header:` (HTTP headers like auth), `db field:` (pre-existing database state), `outbound field:` (external API calls), and `prop:` (UI component props). This makes gap analysis trivial -- if a field exists but has no test group, that's a gap. The prefix tells you which contract type it belongs to
 
 #### Only review contract boundary test files
 
@@ -540,13 +542,11 @@ The primary output. For every contract field discovered in Step 3, check:
 
 1. **Does a test exist for this field?** Search test files for the field name
 2. **Is there a test group for this field?** Dedicated describe/context/t.Run
-3. **What scenarios are covered?** For each field, check:
-   - Happy path (valid input, expected state)
-   - Edge cases: null/nil, empty, zero, boundary (min/max/off-by-one)
-   - Corner cases: invalid type, invalid format, very large value
-   - Error paths: validation failure, not found, permission denied, timeout
-   - DB state scenarios: record not exists, belongs to another user, suspended/inactive
-   - External API scenarios: error response, timeout, unavailable
+3. **What scenarios are covered?** For each field, check by prefix type:
+   - `request field:` — null/nil, empty, zero, boundary, invalid type/format, very large, permission denied
+   - `request header:` — missing, expired, malformed
+   - `db field:` — record not exists, belongs to another user, suspended/inactive, insufficient balance, already exists (duplicate)
+   - `outbound field:` — success, error response, timeout, unavailable
 
 Assign priority to each gap:
 - **HIGH**: Core contract field with no tests at all
@@ -605,7 +605,7 @@ For each category below, produce gap entries in the report. The top scenarios (m
 - Balance validation: amount > available balance → rejected; amount == balance → success with zero remaining
 - Position validation: sell/reduce qty > held position → rejected; qty == position → closes position
 
-**Cross-dimension rule for amount fields:** When an amount field's endpoint has a balance check or position check in its code path (e.g., service validates `balance >= amount`, controller checks `position >= qty`), add "exceeds balance → 422" and/or "exceeds position → 422" as scenarios **under the amount field in the Test Structure Tree**, not only under Balance/Ledger or Position dimensions. The amount field tree should show every constraint that can cause the amount to be rejected.
+**Cross-dimension rule for amount fields:** When an amount field's endpoint has a balance check or position check in its code path (e.g., service validates `balance >= amount`, controller checks `position >= qty`), add "exceeds balance → 422" and/or "exceeds position → 422" as scenarios under a `db field: wallet.balance` or `db field: position.quantity` entry in the Test Structure Tree. Balance and position constraints are database state conditions, not input validation — they belong under `db field:`, not under `request field: amount`.
 
 **2. Idempotency:**
 - Duplicate POST with same idempotency key → must return original response, not create second record
@@ -626,9 +626,9 @@ For each category below, produce gap entries in the report. The top scenarios (m
 - If the code uses `with_lock`, `FOR UPDATE`, or optimistic locking: flag that no test verifies the lock actually prevents concurrent corruption
 
 **6. Security & access control:**
-- Authentication: at least one test per endpoint for missing/expired auth token → 401
-- IDOR: at least one test per endpoint that accepts a resource ID — access other user's resource → 403/404
-- Sensitive data in error responses: test that 422/500 responses do not leak balances, account numbers, internal user IDs, SQL errors, or stack traces. Error body should contain only an error code and generic message. Flag if no test asserts error response body content
+- Authentication: at least one `request header: Authorization` entry per endpoint with missing/expired token → 401
+- IDOR: at least one test per `request field:` that accepts a resource ID — access other user's resource → 403/404 (scenario under the resource ID field)
+- Sensitive data in error responses: for each error scenario, assert the response body does not leak balances, account numbers, internal user IDs, SQL errors, or stack traces. Error body should contain only an error code and generic message. Flag if no error test asserts response body content
 
 **7. Absence flagging** — flag missing infrastructure when the prerequisite source patterns exist. Only fire each flag when its condition is met (avoids false positives for features that genuinely don't exist in the codebase). Include these in the gap analysis under a "Missing infrastructure" section, separate from per-field gaps.
 
@@ -679,7 +679,7 @@ If no test files exist for the scope, generate test stubs using framework-specif
 For each HIGH gap, output the generated test as a fenced code block inline in the report, immediately after the gap entry. Use the full gap description as the heading — never use shorthand labels like "Stub H1", "Stub H4", etc. The reader should understand what each stub tests without cross-referencing the gap list.
 
 ```
-HIGH: POST /api/transactions request field `currency` -- no test verifies this field
+HIGH: request field: currency (POST /api/transactions) -- no test verifies this field
 
 Suggested test:
 \`\`\`ruby
@@ -758,6 +758,7 @@ Score each report across 6 categories:
 - `✓` = scenario is tested
 - `✗` = scenario is missing (potential silent breakage)
 - Each entry point (endpoint, job, consumer) gets its own section
+- Fields use typed prefixes: `request field:` (user input), `request header:` (HTTP headers), `db field:` (database state), `outbound field:` (external API calls)
 - Each field lists every scenario individually so you can see exactly what's covered and what's not
 
 **One endpoint per file:** Each API endpoint, job, or consumer should have its own test file. This makes gaps immediately visible — if a file doesn't exist, the entire contract is untested.
@@ -803,68 +804,64 @@ When fintech mode is active, include this table in every per-file report. Copy t
 
 ### Test Structure Tree
 
-Visual map of contract fields and their test coverage. Each endpoint/model is a root node. Fields are branches. Every scenario is its own line — both covered (`✓`) and missing (`✗`) — so gaps are immediately visible.
+Visual map of contract fields and their test coverage. Each endpoint/model is a root node. Fields are branches with typed prefixes: `request field:` (user input), `request header:` (HTTP headers), `db field:` (pre-existing database state), `outbound field:` (external API calls), `prop:` (UI component props). Every scenario is its own line — both covered (`✓`) and missing (`✗`) — so gaps are immediately visible.
 
 ```
 POST /api/v1/transactions
-├── field: amount
-│   ├── ✓ nil → 422
-│   ├── ✓ negative → 422
+├── request field: amount
+│   ├── ✓ happy path → 201, response.amount == "100.50", db transaction.amount == 100.50
+│   ├── ✓ nil → 422, no DB write
+│   ├── ✓ negative → 422, no DB write
 │   ├── ✗ zero (boundary)
 │   ├── ✗ max (1_000_000) → should succeed
 │   ├── ✗ over max (1_000_001) → 422
-│   ├── ✗ non-numeric string
-│   ├── ✗ exceeds available balance → 422 (balance-constrained)
-│   ├── ✗ exactly equals balance → success, balance becomes zero
+│   ├── ✗ non-numeric string → 422
 │   └── ✗ precision overflow (0.123456789 when schema is decimal(20,8))
-├── field: currency
+├── request field: currency
 │   ├── ✓ nil → 422
 │   ├── ✓ invalid → 422
 │   ├── ✗ empty string
-│   ├── ✗ each valid value (USD, EUR, GBP, BTC, ETH) verified
-│   └── ✗ mismatch with wallet currency → 422
-├── field: wallet_id
+│   └── ✗ each valid value (USD, EUR, GBP, BTC, ETH) verified
+├── request field: wallet_id
 │   ├── ✓ not found → 422
-│   └── ✗ another user's wallet → 422 (IDOR)
-├── field: description — NO TESTS
+│   └── ✗ another user's wallet → 403 (IDOR)
+├── request field: description — NO TESTS
 │   ├── ✗ nil (optional, should succeed)
 │   ├── ✗ max length (500) → should succeed
 │   └── ✗ over max length (501) → 422
-├── field: category — NO TESTS
+├── request field: category — NO TESTS
 │   ├── ✗ each valid value (transfer/payment/deposit/withdrawal)
 │   ├── ✗ invalid value → 422
 │   └── ✗ nil (defaults to transfer)
-├── response body — NO ASSERTIONS
-│   └── ✗ happy path should assert all 9 response fields
-├── DB assertions
-│   └── ✗ happy path should assert Transaction created with correct values
-├── business: wallet must be active
-│   ├── ✗ suspended wallet → 422
-│   └── ✗ closed wallet → 422
-├── external: PaymentGateway.charge — NO TESTS
-│   ├── ✗ success → transaction completed
-│   ├── ✗ failure → transaction failed
-│   └── ✗ ChargeError → 422
-├── security: authentication — NO TESTS
+├── request header: Authorization — NO TESTS
 │   ├── ✗ missing auth token → 401
 │   └── ✗ expired auth token → 401
-├── security: IDOR — NO TESTS
-│   └── ✗ wallet_id belonging to another user → 422/403
-└── security: error response data — NO TESTS
-    └── ✗ 422 response does not leak balance, internal IDs, or stack trace
+├── db field: wallet.status — NO TESTS
+│   ├── ✗ suspended → 422, no DB write
+│   └── ✗ closed → 422, no DB write
+├── db field: wallet.balance — NO TESTS
+│   ├── ✗ amount > balance → 422, no DB write
+│   ├── ✗ amount == balance → success, balance becomes zero
+│   └── ✗ currency mismatch with wallet → 422
+├── db field: transaction.status — NO TESTS
+│   └── ✗ enum pending/completed/failed/reversed transitions untested
+└── outbound field: PaymentGateway.charge(amount, currency, user_id) — NO TESTS
+    ├── ✗ success → transaction completed
+    ├── ✗ failure → transaction failed
+    └── ✗ ChargeError → 422
 
 GET /api/v1/transactions
-├── field: page (pagination) — NO TESTS
+├── request field: page (pagination) — NO TESTS
 │   ├── ✗ page=0 → rejected or default
 │   ├── ✗ page=-1 → rejected
 │   └── ✗ beyond last page → empty array
-├── field: per_page (pagination) — NO TESTS
+├── request field: per_page (pagination) — NO TESTS
 │   ├── ✗ per_page=0 → rejected or default
 │   ├── ✗ very large (999999) → capped or rejected
 │   └── ✗ default 25 when omitted
-├── security: authentication — NO TESTS
+├── request header: Authorization — NO TESTS
 │   └── ✗ missing auth token → 401
-└── security: data isolation — NO TESTS
+└── db field: user scope — NO TESTS
     └── ✗ only returns current user's transactions
 
 Wallet#deposit!
@@ -881,49 +878,44 @@ Every scenario is its own line. Use `✓` for covered, `✗` for missing. Fields
 
 Every contract field from the extraction summary MUST appear in this table — API request/response fields, DB table fields, outbound API params, job payloads. If a field was extracted, it gets a row. Missing rows mean the report is incomplete. **Cross-reference Checkpoint 1:** the number of rows per contract type in this table must be consistent with the Fields Found count from Checkpoint 1. If Checkpoint 1 shows 8 DB fields extracted but the Contract Map has fewer than 8 DB rows, fields were dropped — go back and add the missing rows.
 
-| Contract | Field | Confidence | Test Group | Scenarios Covered | Gaps |
+| Type | Field | Confidence | Test Group | Scenarios Covered | Gaps |
 |---|---|---|---|---|---|
-| POST /api/transactions (request) | amount | HIGH | Yes | nil, negative | HIGH: zero, max, over-max, exceeds balance, precision overflow |
-| POST /api/transactions (request) | currency | HIGH | Yes | nil, invalid | MEDIUM: empty string, each valid value, mismatch with wallet |
-| POST /api/transactions (request) | wallet_id | HIGH | Yes | not found | HIGH: another user's wallet (IDOR) |
-| POST /api/transactions (request) | description | HIGH | No | -- | HIGH: untested (nil, max length, over-max) |
-| POST /api/transactions (request) | category | HIGH | No | -- | HIGH: untested (each value, invalid, nil default) |
-| POST /api/transactions (response) | id | HIGH | No | -- | HIGH: untested |
-| POST /api/transactions (response) | amount | HIGH | No | -- | HIGH: untested |
-| POST /api/transactions (response) | status | HIGH | No | -- | HIGH: untested |
-| Transaction (DB) | status | HIGH | No | -- | HIGH: enum pending/completed/failed/reversed untested |
-| Transaction (DB) | amount | HIGH | No | -- | HIGH: not asserted in happy path |
-| Wallet (DB) | status | HIGH | Yes | active, suspended | missing: closed |
-| Business rule | wallet active | HIGH | No | -- | HIGH: suspended, closed untested |
-| Business rule | currency match | HIGH | No | -- | HIGH: mismatch untested |
-| PaymentGateway.charge (outbound) | amount | HIGH | No | -- | HIGH: untested |
-| PaymentGateway.charge (outbound) | success/failure | HIGH | No | -- | HIGH: untested |
-| Security | auth (POST) | HIGH | No | -- | HIGH: no 401 test |
-| Security | error response data | HIGH | No | -- | HIGH: no test that 422 doesn't leak sensitive data |
-| GET /transactions (request) | page | MEDIUM | No | -- | MEDIUM: pagination untested (zero, negative, beyond last) |
-| GET /transactions (request) | per_page | MEDIUM | No | -- | MEDIUM: untested (very large, default) |
+| request field | POST /transactions: amount | HIGH | Yes | nil, negative | HIGH: zero, max, over-max, precision overflow |
+| request field | POST /transactions: currency | HIGH | Yes | nil, invalid | MEDIUM: empty string, each valid value |
+| request field | POST /transactions: wallet_id | HIGH | Yes | not found | HIGH: another user's wallet (IDOR) |
+| request field | POST /transactions: description | HIGH | No | -- | HIGH: untested (nil, max length, over-max) |
+| request field | POST /transactions: category | HIGH | No | -- | HIGH: untested (each value, invalid, nil default) |
+| request field | GET /transactions: page | MEDIUM | No | -- | MEDIUM: pagination untested (zero, negative, beyond last) |
+| request field | GET /transactions: per_page | MEDIUM | No | -- | MEDIUM: untested (very large, default) |
+| request header | Authorization (all endpoints) | HIGH | No | -- | HIGH: no 401 test |
+| db field | wallet.status | HIGH | Yes | active, suspended | missing: closed |
+| db field | wallet.balance | HIGH | No | -- | HIGH: exceeds balance, equals balance untested |
+| db field | transaction.status | HIGH | No | -- | HIGH: enum pending/completed/failed/reversed untested |
+| outbound field | PaymentGateway.charge(amount) | HIGH | No | -- | HIGH: untested |
+| outbound field | PaymentGateway.charge(currency) | HIGH | No | -- | HIGH: untested |
+| outbound field | PaymentGateway.charge → response | HIGH | No | -- | HIGH: success/failure/error paths untested |
 
 ### Gap Analysis by Priority
 
 **HIGH** (core contract fields with no tests)
-- [ ] `POST /api/transactions` response body -- no test asserts any response field
+- [ ] `request field: amount` (POST /api/transactions) -- happy path does not assert response.amount or db transaction.amount
 
   Suggested test:
   [auto-generated test stub from Step 7]
 
-- [ ] `POST /api/transactions` amount field -- no test for exceeds balance, zero, or max boundary
+- [ ] `db field: wallet.balance` (POST /api/transactions) -- no test for amount > balance or amount == balance
 
   Suggested test:
   [auto-generated test stub from Step 7]
 
-- [ ] `POST /api/transactions` security -- no test that error responses (422) don't leak balances, internal IDs, or stack traces
+- [ ] `outbound field: PaymentGateway.charge(amount, currency, user_id)` -- success, failure, and error paths all untested
 
   Suggested test:
   [auto-generated test stub from Step 7]
 
 **MEDIUM** (tested but missing scenarios)
-- [ ] `POST /api/transactions` request field `currency` -- missing empty string, each valid value
-- [ ] `GET /api/transactions` pagination -- missing page=0, page=-1, per_page=999999, beyond last page
+- [ ] `request field: currency` (POST /api/transactions) -- missing empty string, each valid value
+- [ ] `request field: page` (GET /api/transactions) -- missing page=0, page=-1, beyond last page
 
 **LOW** (rare corner cases)
 - [ ] ...
