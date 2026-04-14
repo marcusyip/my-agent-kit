@@ -304,36 +304,48 @@ Feature (top-level describe/context)
     |   - no side effects (emails, jobs, events)
     |
     +-- request field: email
-    |   +-- invalid format -> 422, no DB write, no external API call
-    |   +-- null/empty -> 422, no DB write, no external API call
-    |   +-- duplicate -> 422, no DB write, no external API call
+    |   +-- invalid format -> 422, no DB write, no outbound API call
+    |   +-- null/empty -> 422, no DB write, no outbound API call
+    |   +-- duplicate -> 422, no DB write, no outbound API call
     +-- request field: currency
-    |   +-- each valid value (USD, EUR, GBP, JPY) -> correct tax rate
+    |   +-- each valid value (USD, EUR, GBP, JPY) -> correct behavior
     |   +-- invalid value -> 422, no DB write
     |   +-- nil -> 422, no DB write
     +-- request field: amount
-    |   +-- negative -> 422, no DB write, no external API call
+    |   +-- negative -> 422, no DB write, no outbound API call
     |   +-- zero (boundary) -> success or 422 depending on rules
     |   +-- very large -> success or 422 depending on rules
     +-- request field: wallet_id
-    |   +-- not found -> 422, no external API call
+    |   +-- not found -> 422, no outbound API call
     |   +-- belongs to another user -> 403, no DB write (IDOR)
     +-- request header: Authorization
     |   +-- missing auth token -> 401
     |   +-- expired auth token -> 401
     +-- db field: wallet.status
-    |   +-- suspended -> 422, no DB write, no outbound API call, no data leak in error
-    |   +-- closed -> 422, no DB write, no outbound API call, no data leak in error
+    |   +-- suspended -> 422, no DB write, no outbound API call, no data leak
+    |   +-- closed -> 422, no DB write, no outbound API call, no data leak
     +-- db field: wallet.balance
-    |   +-- amount > balance -> 422, no DB write, no outbound API call, no data leak in error
+    |   +-- amount > balance -> 422, no DB write, no outbound API call, no data leak
     |   +-- amount == balance -> 201, db balance == 0, correct response fields
     |   +-- amount > position -> 422, no DB write (when position-constrained)
+    +-- db field: wallet.currency
+    |   +-- mismatch with request currency -> 422, no DB write
+    +-- db field: record.user_id
+    |   +-- happy path asserts correct user_id stored in DB
+    +-- db field: record.amount
+    |   +-- happy path asserts correct amount stored in DB
+    +-- outbound response field: ThirdPartyAPI.call.amount
+    |   +-- happy path asserts correct amount sent to API
+    +-- outbound response field: ThirdPartyAPI.call.currency
+    |   +-- happy path asserts correct currency sent to API
+    +-- outbound response field: ThirdPartyAPI.call.user_id
+    |   +-- happy path asserts correct user_id sent to API
     +-- outbound response field: ThirdPartyAPI.call.status_code
     |   +-- 200 -> parse body, proceed based on success?
     |   +-- 500 -> db record.status unchanged, db balance unchanged, return 503
     |   +-- timeout -> db record.status unchanged, db balance unchanged, return 503
     +-- outbound response field: ThirdPartyAPI.call.success?
-        +-- true -> 201, assert params sent (amount, currency, user_id), db record.status == completed, db balance deducted
+        +-- true -> 201, db record.status == completed, db balance deducted
         +-- false -> db record.status == failed, db balance unchanged
         +-- ChargeError raised -> 422, db record.status unchanged, db balance unchanged
 ```
@@ -841,20 +853,33 @@ POST /api/v1/transactions
 │   ├── ✗ missing auth token → 401
 │   └── ✗ expired auth token → 401
 ├── db field: wallet.status — NO TESTS
-│   ├── ✗ suspended → 422, no DB write, no outbound API call, no data leak in error
-│   └── ✗ closed → 422, no DB write, no outbound API call, no data leak in error
+│   ├── ✗ suspended → 422, no DB write, no outbound API call, no data leak
+│   └── ✗ closed → 422, no DB write, no outbound API call, no data leak
 ├── db field: wallet.balance — NO TESTS
-│   ├── ✗ amount > balance → 422, no DB write, no outbound API call, no data leak in error
-│   ├── ✗ amount == balance → 201, db balance == 0, correct response fields
-│   └── ✗ currency mismatch with wallet → 422, no DB write
+│   ├── ✗ amount > balance → 422, no DB write, no outbound API call, no data leak
+│   └── ✗ amount == balance → 201, db balance == 0, correct response fields
+├── db field: wallet.currency — NO TESTS
+│   └── ✗ mismatch with request currency → 422, no DB write
 ├── db field: transaction.status — NO TESTS
 │   └── ✗ enum pending/completed/failed/reversed transitions untested
+├── db field: transaction.user_id — NO TESTS
+│   └── ✗ happy path asserts correct user_id stored
+├── db field: transaction.wallet_id — NO TESTS
+│   └── ✗ happy path asserts correct wallet_id stored
+├── db field: transaction.amount — NO TESTS
+│   └── ✗ happy path asserts correct amount stored (decimal precision)
+├── outbound response field: PaymentGateway.charge.amount — NO TESTS
+│   └── ✗ happy path asserts correct amount sent to gateway
+├── outbound response field: PaymentGateway.charge.currency — NO TESTS
+│   └── ✗ happy path asserts correct currency sent to gateway
+├── outbound response field: PaymentGateway.charge.user_id — NO TESTS
+│   └── ✗ happy path asserts correct user_id sent to gateway
 ├── outbound response field: PaymentGateway.charge.status_code — NO TESTS
 │   ├── ✗ 200 → parse body, proceed based on success?
 │   ├── ✗ 500 → db transaction.status unchanged, db wallet.balance unchanged, return 503
 │   └── ✗ timeout → db transaction.status unchanged, db wallet.balance unchanged, return 503
 └── outbound response field: PaymentGateway.charge.success? — NO TESTS
-    ├── ✗ true → 201, assert params sent (amount, currency, user_id), db transaction.status == completed, db wallet.balance deducted
+    ├── ✗ true → 201, db transaction.status == completed, db wallet.balance deducted
     ├── ✗ false → db transaction.status == failed, db wallet.balance unchanged
     └── ✗ ChargeError raised → 422, db transaction.status unchanged, db wallet.balance unchanged
 
@@ -898,7 +923,11 @@ Every contract field from the extraction summary MUST appear in this table — A
 | request header | Authorization (all endpoints) | HIGH | No | -- | HIGH: no 401 test |
 | db field | wallet.status | HIGH | Yes | active, suspended | missing: closed |
 | db field | wallet.balance | HIGH | No | -- | HIGH: exceeds balance, equals balance untested |
+| db field | wallet.currency | HIGH | No | -- | HIGH: mismatch with request currency untested |
 | db field | transaction.status | HIGH | No | -- | HIGH: enum pending/completed/failed/reversed untested |
+| db field | transaction.user_id | HIGH | No | -- | HIGH: not asserted in happy path |
+| db field | transaction.wallet_id | HIGH | No | -- | HIGH: not asserted in happy path |
+| db field | transaction.amount | HIGH | No | -- | HIGH: not asserted in happy path (decimal precision) |
 | outbound response field | PaymentGateway.charge.amount | HIGH | No | -- | HIGH: not asserted in happy path |
 | outbound response field | PaymentGateway.charge.currency | HIGH | No | -- | HIGH: not asserted in happy path |
 | outbound response field | PaymentGateway.charge.user_id | HIGH | No | -- | HIGH: not asserted in happy path |
