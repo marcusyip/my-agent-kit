@@ -899,8 +899,11 @@ Every contract field from the extraction summary MUST appear in this table — A
 | db field | wallet.status | HIGH | Yes | active, suspended | missing: closed |
 | db field | wallet.balance | HIGH | No | -- | HIGH: exceeds balance, equals balance untested |
 | db field | transaction.status | HIGH | No | -- | HIGH: enum pending/completed/failed/reversed untested |
+| outbound response field | PaymentGateway.charge.amount | HIGH | No | -- | HIGH: not asserted in happy path |
+| outbound response field | PaymentGateway.charge.currency | HIGH | No | -- | HIGH: not asserted in happy path |
+| outbound response field | PaymentGateway.charge.user_id | HIGH | No | -- | HIGH: not asserted in happy path |
 | outbound response field | PaymentGateway.charge.status_code | HIGH | No | -- | HIGH: 200/500/timeout handling untested |
-| outbound response field | PaymentGateway.charge.success? | HIGH | No | -- | HIGH: true/false/ChargeError scenarios + params sent + DB assertions untested |
+| outbound response field | PaymentGateway.charge.success? | HIGH | No | -- | HIGH: true/false/ChargeError scenarios + DB assertions untested |
 
 ### Gap Analysis by Priority
 
