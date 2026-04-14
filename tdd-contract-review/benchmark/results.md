@@ -14,6 +14,9 @@
 | `reports-v0.14.0/` | 2026-04-12 | v0.14.0 (balance/position validation, common field type scenarios) |
 | `reports-v0.14.1/` | 2026-04-12 | v0.14.1 (re-eval with updated sample app: balance deduction, date filters, data leaks) |
 | `reports-v0.15.0/` | 2026-04-14 | v0.15.0 (enforced checkpoints: mandatory contract type table, gap analysis verification) |
+| `reports-v0.16.x/` | 2026-04-14 | v0.16.0-v0.16.1 (typed field prefixes, per-field db/outbound review, no data leak assertions) |
+| `reports-v0.17.0/` | 2026-04-14 | v0.17.0 (split SKILL.md into reference files: contract-extraction.md, test-patterns.md, report-template.md) |
+| `reports-v0.18.0/` | 2026-04-15 | v0.18.0 (multi-agent pipeline: 4 agents with focused context) |
 
 ## Version Comparison
 
@@ -148,6 +151,60 @@
 - Replaced total-count extraction gate (>10 fields) with per-type verification
 - "Not applicable" now requires rationale (same pattern as fintech dimension template)
 - SKILL.md: ~901 → ~1012 lines
+
+### v0.15.0 → v0.16.0
+- Introduced typed field prefixes: `request field:`, `request header:`, `db field:`, `outbound response field:`, `prop:`
+- Eliminated ambiguous categories: `security:`, `business:`, `external:`, `response body`, `DB assertions`
+- Every db field and outbound response field reviewed 1 by 1 (same per-field pattern as request fields)
+- Added "no data leak" assertion uniformly to all error scenarios
+- Added outbound response validation (upstream untrusted: mismatch, null, malformed scenarios)
+- Added anti-pattern gate rejecting old format labels
+- SKILL.md: ~1012 → ~1080 lines
+
+### v0.16.0 → v0.17.0
+- Split SKILL.md into focused reference files:
+  - SKILL.md: 1080 → 366 lines (workflow orchestrator)
+  - contract-extraction.md: 142 lines (Step 3 details)
+  - test-patterns.md: 220 lines (Steps 4-5 details, code examples)
+  - report-template.md: 186 lines (Step 8 details, scoring, templates)
+  - fintech-checklists.md: 163 lines (unchanged)
+- Each reference file loaded just-in-time via "Read X.md for details"
+- Regression: "no data leak" assertions dropped to 0 (model didn't read test-patterns.md deeply enough)
+
+### v0.17.0 → v0.18.0
+- Multi-agent pipeline: SKILL.md is now a 166-line orchestrator dispatching 4 agents
+  - Agent 1 (extraction): reads contract-extraction.md + fintech-checklists.md
+  - Agent 2 (test audit): reads test-patterns.md
+  - Agent 3 (gap analysis): reads fintech-checklists.md gap section + typed prefix rules
+  - Agent 4 (report writer): reads report-template.md
+- Each agent gets focused context (~200 lines) instead of 1000+ lines
+- Added Agent to allowed-tools in SKILL.md frontmatter
+- Fixed "no data leak" regression from v0.17.0 (recovered: 0 → 12 occurrences)
+
+## v0.18.0 Analysis (multi-agent pipeline)
+
+### Comparison: monolithic vs split vs multi-agent
+
+| Metric | v0.16.1 (monolithic) | v0.17.0 (split) | v0.18.0 (multi-agent) |
+|---|---|---|---|
+| SKILL.md lines | 1080 | 366 | **166** |
+| Checkpoints 1 & 2 | Present | Present | **Present** |
+| Typed prefixes | 100% (0 old) | 99% (1 old) | **100% (0 old)** |
+| "No data leak" | 23 | 0 (regression) | **12 (recovered)** |
+| DB fields extracted | 12 | 12 | **18** |
+| Outbound API extracted | 5 | 5 | **5** |
+| Report files | 3 | 3 | **3** |
+| HIGH gaps | 28 | 28 | **28** |
+| Data leak bugs | 2 | 2 | **2** |
+| Old format labels | 0 | 1 | **0** |
+
+### What the multi-agent pipeline fixed (vs v0.17.0 split)
+- **"No data leak" recovered** — 0 → 12. Agent 3 (gap analyzer) got assertion rules as primary context, not buried in 1000 lines
+- **100% typed prefixes** — zero old format labels. Each agent got the anti-pattern list as focused instructions
+- **DB extraction improved** — 18 fields vs 12. Agent 1 (extractor) had only extraction instructions, no distractions
+
+### Architecture insight
+The fundamental problem was context competition: a 1000-line SKILL.md forces the model to make tradeoffs about what to follow closely. Splitting into reference files (v0.17.0) reduced the orchestrator but the model still needed to read everything into one context. The multi-agent pipeline (v0.18.0) gives each agent ~200 lines of focused instructions. No agent makes tradeoffs because no agent is overloaded.
 
 ## v0.15.0 Analysis
 
