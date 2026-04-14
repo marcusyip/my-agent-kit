@@ -275,7 +275,7 @@ Flag test files that contain multiple endpoints as an anti-pattern.
 
 #### Test Sessions Pattern
 
-Each endpoint test file follows this session structure:
+Each endpoint test file follows this session structure. Every field in section 2 MUST use a typed prefix — `request field:`, `request header:`, `db field:`, `outbound response field:`, or `prop:`. Never use bare `field:` or `security:` or `business:` labels.
 
 ```
 Feature (top-level describe/context)
@@ -907,9 +907,22 @@ Wallet#deposit!
 
 Every scenario is its own line. Use `✓` for covered, `✗` for missing. Fields with no tests at all get a `— NO TESTS` label on the field line.
 
+**GATE — Typed Prefix Format:** Every field line in the Test Structure Tree MUST start with one of these typed prefixes: `request field:`, `request header:`, `db field:`, `outbound response field:`, `prop:`. Do NOT use any of these old formats:
+- ~~`field: X (request param)`~~ → use `request field: X`
+- ~~`field: X (DB data state)`~~ → use `db field: X`
+- ~~`security: authentication`~~ → use `request header: Authorization`
+- ~~`security: IDOR`~~ → scenario under `request field:` for the resource ID
+- ~~`security: error response data`~~ → "no data leak" assertion on each error scenario
+- ~~`business: rule`~~ → use `db field:` for the relevant database state
+- ~~`external: API.call`~~ → use `outbound response field: API.field`
+- ~~`response body`~~ → assertions within each field's happy path
+- ~~`DB assertions`~~ → assertions within each field's happy path
+
+If any field in your tree uses an old format, rewrite it with the correct typed prefix before proceeding.
+
 ### Contract Map
 
-Every contract field from the extraction summary MUST appear in this table — API request/response fields, DB table fields, outbound API params, job payloads. If a field was extracted, it gets a row. Missing rows mean the report is incomplete. **Cross-reference Checkpoint 1:** the number of rows per contract type in this table must be consistent with the Fields Found count from Checkpoint 1. If Checkpoint 1 shows 8 DB fields extracted but the Contract Map has fewer than 8 DB rows, fields were dropped — go back and add the missing rows.
+Every contract field from the extraction summary MUST appear in this table — each field gets its own row, reviewed 1 by 1. The Type column MUST use the same typed prefixes as the Test Structure Tree: `request field`, `request header`, `db field`, `outbound response field`, `prop`. Do not use `Security`, `Business rule`, or generic labels. **Cross-reference Checkpoint 1:** the number of rows per contract type in this table must be consistent with the Fields Found count from Checkpoint 1. If Checkpoint 1 shows 8 DB fields extracted but the Contract Map has fewer than 8 DB rows, fields were dropped — go back and add the missing rows.
 
 | Type | Field | Confidence | Test Group | Scenarios Covered | Gaps |
 |---|---|---|---|---|---|
