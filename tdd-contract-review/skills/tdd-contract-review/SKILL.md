@@ -304,20 +304,20 @@ Feature (top-level describe/context)
     |   - no side effects (emails, jobs, events)
     |
     +-- request field: email
-    |   +-- invalid format -> 422, no DB write, no outbound API call
-    |   +-- null/empty -> 422, no DB write, no outbound API call
-    |   +-- duplicate -> 422, no DB write, no outbound API call
+    |   +-- invalid format -> 422, no DB write, no outbound API call, no data leak
+    |   +-- null/empty -> 422, no DB write, no outbound API call, no data leak
+    |   +-- duplicate -> 422, no DB write, no outbound API call, no data leak
     +-- request field: currency
     |   +-- each valid value (USD, EUR, GBP, JPY) -> correct behavior
-    |   +-- invalid value -> 422, no DB write
-    |   +-- nil -> 422, no DB write
+    |   +-- invalid value -> 422, no DB write, no data leak
+    |   +-- nil -> 422, no DB write, no data leak
     +-- request field: amount
-    |   +-- negative -> 422, no DB write, no outbound API call
+    |   +-- negative -> 422, no DB write, no outbound API call, no data leak
     |   +-- zero (boundary) -> success or 422 depending on rules
     |   +-- very large -> success or 422 depending on rules
     +-- request field: wallet_id
-    |   +-- not found -> 422, no outbound API call
-    |   +-- belongs to another user -> 403, no DB write (IDOR)
+    |   +-- not found -> 422, no outbound API call, no data leak
+    |   +-- belongs to another user -> 403, no DB write, no data leak (IDOR)
     +-- request header: Authorization
     |   +-- missing auth token -> 401
     |   +-- expired auth token -> 401
@@ -826,28 +826,28 @@ Visual map of contract fields and their test coverage. Each endpoint/model is a 
 POST /api/v1/transactions
 ├── request field: amount
 │   ├── ✓ happy path → 201, response.amount == "100.50", db transaction.amount == 100.50
-│   ├── ✓ nil → 422, no DB write
-│   ├── ✓ negative → 422, no DB write
+│   ├── ✓ nil → 422, no DB write, no data leak
+│   ├── ✓ negative → 422, no DB write, no data leak
 │   ├── ✗ zero (boundary)
 │   ├── ✗ max (1_000_000) → should succeed
-│   ├── ✗ over max (1_000_001) → 422
-│   ├── ✗ non-numeric string → 422
+│   ├── ✗ over max (1_000_001) → 422, no data leak
+│   ├── ✗ non-numeric string → 422, no data leak
 │   └── ✗ precision overflow (0.123456789 when schema is decimal(20,8))
 ├── request field: currency
-│   ├── ✓ nil → 422
-│   ├── ✓ invalid → 422
+│   ├── ✓ nil → 422, no data leak
+│   ├── ✓ invalid → 422, no data leak
 │   ├── ✗ empty string
 │   └── ✗ each valid value (USD, EUR, GBP, BTC, ETH) verified
 ├── request field: wallet_id
-│   ├── ✓ not found → 422
-│   └── ✗ another user's wallet → 403 (IDOR)
+│   ├── ✓ not found → 422, no data leak
+│   └── ✗ another user's wallet → 403, no data leak (IDOR)
 ├── request field: description — NO TESTS
 │   ├── ✗ nil (optional, should succeed)
 │   ├── ✗ max length (500) → should succeed
-│   └── ✗ over max length (501) → 422
+│   └── ✗ over max length (501) → 422, no data leak
 ├── request field: category — NO TESTS
 │   ├── ✗ each valid value (transfer/payment/deposit/withdrawal)
-│   ├── ✗ invalid value → 422
+│   ├── ✗ invalid value → 422, no data leak
 │   └── ✗ nil (defaults to transfer)
 ├── request header: Authorization — NO TESTS
 │   ├── ✗ missing auth token → 401
