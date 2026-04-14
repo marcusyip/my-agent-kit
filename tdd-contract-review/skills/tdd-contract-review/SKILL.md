@@ -109,11 +109,11 @@ How to extract per framework:
 Jobs and message consumers are contract boundaries just like API endpoints. They have input payloads, expected behavior, side effects, and error paths. Apply the same one-file-per-job convention and sessions pattern.
 
 **API Calls Contract (outbound service calls):**
-- External service name and request params
-- Expected response shape
-- Error handling for external failures
+- External service name and request params (fields sent: amount, currency, user_id, etc.)
+- Response fields received (fields returned: success?, transaction_id, status_code, amount, currency — upstream is untrusted, each field needs validation)
+- Error handling for external failures (timeout, 500, malformed response)
 
-How to extract: read HTTP client calls (`HTTParty`, `Faraday`, `net/http`, `axios`, `fetch`, `requests`, `httpx`), identify request params and expected response shapes.
+How to extract: read HTTP client calls (`HTTParty`, `Faraday`, `net/http`, `axios`, `fetch`, `requests`, `httpx`), identify request params sent AND response fields parsed. Both are contract fields — request params are assertions, response fields need validation scenarios (mismatch, null, malformed).
 
 **UI Props Contract (components):**
 - Props: name, type, required/optional, default values
@@ -150,7 +150,7 @@ Include this table in the Contract Extraction Summary. Fill in every row — no 
 | 2 | Idempotency | Extracted / Not detected | [list fields or "—"] | |
 | 3 | Transaction State Machine | Extracted / Not detected | [list fields or "—"] | |
 | 4 | Balance & Ledger Integrity | Extracted / Not detected | [list fields or "—"] | |
-| 5 | External Payment Integrations | Extracted / Not detected / Not applicable | [list fields or "—"] | [if N/A: rationale] |
+| 5 | External Payment Integrations + Response Validation | Extracted / Not detected / Not applicable | [list fields or "—"] | [if N/A: rationale] |
 | 6 | Regulatory & Compliance | Extracted / Not detected | [list fields or "—"] | |
 | 7 | Concurrency & Data Integrity | Extracted / Not detected | [list fields or "—"] | |
 | 8 | Security & Access Control | Extracted / Not detected | [list fields or "—"] | |
@@ -218,13 +218,18 @@ DB Contract:
 
 Outbound API:
   PaymentGateway.charge (when category == 'payment'):
-    - amount (decimal) [HIGH confidence]
-    - currency (string) [HIGH confidence]
-    - user_id (integer) [HIGH confidence]
-    - Expected: { success?: boolean }
-    - On success: status → completed [HIGH confidence]
-    - On failure: status → failed [HIGH confidence]
-    - On ChargeError: returns 422 [HIGH confidence]
+    Request params (assert correct values sent):
+      - amount (decimal) [HIGH confidence]
+      - currency (string) [HIGH confidence]
+      - user_id (integer) [HIGH confidence]
+    Response fields (upstream untrusted — validate each):
+      - success? (boolean) [HIGH confidence]
+      - transaction_id (string, nullable) [MEDIUM confidence]
+      - status_code (HTTP status) [HIGH confidence]
+    Response handling:
+      - On success: status → completed [HIGH confidence]
+      - On failure: status → failed [HIGH confidence]
+      - On ChargeError: returns 422 [HIGH confidence]
 ============================
 ```
 
@@ -236,7 +241,7 @@ After extracting all contracts, fill in this table. Every row is mandatory. Do n
 |---|---------------|--------|-------------|-------------------|
 | 1 | API (inbound) | [status] | [count] | [files] |
 | 2 | DB (models/schema) | [status] | [count] | [files] |
-| 3 | Outbound API calls | [status] | [count] | [files] |
+| 3 | Outbound API calls (request params + response fields) | [status] | [count] | [files] |
 | 4 | Jobs/consumers | [status] | [count] | [files] |
 | 5 | UI props | [status] | [count] | [files] |
 
@@ -483,7 +488,7 @@ func TestCreateTransaction(t *testing.T) {
 
 - **Test foundation** with defaults means each test case only overrides what it tests -- gaps per field become immediately visible
 - **Happy path** asserts every field's expected value in the success case (response fields, DB state, outbound API params). This establishes the baseline so each scenario in section 2 only overrides one field and checks the delta
-- **Scenarios per field** uses typed prefixes to make contract types explicit: `request field:` (user input validation), `request header:` (HTTP headers like auth), `db field:` (pre-existing database state), `outbound response field:` (handling external API responses + asserting outbound request params + DB state after), and `prop:` (UI component props). This makes gap analysis trivial -- if a field exists but has no test group, that's a gap. The prefix tells you which contract type it belongs to
+- **Scenarios per field** uses typed prefixes to make contract types explicit: `request field:` (user input validation), `request header:` (HTTP headers like auth), `db field:` (pre-existing database state), `outbound response field:` (handling external API responses + asserting outbound request params + DB state after + validating upstream response fields are correct: mismatch, null, malformed), and `prop:` (UI component props). This makes gap analysis trivial -- if a field exists but has no test group, that's a gap. The prefix tells you which contract type it belongs to
 
 #### Only review contract boundary test files
 
@@ -568,7 +573,7 @@ The primary output. For every contract field discovered in Step 3, check:
    - `request field:` — null/nil, empty, zero, boundary, invalid type/format, very large, permission denied
    - `request header:` — missing, expired, malformed
    - `db field:` — record not exists, belongs to another user, suspended/inactive, insufficient balance, already exists (duplicate)
-   - `outbound response field:` — success, error, timeout + assert outbound request params + DB state after change
+   - `outbound response field:` — success, error, timeout, mismatch (amount/currency differs from sent), null/missing, malformed response + assert outbound request params + DB state after change
 
 Assign priority to each gap:
 - **HIGH**: Core contract field with no tests at all
