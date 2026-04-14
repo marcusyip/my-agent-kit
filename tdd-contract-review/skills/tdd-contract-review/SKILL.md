@@ -328,10 +328,8 @@ Feature (top-level describe/context)
     |   +-- amount > balance -> 422, no DB write (when balance-constrained)
     |   +-- amount == balance -> success, balance becomes zero
     |   +-- amount > position -> 422 (when position-constrained, e.g. sell qty > held qty)
-    +-- outbound request field: ThirdPartyAPI.call(amount, currency, user_id)
-    |   +-- happy path asserts correct params sent to API
     +-- outbound response field: ThirdPartyAPI.call
-        +-- success -> db record.status == completed
+        +-- success -> assert params sent (amount, currency, user_id), db record.status == completed
         +-- error response -> 422, db record.status unchanged
         +-- timeout -> 503, db record.status unchanged
 ```
@@ -463,7 +461,7 @@ func TestCreateTransaction(t *testing.T) {
 
 - **Test foundation** with defaults means each test case only overrides what it tests -- gaps per field become immediately visible
 - **Happy path** asserts every field's expected value in the success case (response fields, DB state, outbound API params). This establishes the baseline so each scenario in section 2 only overrides one field and checks the delta
-- **Scenarios per field** uses typed prefixes to make contract types explicit: `request field:` (user input validation), `request header:` (HTTP headers like auth), `db field:` (pre-existing database state), `outbound request field:` (params sent to external APIs), `outbound response field:` (handling external API responses + asserting DB state after), and `prop:` (UI component props). This makes gap analysis trivial -- if a field exists but has no test group, that's a gap. The prefix tells you which contract type it belongs to
+- **Scenarios per field** uses typed prefixes to make contract types explicit: `request field:` (user input validation), `request header:` (HTTP headers like auth), `db field:` (pre-existing database state), `outbound response field:` (handling external API responses + asserting outbound request params + DB state after), and `prop:` (UI component props). This makes gap analysis trivial -- if a field exists but has no test group, that's a gap. The prefix tells you which contract type it belongs to
 
 #### Only review contract boundary test files
 
@@ -548,8 +546,7 @@ The primary output. For every contract field discovered in Step 3, check:
    - `request field:` — null/nil, empty, zero, boundary, invalid type/format, very large, permission denied
    - `request header:` — missing, expired, malformed
    - `db field:` — record not exists, belongs to another user, suspended/inactive, insufficient balance, already exists (duplicate)
-   - `outbound request field:` — correct params sent to external API
-   - `outbound response field:` — success, error, timeout + assert DB state after change
+   - `outbound response field:` — success, error, timeout + assert outbound request params + DB state after change
 
 Assign priority to each gap:
 - **HIGH**: Core contract field with no tests at all
@@ -761,7 +758,7 @@ Score each report across 6 categories:
 - `✓` = scenario is tested
 - `✗` = scenario is missing (potential silent breakage)
 - Each entry point (endpoint, job, consumer) gets its own section
-- Fields use typed prefixes: `request field:` (user input), `request header:` (HTTP headers), `db field:` (database state), `outbound request field:` (params sent), `outbound response field:` (response handling + DB assertions)
+- Fields use typed prefixes: `request field:` (user input), `request header:` (HTTP headers), `db field:` (database state), `outbound response field:` (response handling + outbound params + DB assertions)
 - Each field lists every scenario individually so you can see exactly what's covered and what's not
 
 **One endpoint per file:** Each API endpoint, job, or consumer should have its own test file. This makes gaps immediately visible — if a file doesn't exist, the entire contract is untested.
@@ -807,7 +804,7 @@ When fintech mode is active, include this table in every per-file report. Copy t
 
 ### Test Structure Tree
 
-Visual map of contract fields and their test coverage. Each endpoint/model is a root node. Fields are branches with typed prefixes: `request field:` (user input), `request header:` (HTTP headers), `db field:` (pre-existing database state), `outbound request field:` (params sent to external APIs), `outbound response field:` (response handling + DB state assertions), `prop:` (UI component props). Every scenario is its own line — both covered (`✓`) and missing (`✗`) — so gaps are immediately visible.
+Visual map of contract fields and their test coverage. Each endpoint/model is a root node. Fields are branches with typed prefixes: `request field:` (user input), `request header:` (HTTP headers), `db field:` (pre-existing database state), `outbound response field:` (external API response handling + outbound request params + DB state assertions), `prop:` (UI component props). Every scenario is its own line — both covered (`✓`) and missing (`✗`) — so gaps are immediately visible.
 
 ```
 POST /api/v1/transactions
@@ -848,10 +845,8 @@ POST /api/v1/transactions
 │   └── ✗ currency mismatch with wallet → 422
 ├── db field: transaction.status — NO TESTS
 │   └── ✗ enum pending/completed/failed/reversed transitions untested
-├── outbound request field: PaymentGateway.charge(amount, currency, user_id) — NO TESTS
-│   └── ✗ happy path asserts correct params sent (amount, currency, user_id)
 └── outbound response field: PaymentGateway.charge — NO TESTS
-    ├── ✗ success → db transaction.status == completed, db wallet.balance deducted
+    ├── ✗ success → assert params sent (amount, currency, user_id), db transaction.status == completed, db wallet.balance deducted
     ├── ✗ failure → db transaction.status == failed, db wallet.balance unchanged
     └── ✗ ChargeError → 422, no DB status change
 
@@ -896,9 +891,7 @@ Every contract field from the extraction summary MUST appear in this table — A
 | db field | wallet.status | HIGH | Yes | active, suspended | missing: closed |
 | db field | wallet.balance | HIGH | No | -- | HIGH: exceeds balance, equals balance untested |
 | db field | transaction.status | HIGH | No | -- | HIGH: enum pending/completed/failed/reversed untested |
-| outbound request field | PaymentGateway.charge(amount) | HIGH | No | -- | HIGH: not asserted in happy path |
-| outbound request field | PaymentGateway.charge(currency) | HIGH | No | -- | HIGH: not asserted in happy path |
-| outbound response field | PaymentGateway.charge → success | HIGH | No | -- | HIGH: db transaction.status + wallet.balance untested |
+| outbound response field | PaymentGateway.charge → success | HIGH | No | -- | HIGH: params sent + db transaction.status + wallet.balance untested |
 | outbound response field | PaymentGateway.charge → failure | HIGH | No | -- | HIGH: db transaction.status untested |
 | outbound response field | PaymentGateway.charge → ChargeError | HIGH | No | -- | HIGH: 422 + no DB change untested |
 
@@ -915,8 +908,7 @@ Every contract field from the extraction summary MUST appear in this table — A
   Suggested test:
   [auto-generated test stub from Step 7]
 
-- [ ] `outbound request field: PaymentGateway.charge(amount, currency, user_id)` -- happy path does not assert params sent
-- [ ] `outbound response field: PaymentGateway.charge` -- success/failure/error paths untested, no DB assertions after response
+- [ ] `outbound response field: PaymentGateway.charge` -- success/failure/error paths untested, no outbound param assertions, no DB assertions after response
 
   Suggested test:
   [auto-generated test stub from Step 7]
