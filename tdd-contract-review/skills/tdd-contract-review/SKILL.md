@@ -336,10 +336,16 @@ Feature (top-level describe/context)
     |   +-- happy path asserts correct amount stored in DB
     +-- outbound response field: ThirdPartyAPI.call.amount
     |   +-- happy path asserts correct amount sent to API
+    |   +-- response amount differs from sent amount -> reject/flag/reconcile
+    |   +-- response amount is null -> handle error
     +-- outbound response field: ThirdPartyAPI.call.currency
     |   +-- happy path asserts correct currency sent to API
+    |   +-- response currency differs from sent currency -> reject/flag
     +-- outbound response field: ThirdPartyAPI.call.user_id
     |   +-- happy path asserts correct user_id sent to API
+    +-- outbound response field: ThirdPartyAPI.call.transaction_id
+    |   +-- present -> store for reconciliation
+    |   +-- null/empty -> flag, cannot reconcile later
     +-- outbound response field: ThirdPartyAPI.call.status_code
     |   +-- 200 -> parse body, proceed based on success?
     |   +-- 500 -> db record.status unchanged, db balance unchanged, return 503
@@ -641,12 +647,18 @@ For each category below, produce gap entries in the report. The top scenarios (m
 - Double-submit: two rapid identical POSTs must not create duplicate financial records
 - If the code uses `with_lock`, `FOR UPDATE`, or optimistic locking: flag that no test verifies the lock actually prevents concurrent corruption
 
-**6. Security & access control:**
+**6. Outbound response validation** (upstream is untrusted — treat response fields like user input):
+- Amount mismatch: gateway charged a different amount than requested → must detect and reject/flag/reconcile, not silently accept
+- Currency mismatch: gateway responded with a different currency → must detect and reject/flag
+- Missing transaction_id: gateway returned null/empty external reference → flag, cannot reconcile later
+- Each outbound response field should have scenarios for: correct value (happy path assertion), wrong value (mismatch), and null/missing
+
+**7. Security & access control:**
 - Authentication: at least one `request header: Authorization` entry per endpoint with missing/expired token → 401
 - IDOR: at least one test per `request field:` that accepts a resource ID — access other user's resource → 403/404 (scenario under the resource ID field)
 - Sensitive data in error responses: for each error scenario, assert the response body does not leak balances, account numbers, internal user IDs, SQL errors, or stack traces. Error body should contain only an error code and generic message. Flag if no error test asserts response body content
 
-**7. Absence flagging** — flag missing infrastructure when the prerequisite source patterns exist. Only fire each flag when its condition is met (avoids false positives for features that genuinely don't exist in the codebase). Include these in the gap analysis under a "Missing infrastructure" section, separate from per-field gaps.
+**8. Absence flagging** — flag missing infrastructure when the prerequisite source patterns exist. Only fire each flag when its condition is met (avoids false positives for features that genuinely don't exist in the codebase). Include these in the gap analysis under a "Missing infrastructure" section, separate from per-field gaps.
 
 **HIGH priority:**
 - No idempotency key on mutating endpoints → flag when mutating financial endpoints exist ("no idempotency key on mutating endpoints — duplicate requests can create duplicate financial records")
@@ -869,11 +881,17 @@ POST /api/v1/transactions
 ├── db field: transaction.amount — NO TESTS
 │   └── ✗ happy path asserts correct amount stored (decimal precision)
 ├── outbound response field: PaymentGateway.charge.amount — NO TESTS
-│   └── ✗ happy path asserts correct amount sent to gateway
+│   ├── ✗ happy path asserts correct amount sent to gateway
+│   ├── ✗ response amount differs from sent amount → reject/flag/reconcile
+│   └── ✗ response amount is null → handle error
 ├── outbound response field: PaymentGateway.charge.currency — NO TESTS
-│   └── ✗ happy path asserts correct currency sent to gateway
+│   ├── ✗ happy path asserts correct currency sent to gateway
+│   └── ✗ response currency differs from sent currency → reject/flag
 ├── outbound response field: PaymentGateway.charge.user_id — NO TESTS
 │   └── ✗ happy path asserts correct user_id sent to gateway
+├── outbound response field: PaymentGateway.charge.transaction_id — NO TESTS
+│   ├── ✗ present → store for reconciliation
+│   └── ✗ null/empty → flag, cannot reconcile later
 ├── outbound response field: PaymentGateway.charge.status_code — NO TESTS
 │   ├── ✗ 200 → parse body, proceed based on success?
 │   ├── ✗ 500 → db transaction.status unchanged, db wallet.balance unchanged, return 503

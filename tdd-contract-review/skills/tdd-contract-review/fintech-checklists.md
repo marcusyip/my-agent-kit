@@ -113,6 +113,14 @@ For each field type below, check every scenario. These are HIGH priority by defa
 - Position-balance coupling: if closing a position credits cash, assert both position closed AND balance increased by correct amount in a single test
 - Zero position cleanup: after position reaches zero, is the record marked closed/deleted? Test that subsequent operations on a zero position are rejected
 
+### For outbound response fields (upstream is untrusted)
+- Amount mismatch: gateway charged/returned a different amount than requested → must detect and reject/flag/reconcile. Test: mock gateway returning amount + 0.01, assert system catches the discrepancy
+- Currency mismatch: gateway responded with a different currency than sent → must detect and reject/flag. Test: send USD, gateway returns EUR
+- Missing external reference: gateway returned null/empty transaction_id or reference → flag as reconciliation risk. Test: mock gateway returning success with no transaction_id
+- Unexpected status: gateway returned a status value not in the expected set → must not silently accept. Test: mock gateway returning `{ status: "unknown_value" }`
+- Malformed response: gateway returned invalid JSON, truncated body, or unexpected structure → must not crash. Test: mock gateway returning `{` or `<html>500</html>`
+- Each outbound response field (amount, currency, transaction_id, status) should have: correct value (assertion in happy path), wrong value (mismatch scenario), null/missing (error handling)
+
 ### For webhook/callback endpoints
 - Signature verification: invalid signature must be rejected (401/403)
 - Missing signature header: must be rejected
