@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash]
-version: 0.14.0
+version: 0.15.0
 ---
 
 # TDD Contract Review
@@ -228,7 +228,24 @@ Outbound API:
 ============================
 ```
 
-**GATE — Contract Extraction Completeness:** Before proceeding, count the total contract fields extracted. A typical single-endpoint Rails controller produces 15-30 fields (request params + response fields + status codes + DB columns + enum values + outbound API params). If you extracted fewer than 10 contract fields total, re-read the source files — you likely missed DB schema fields, enum values, or response shape fields. Do not proceed until the extraction is complete.
+#### Checkpoint 1 — Contract Type Verification (mandatory)
+
+After extracting all contracts, fill in this table. Every row is mandatory. Do not skip any row.
+
+| # | Contract Type | Status | Fields Found | Source Files Read |
+|---|---------------|--------|-------------|-------------------|
+| 1 | API (inbound) | [status] | [count] | [files] |
+| 2 | DB (models/schema) | [status] | [count] | [files] |
+| 3 | Outbound API calls | [status] | [count] | [files] |
+| 4 | Jobs/consumers | [status] | [count] | [files] |
+| 5 | UI props | [status] | [count] | [files] |
+
+Status rules (three-state enum, same as fintech dimensions):
+- **Extracted**: Fields found in source code. List count and source files read.
+- **Not detected**: Source files were read but no contracts of this type were found. The dimension is still relevant. Write: "No fields detected — will be flagged in gap analysis if applicable."
+- **Not applicable**: The codebase genuinely does not have this contract type (e.g., no background jobs, no UI). Must include rationale naming which files were checked (e.g., "Not applicable — searched app/jobs/, app/workers/, no job files found").
+
+**GATE:** For each row with Status = "Extracted", Fields Found must be > 0. If any "Extracted" row shows 0, re-read the listed source files. A typical single-endpoint Rails controller produces 15-30 fields across all contract types. If total fields across all types is fewer than 10, re-read source files. Do not proceed to Step 4 until every row is filled and verified.
 
 ### Step 4: Test Structure Audit
 
@@ -627,6 +644,20 @@ For each category below, produce gap entries in the report. The top scenarios (m
 - No webhook signature verification or payment gateway error handling → flag when payment gateway code is detected ("no webhook signature verification or payment gateway error handling detected — external payment events can be spoofed or silently lost")
 - No KYC/AML fields, transaction limits, or compliance validations → flag when financial user accounts or transactions exist ("no KYC/AML fields, transaction limits, or compliance validations detected — financial operations may lack regulatory safeguards")
 
+#### Checkpoint 2 — Gap Analysis Verification (mandatory)
+
+After completing gap analysis (including fintech if applicable), fill in this table. Every contract type from Checkpoint 1 with Status "Extracted" or "Not detected" must have a corresponding row here.
+
+| # | Contract Type | Gaps Checked? | HIGH Gaps | MEDIUM Gaps | LOW Gaps |
+|---|---------------|---------------|-----------|-------------|----------|
+| 1 | API (inbound) | [Yes/No] | [count] | [count] | [count] |
+| 2 | DB (models/schema) | [Yes/No] | [count] | [count] | [count] |
+| 3 | Outbound API calls | [Yes/No] | [count] | [count] | [count] |
+| 4 | Jobs/consumers | [Yes/No] | [count] | [count] | [count] |
+| 5 | UI props | [Yes/No] | [count] | [count] | [count] |
+
+**GATE:** Every contract type from Checkpoint 1 with Status "Extracted" must show "Yes" in Gaps Checked. If any shows "No", go back and analyze gaps for that contract type before proceeding. Types marked "Not applicable" in Checkpoint 1 may be omitted from this table.
+
 ### Step 7: Auto-Generate Test Stubs
 
 For each HIGH-priority gap from Step 6, generate test code that follows the project's existing test patterns.
@@ -848,7 +879,7 @@ Every scenario is its own line. Use `✓` for covered, `✗` for missing. Fields
 
 ### Contract Map
 
-Every contract field from the extraction summary MUST appear in this table — API request/response fields, DB table fields, outbound API params, job payloads. If a field was extracted, it gets a row. Missing rows mean the report is incomplete.
+Every contract field from the extraction summary MUST appear in this table — API request/response fields, DB table fields, outbound API params, job payloads. If a field was extracted, it gets a row. Missing rows mean the report is incomplete. **Cross-reference Checkpoint 1:** the number of rows per contract type in this table must be consistent with the Fields Found count from Checkpoint 1. If Checkpoint 1 shows 8 DB fields extracted but the Contract Map has fewer than 8 DB rows, fields were dropped — go back and add the missing rows.
 
 | Contract | Field | Confidence | Test Group | Scenarios Covered | Gaps |
 |---|---|---|---|---|---|

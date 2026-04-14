@@ -13,77 +13,81 @@
 | `reports-v0.12.0/` | 2026-04-12 | v0.12.0 (report quality: full contract map, readable stubs, strict summary) |
 | `reports-v0.14.0/` | 2026-04-12 | v0.14.0 (balance/position validation, common field type scenarios) |
 | `reports-v0.14.1/` | 2026-04-12 | v0.14.1 (re-eval with updated sample app: balance deduction, date filters, data leaks) |
+| `reports-v0.15.0/` | 2026-04-14 | v0.15.0 (enforced checkpoints: mandatory contract type table, gap analysis verification) |
 
 ## Version Comparison
 
-| Metric | Baseline (no skill) | v0.1.0 | v0.2.0 | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 |
-|---|---|---|---|---|---|---|---|---|---|
-| Duration | 88s | 168s | 171s | 125s | 336s | 406s | 440s | ~450s | ~344s |
-| Cost | $0.39 | $0.58 | $0.60 | $0.43 | ~$0.70 | ~$0.85 | ~$0.90 | ~$0.95 | ~$0.85 |
-| Output tokens | 3,301 | 10,907 | 11,723 | 8,069 | ~2,000 (summary only) | ~46,000 (full reports) | ~55,000 | ~55,000 | ~64,000 |
-| Known gaps found | 12/13 | 12/13 | 13/13 | 13/13 | 7/13 | 13/13 | 13/13 | 13/13 | **13/13** |
-| Fintech gaps found | N/A | N/A | N/A | N/A | 8/18 | 14/18 | 18/18 | 18/18 | **17/18** |
-| `reversed` enum found | No | No | Yes | Yes | No | Yes | Yes | Yes | **Yes** |
-| Test Structure Tree | No | No | No | Yes | No (not written) | Yes | Yes | Yes | **Yes** |
-| Report files written | No | Yes | Yes | Yes | No (regression) | Yes (3 files) | Yes (3 files) | Yes (3 files) | **Yes (3 files)** |
-| Fintech mode detected | N/A | N/A | N/A | N/A | Yes | Yes | Yes | Yes | **Yes** |
-| Scoring anchors | No | No | Yes | Yes | Summary scores only | Yes | Yes | Yes | **Yes** |
-| Auto-generated stubs | No | Yes | Yes | Yes | No | Yes | Yes | Yes | **Yes** |
-| Missing infra flagged | No | No | No | No | No | No | Yes | Yes | **Yes** |
-| DB fields in contract map | No | No | No | No | No | Partial | Partial | Full | **Full** |
-| Outbound API in contract map | No | No | No | No | No | Partial | Partial | Full | **Full** |
-| Stub labels readable | N/A | N/A | N/A | N/A | N/A | No | No | Yes | **Yes** |
-| Summary = strict rollup | N/A | N/A | N/A | N/A | N/A | No | No | Yes | **Yes** |
-| Balance validation on amount | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **No** |
-| Common field type scenarios | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Partial** |
+| Metric | Baseline (no skill) | v0.1.0 | v0.2.0 | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 | v0.15.0 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Duration | 88s | 168s | 171s | 125s | 336s | 406s | 440s | ~450s | ~344s | **~418s** |
+| Cost | $0.39 | $0.58 | $0.60 | $0.43 | ~$0.70 | ~$0.85 | ~$0.90 | ~$0.95 | ~$0.85 | **~$0.95** |
+| Output tokens | 3,301 | 10,907 | 11,723 | 8,069 | ~2,000 (summary only) | ~46,000 (full reports) | ~55,000 | ~55,000 | ~64,000 | **~68,000** |
+| Known gaps found | 12/13 | 12/13 | 13/13 | 13/13 | 7/13 | 13/13 | 13/13 | 13/13 | **13/13** | **17/17** |
+| Fintech gaps found | N/A | N/A | N/A | N/A | 8/18 | 14/18 | 18/18 | 18/18 | **17/18** | **21/21** |
+| `reversed` enum found | No | No | Yes | Yes | No | Yes | Yes | Yes | **Yes** | **Yes** |
+| Test Structure Tree | No | No | No | Yes | No (not written) | Yes | Yes | Yes | **Yes** | **Yes** |
+| Report files written | No | Yes | Yes | Yes | No (regression) | Yes (3 files) | Yes (3 files) | Yes (3 files) | **Yes (3 files)** | **Yes (3 files)** |
+| Fintech mode detected | N/A | N/A | N/A | N/A | Yes | Yes | Yes | Yes | **Yes** | **Yes** |
+| Scoring anchors | No | No | Yes | Yes | Summary scores only | Yes | Yes | Yes | **Yes** | **Yes** |
+| Auto-generated stubs | No | Yes | Yes | Yes | No | Yes | Yes | Yes | **Yes** | **Yes** |
+| Missing infra flagged | No | No | No | No | No | No | Yes | Yes | **Yes** | **Yes** |
+| DB fields in contract map | No | No | No | No | No | Partial | Partial | Full | **Full** | **Full** |
+| Outbound API in contract map | No | No | No | No | No | Partial | Partial | Full | **Full** | **Full** |
+| Stub labels readable | N/A | N/A | N/A | N/A | N/A | No | No | Yes | **Yes** | **Yes** |
+| Summary = strict rollup | N/A | N/A | N/A | N/A | N/A | No | No | Yes | **Yes** | **Yes** |
+| Balance validation on amount | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **No** | **Yes** |
+| Common field type scenarios | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Partial** | **Yes** |
+| Checkpoint 1 (contract types) | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Yes** |
+| Checkpoint 2 (gap verification) | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Yes** |
+| Contract Map cross-ref gate | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Yes** |
 
 ## Gap Detection (17 known gaps)
 
-| # | Known Gap | Priority | Baseline | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 | v0.14.1 |
-|---|-----------|----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 1 | Happy path assertions incomplete | HIGH | Found | Found | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| 2 | No PaymentGateway external API scenarios | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| 3 | No PATCH /wallets/:id tests | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| 4 | No wallet-belongs-to-another-user test | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| 5 | No suspended/closed wallet scenarios | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| 6 | No currency mismatch test | MEDIUM | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| 7 | Missing description/category fields | MEDIUM | Found | Found + stubs | Not found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| 8 | No pagination/ordering tests | MEDIUM | Found | Found | Not found | Found | Found | Found | Found | **Found** |
-| 9 | No txn-belongs-to-another-user (show) | MEDIUM | Found | Found | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| 10 | Missing boundary cases (amount=0, max) | MEDIUM | Found | Found | Not found | Found | Found | Found + stubs | Found + stubs | **Found + stubs** |
-| 11 | Missing duplicate currency test | MEDIUM | Found | Found | Not found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| 12 | Missing name-too-long test | LOW | Found | Found | Not found | Found + stubs | Found + stubs | Found | Found | **Found** |
-| 13 | Missing reversed status scenario | LOW | Not found | Found | Not found | Found | Found | Found | Found | **Found** |
-| 14 | No insufficient balance test (amount > balance) | HIGH | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Found + stubs** |
-| 15 | No exact balance test (amount == balance → zero) | MEDIUM | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Found + stubs** |
-| 16 | No start_date/end_date filter tests | MEDIUM | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Found** |
-| 17 | Error response leaks balance and user_id | HIGH | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Found** |
+| # | Known Gap | Priority | Baseline | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 | v0.14.1 | v0.15.0 |
+|---|-----------|----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 1 | Happy path assertions incomplete | HIGH | Found | Found | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 2 | No PaymentGateway external API scenarios | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 3 | No PATCH /wallets/:id tests | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 4 | No wallet-belongs-to-another-user test | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 5 | No suspended/closed wallet scenarios | HIGH | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 6 | No currency mismatch test | MEDIUM | Found | Found + stubs | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 7 | Missing description/category fields | MEDIUM | Found | Found + stubs | Not found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 8 | No pagination/ordering tests | MEDIUM | Found | Found | Not found | Found | Found | Found | Found | Found | **Found** |
+| 9 | No txn-belongs-to-another-user (show) | MEDIUM | Found | Found | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 10 | Missing boundary cases (amount=0, max) | MEDIUM | Found | Found | Not found | Found | Found | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 11 | Missing duplicate currency test | MEDIUM | Found | Found | Not found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| 12 | Missing name-too-long test | LOW | Found | Found | Not found | Found + stubs | Found + stubs | Found | Found | Found | **Found** |
+| 13 | Missing reversed status scenario | LOW | Not found | Found | Not found | Found | Found | Found | Found | Found | **Found** |
+| 14 | No insufficient balance test (amount > balance) | HIGH | N/A | N/A | N/A | N/A | N/A | N/A | N/A | Found + stubs | **Found + stubs** |
+| 15 | No exact balance test (amount == balance → zero) | MEDIUM | N/A | N/A | N/A | N/A | N/A | N/A | N/A | Found + stubs | **Found + stubs** |
+| 16 | No start_date/end_date filter tests | MEDIUM | N/A | N/A | N/A | N/A | N/A | N/A | N/A | Found | **Found + stubs** |
+| 17 | Error response leaks balance and user_id | HIGH | N/A | N/A | N/A | N/A | N/A | N/A | N/A | Found | **Found + stubs** |
 
 ## Fintech Gap Detection (21 expected findings — v0.9.0+)
 
-| # | Category | Expected Finding | Priority | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 | v0.14.1 |
-|---|----------|-----------------|----------|:---:|:---:|:---:|:---:|:---:|:---:|
-| F1 | Money/Precision | decimal(20,8) correct type noted | INFO | Not found | Found | Found | Found | Found | **Found** |
-| F2 | Money/Precision | No precision overflow test | HIGH | Not found | Found | Found | Found | Found | **Found** |
-| F3 | Money/Precision | No zero amount test | MEDIUM | Not found | Found | Found | Found | Found | **Found** |
-| F4 | Money/Precision | No max amount (1M) boundary test | MEDIUM | Not found | Found | Found | Found | Found | **Found** |
-| F5 | Money/Precision | No over-max (1M+1) test | MEDIUM | Not found | Found | Found | Found | Found | **Found** |
-| F6 | Idempotency | No idempotency key on POST | HIGH | Found | Found | Found | Found | Found | **Found** |
-| F7 | State Machine | Transaction transitions untested | HIGH | Partial | Found | Found | Found | Found | **Found** |
-| F8 | State Machine | No invalid transition test | HIGH | Not found | Found | Found | Found | Found | **Found** |
-| F9 | State Machine | Wallet states untested | HIGH | Found | Found | Found | Found | Found | **Found** |
-| F10 | Concurrency | TransactionService TOCTOU risk | HIGH | Found | Not found | Found | Found | Found | **Found** |
-| F11 | Concurrency | No concurrent debit test | HIGH | Found | Not found | Found | Found | Found | **Found** |
-| F12 | Concurrency | No double-submit prevention | MEDIUM | Found | Not found | Found | Found | Found | **Found** |
-| F13 | Security | No auth tests (missing token → 401) | HIGH | Found | Found | Found | Found | Found | **Found** |
-| F14 | Security | IDOR: other user's transaction | HIGH | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| F15 | Security | IDOR: other user's wallet | MEDIUM | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
-| F16 | Security | No rate limiting | MEDIUM | Not found | Not found | Found | Found | Found | **Found** |
-| F17 | Security | Error response leaks balance/user_id | HIGH | Not found | Found | Found | Found | Not found | **Found** |
-| F18 | Compliance | No audit trail fields | MEDIUM | Not found | Not found | Found | Found | Found | **Found** |
-| F19 | Balance | Amount > balance not tested (insufficient balance) | HIGH | N/A | N/A | N/A | N/A | N/A | **Found + stubs** |
-| F20 | Balance | Amount == balance not tested (exact boundary → zero) | MEDIUM | N/A | N/A | N/A | N/A | N/A | **Found + stubs** |
-| F21 | Balance | Balance-on-amount: exceeds balance shown in amount field tree | MEDIUM | N/A | N/A | N/A | N/A | N/A | **Found** |
+| # | Category | Expected Finding | Priority | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 | v0.14.1 | v0.15.0 |
+|---|----------|-----------------|----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| F1 | Money/Precision | decimal(20,8) correct type noted | INFO | Not found | Found | Found | Found | Found | Found | **Found** |
+| F2 | Money/Precision | No precision overflow test | HIGH | Not found | Found | Found | Found | Found | Found | **Found** |
+| F3 | Money/Precision | No zero amount test | MEDIUM | Not found | Found | Found | Found | Found | Found | **Found** |
+| F4 | Money/Precision | No max amount (1M) boundary test | MEDIUM | Not found | Found | Found | Found | Found | Found | **Found** |
+| F5 | Money/Precision | No over-max (1M+1) test | MEDIUM | Not found | Found | Found | Found | Found | Found | **Found** |
+| F6 | Idempotency | No idempotency key on POST | HIGH | Found | Found | Found | Found | Found | Found | **Found** |
+| F7 | State Machine | Transaction transitions untested | HIGH | Partial | Found | Found | Found | Found | Found | **Found** |
+| F8 | State Machine | No invalid transition test | HIGH | Not found | Found | Found | Found | Found | Found | **Found** |
+| F9 | State Machine | Wallet states untested | HIGH | Found | Found | Found | Found | Found | Found | **Found** |
+| F10 | Concurrency | TransactionService TOCTOU risk | HIGH | Found | Not found | Found | Found | Found | Found | **Found** |
+| F11 | Concurrency | No concurrent debit test | HIGH | Found | Not found | Found | Found | Found | Found | **Found** |
+| F12 | Concurrency | No double-submit prevention | MEDIUM | Found | Not found | Found | Found | Found | Found | **Found** |
+| F13 | Security | No auth tests (missing token → 401) | HIGH | Found | Found | Found | Found | Found | Found | **Found** |
+| F14 | Security | IDOR: other user's transaction | HIGH | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| F15 | Security | IDOR: other user's wallet | MEDIUM | Found | Found + stubs | Found + stubs | Found + stubs | Found + stubs | Found + stubs | **Found + stubs** |
+| F16 | Security | No rate limiting | MEDIUM | Not found | Not found | Found | Found | Found | Found | **Found** |
+| F17 | Security | Error response leaks balance/user_id | HIGH | Not found | Found | Found | Found | Not found | Found | **Found + stubs** |
+| F18 | Compliance | No audit trail fields | MEDIUM | Not found | Not found | Found | Found | Found | Found | **Found** |
+| F19 | Balance | Amount > balance not tested (insufficient balance) | HIGH | N/A | N/A | N/A | N/A | N/A | Found + stubs | **Found + stubs** |
+| F20 | Balance | Amount == balance not tested (exact boundary → zero) | MEDIUM | N/A | N/A | N/A | N/A | N/A | Found + stubs | **Found + stubs** |
+| F21 | Balance | Balance-on-amount: exceeds balance shown in amount field tree | MEDIUM | N/A | N/A | N/A | N/A | N/A | Found | **Found** |
 
 **v0.9.0: 8/18** — strong on concurrency, missed money/precision.
 **v0.10.0: 14/18** — recovered money/precision, lost concurrency.
@@ -91,6 +95,7 @@
 **v0.12.0: 18/18** — maintained. Report quality improvements: full DB/outbound contract map, readable stub labels, strict summary rollup.
 **v0.14.0: 17/18** — minor regression: F17 (error response data leak) not flagged. New features (balance/position on amount, common field type scenarios) not yet picked up by the model.
 **v0.14.1: 21/21** — perfect score. Updated sample app with explicit balance deduction and data leaks enables detection of all new criteria. F17 recovered, F19-F21 all found.
+**v0.15.0: 21/21** — maintained. Enforced checkpoints added. Both checkpoint tables appear in all reports.
 
 ## Changes Per Version
 
@@ -135,6 +140,38 @@
 - Added Common Field Type Scenarios section (pagination, date/time, array, formatted string, file upload)
 - Updated test structure tree example to include balance/position scenarios
 - SKILL.md: ~800 → ~901 lines; fintech-checklists.md: 136 → 155 lines
+
+### v0.14.0 → v0.15.0
+- Added Checkpoint 1 (Contract Type Verification) after Step 3: mandatory 5-row table with three-state enum (Extracted / Not detected / Not applicable)
+- Added Checkpoint 2 (Gap Analysis Verification) after Step 6: mandatory table verifying all extracted types had gaps checked
+- Strengthened Contract Map gate in Step 8 with cross-reference to Checkpoint 1 field counts
+- Replaced total-count extraction gate (>10 fields) with per-type verification
+- "Not applicable" now requires rationale (same pattern as fintech dimension template)
+- SKILL.md: ~901 → ~1012 lines
+
+## v0.15.0 Analysis
+
+### What improved (vs v0.14.1)
+- **Checkpoint 1 present in all reports** — both transactions-spec.md and wallets-spec.md include the mandatory contract type table with field counts and source files
+- **Checkpoint 2 present in all reports** — gap analysis verification table confirms every extracted type was analyzed
+- **DB contracts: 10 fields (txn) + 7 fields (wallet)** explicitly listed in Checkpoint 1 with source files read
+- **Outbound API: 4 fields** explicitly listed in Checkpoint 1 with source files read
+- **Balance validation on amount: Yes** — "exceeds available balance" and "exactly equals balance" appear in the amount field tree (cross-dimension rule working)
+- **Common field type scenarios: Yes** — pagination (page=0, page=-1, per_page=999999), date filters (start_date, end_date with invalid format), status filter all flagged with specific scenarios
+- **F17 (data leak): Found + stubs** — upgraded from "Found" to "Found + stubs" with concrete test code
+- **Gap #16 (date filters): Found + stubs** — upgraded from "Found" to "Found + stubs"
+
+### What stayed the same
+- **Known gaps: 17/17** — maintained from v0.14.1
+- **Fintech gaps: 21/21** — maintained from v0.14.1
+- **Report file writing**: consistent (3 files)
+- **All prior quality metrics maintained**: readable stubs, strict summary, full contract map
+
+### Duration increase
+~418s (up from ~321s in v0.14.1). The checkpoint tables add output tokens (~4k extra). Acceptable tradeoff for structural verification. The model now produces verifiable evidence that it read all contract types before proceeding.
+
+### Net assessment
+v0.15.0 is a stability release. Gap detection accuracy unchanged from v0.14.1 (already at ceiling on this benchmark). The value is structural: the checkpoints create an auditable paper trail showing exactly which contract types were extracted and which were analyzed. If the model drops DB contracts on a future run, Checkpoint 1 will show it (either as 0 fields or "Not applicable" without rationale). This is the mechanism that addresses the reported non-determinism in real-world usage.
 
 ## v0.14.0 Analysis
 
@@ -250,19 +287,20 @@ The skill is now 933 lines. The added fintech/concurrency/security sections may 
 ### Net assessment
 v0.10.0 is the best version overall. The reference file + gates approach recovered the detailed per-field analysis that v0.9.0 lost while retaining most fintech findings. The concurrency gap (F10-F12) suggests the skill reads `fintech-checklists.md` for extraction but doesn't consistently apply all gap analysis categories.
 
-| | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 | v0.14.1 |
-|---|---|---|---|---|---|---|---|
-| Known gaps | 13/13 | 7/13 | 13/13 | 13/13 | 13/13 | 13/13 | **17/17** |
-| Fintech gaps | N/A | 8/18 | 14/18 | 18/18 | 18/18 | 17/18 | **21/21** |
-| Report files | Yes | No | Yes | Yes | Yes | Yes | **Yes** |
-| Test stubs | Yes | No | Yes | Yes | Yes | Yes | **Yes** |
-| Missing infra | No | No | No | Yes | Yes | Yes | **Yes** |
-| Full contract map | No | No | Partial | Partial | Yes | Yes | **Yes** |
-| Readable stubs | N/A | N/A | No | No | Yes | Yes | **Yes** |
-| Strict summary | N/A | N/A | No | No | Yes | Yes | **Yes** |
-| Balance-on-amount | N/A | N/A | N/A | N/A | N/A | No | **Yes** |
-| Data leak detection | N/A | N/A | N/A | N/A | N/A | No | **Yes** |
-| Duration | 125s | 336s | 406s | 440s | ~450s | ~344s | **~321s** |
+| | v0.3.0 | v0.9.0 | v0.10.0 | v0.11.0 | v0.12.0 | v0.14.0 | v0.14.1 | v0.15.0 |
+|---|---|---|---|---|---|---|---|---|
+| Known gaps | 13/13 | 7/13 | 13/13 | 13/13 | 13/13 | 13/13 | 17/17 | **17/17** |
+| Fintech gaps | N/A | 8/18 | 14/18 | 18/18 | 18/18 | 17/18 | 21/21 | **21/21** |
+| Report files | Yes | No | Yes | Yes | Yes | Yes | Yes | **Yes** |
+| Test stubs | Yes | No | Yes | Yes | Yes | Yes | Yes | **Yes** |
+| Missing infra | No | No | No | Yes | Yes | Yes | Yes | **Yes** |
+| Full contract map | No | No | Partial | Partial | Yes | Yes | Yes | **Yes** |
+| Readable stubs | N/A | N/A | No | No | Yes | Yes | Yes | **Yes** |
+| Strict summary | N/A | N/A | No | No | Yes | Yes | Yes | **Yes** |
+| Balance-on-amount | N/A | N/A | N/A | N/A | N/A | No | Yes | **Yes** |
+| Data leak detection | N/A | N/A | N/A | N/A | N/A | No | Yes | **Yes** |
+| Checkpoint tables | N/A | N/A | N/A | N/A | N/A | N/A | N/A | **Yes** |
+| Duration | 125s | 336s | 406s | 440s | ~450s | ~344s | ~321s | **~418s** |
 
 ## v0.11.0 Analysis
 
