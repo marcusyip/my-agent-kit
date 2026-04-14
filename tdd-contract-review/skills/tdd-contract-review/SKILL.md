@@ -286,11 +286,13 @@ Feature (top-level describe/context)
 |   +-- Shared let/setup blocks building from defaults
 |   +-- Each test overrides only the one field it tests
 |
-+-- 1) Happy path assertions
-|   +-- response field: id, email, currency, amount, status, created_at, ...
-|   +-- db field: record.email, record.currency, record.amount, record.status, ...
-|   +-- outbound request field: ThirdPartyAPI.call(amount, currency, user_id)
-|   +-- (Every field asserted here gets its own scenario group below)
++-- 1) Happy path (major success scenarios)
+|   +-- Returns correct status code
+|   +-- Asserts every response field (email, currency, amount, etc.)
+|   +-- Asserts every DB field persisted correctly
+|   +-- Asserts correct params sent to external APIs
+|   +-- (This establishes the baseline -- every field tested here
+|        gets its own scenario group below for edge/error cases)
 |
 +-- 2) Scenarios per field (edge cases, corner cases, error paths)
     |
@@ -320,16 +322,16 @@ Feature (top-level describe/context)
     |   +-- missing auth token -> 401
     |   +-- expired auth token -> 401
     +-- db field: wallet.status
-    |   +-- suspended -> 422, no DB write, no external API call
-    |   +-- closed -> 422, no DB write, no external API call
+    |   +-- suspended -> 422, no DB write, no outbound API call, no data leak in error
+    |   +-- closed -> 422, no DB write, no outbound API call, no data leak in error
     +-- db field: wallet.balance
-    |   +-- amount > balance -> 422, no DB write (when balance-constrained)
-    |   +-- amount == balance -> success, balance becomes zero
-    |   +-- amount > position -> 422 (when position-constrained, e.g. sell qty > held qty)
+    |   +-- amount > balance -> 422, no DB write, no outbound API call, no data leak in error
+    |   +-- amount == balance -> 201, db balance == 0, correct response fields
+    |   +-- amount > position -> 422, no DB write (when position-constrained)
     +-- outbound response field: ThirdPartyAPI.call
-        +-- success -> assert params sent (amount, currency, user_id), db record.status == completed
-        +-- error response -> 422, db record.status unchanged
-        +-- timeout -> 503, db record.status unchanged
+        +-- success -> 201, assert params sent (amount, currency, user_id), db record.status == completed, db balance deducted
+        +-- error response -> 422, db record.status unchanged, db balance unchanged
+        +-- timeout -> 503, db record.status unchanged, db balance unchanged
 ```
 
 For frontend/UI tests, the same pattern applies with component props as fields:
@@ -806,11 +808,8 @@ Visual map of contract fields and their test coverage. Each endpoint/model is a 
 
 ```
 POST /api/v1/transactions
-├── happy path assertions — NO ASSERTIONS
-│   ├── ✗ response field: id, amount, currency, status, description, category, wallet_id, created_at, updated_at
-│   ├── ✗ db field: transaction.amount, transaction.currency, transaction.status, transaction.user_id, transaction.wallet_id
-│   └── ✗ outbound request field: PaymentGateway.charge(amount, currency, user_id) [when category=payment]
 ├── request field: amount
+│   ├── ✓ happy path → 201, response.amount == "100.50", db transaction.amount == 100.50
 │   ├── ✓ nil → 422, no DB write
 │   ├── ✓ negative → 422, no DB write
 │   ├── ✗ zero (boundary)
@@ -838,23 +837,20 @@ POST /api/v1/transactions
 │   ├── ✗ missing auth token → 401
 │   └── ✗ expired auth token → 401
 ├── db field: wallet.status — NO TESTS
-│   ├── ✗ suspended → 422, no DB write
-│   └── ✗ closed → 422, no DB write
+│   ├── ✗ suspended → 422, no DB write, no outbound API call, no data leak in error
+│   └── ✗ closed → 422, no DB write, no outbound API call, no data leak in error
 ├── db field: wallet.balance — NO TESTS
-│   ├── ✗ amount > balance → 422, no DB write
-│   ├── ✗ amount == balance → success, balance becomes zero
-│   └── ✗ currency mismatch with wallet → 422
+│   ├── ✗ amount > balance → 422, no DB write, no outbound API call, no data leak in error
+│   ├── ✗ amount == balance → 201, db balance == 0, correct response fields
+│   └── ✗ currency mismatch with wallet → 422, no DB write
 ├── db field: transaction.status — NO TESTS
 │   └── ✗ enum pending/completed/failed/reversed transitions untested
 └── outbound response field: PaymentGateway.charge — NO TESTS
-    ├── ✗ success → db transaction.status == completed, db wallet.balance deducted
+    ├── ✗ success → 201, assert params sent (amount, currency, user_id), db transaction.status == completed, db wallet.balance deducted
     ├── ✗ failure → db transaction.status == failed, db wallet.balance unchanged
-    └── ✗ ChargeError → 422, no DB status change
+    └── ✗ ChargeError → 422, db transaction.status unchanged, db wallet.balance unchanged
 
 GET /api/v1/transactions
-├── happy path assertions — NO ASSERTIONS
-│   ├── ✗ response field: transactions (array), meta.total, meta.page, meta.per_page
-│   └── ✗ db field: only current user's transactions returned
 ├── request field: page (pagination) — NO TESTS
 │   ├── ✗ page=0 → rejected or default
 │   ├── ✗ page=-1 → rejected
@@ -863,8 +859,10 @@ GET /api/v1/transactions
 │   ├── ✗ per_page=0 → rejected or default
 │   ├── ✗ very large (999999) → capped or rejected
 │   └── ✗ default 25 when omitted
-└── request header: Authorization — NO TESTS
-    └── ✗ missing auth token → 401
+├── request header: Authorization — NO TESTS
+│   └── ✗ missing auth token → 401
+└── db field: user scope — NO TESTS
+    └── ✗ only returns current user's transactions
 
 Wallet#deposit!
 ├── ✓ positive amount → increases balance
@@ -874,7 +872,7 @@ Wallet#deposit!
 └── ✗ closed wallet → raises error
 ```
 
-Every scenario is its own line. Use `✓` for covered, `✗` for missing. Fields with no tests at all get a `— NO TESTS` label on the field line. The `happy path assertions` section lists all fields that should be asserted in the success case: `response field:` (API response values), `db field:` (persisted values), and `outbound request field:` (params sent to external APIs).
+Every scenario is its own line. Use `✓` for covered, `✗` for missing. Fields with no tests at all get a `— NO TESTS` label on the field line.
 
 ### Contract Map
 
