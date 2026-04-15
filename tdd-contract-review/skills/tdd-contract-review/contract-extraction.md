@@ -47,11 +47,13 @@ Jobs and message consumers are contract boundaries just like API endpoints. They
 
 ### API Calls Contract (outbound service calls)
 
-- External service name and request params (fields sent: amount, currency, user_id, etc.)
-- Response fields received (fields returned: success?, transaction_id, status_code, amount, currency — upstream is untrusted, each field needs validation)
-- Error handling for external failures (timeout, 500, malformed response)
+Extract the actual outbound HTTP API, not just the service layer wrapper:
+- **API endpoint**: HTTP method + URL (e.g. `POST https://api.stripe.com/v1/charges`). Find this by reading the HTTP client call inside the wrapper method.
+- **Request params**: fields sent in the request body/query/headers (amount, currency, user_id, etc.)
+- **Response fields**: fields parsed from the response body (success?, transaction_id, status, amount — upstream is untrusted, each field needs validation)
+- **HTTP-level handling**: status codes expected (200, 4xx, 5xx), timeout, malformed response
 
-How to extract: read HTTP client calls (`HTTParty`, `Faraday`, `net/http`, `axios`, `fetch`, `requests`, `httpx`), identify request params sent AND response fields parsed. Both are contract fields — request params are assertions, response fields need validation scenarios (mismatch, null, malformed).
+How to extract: read HTTP client calls (`HTTParty`, `Faraday`, `net/http`, `axios`, `fetch`, `requests`, `httpx`) inside service/wrapper classes. Trace from the wrapper method (e.g. `PaymentGateway.charge`) to the actual HTTP call to find the URL, HTTP method, request body shape, and response parsing. Both request params and response fields are contract fields — request params are assertions, response fields need validation scenarios (mismatch, null, malformed).
 
 ### UI Props Contract (components)
 
@@ -108,12 +110,14 @@ DB Contract:
   db field: wallet.currency — currency must match wallet currency [HIGH]
 
 Outbound API:
-  PaymentGateway.charge (when category == 'payment'):
-    outbound response field: PaymentGateway.charge.amount (decimal) [HIGH] — assert correct amount sent
-    outbound response field: PaymentGateway.charge.currency (string) [HIGH] — assert correct currency sent
-    outbound response field: PaymentGateway.charge.user_id (integer) [HIGH] — assert correct user_id sent
-    outbound response field: PaymentGateway.charge.status_code (HTTP status) [HIGH] — 200/500/timeout
-    outbound response field: PaymentGateway.charge.success? (boolean) [HIGH] — true/false/ChargeError
-    outbound response field: PaymentGateway.charge.transaction_id (string, nullable) [MEDIUM] — reconciliation
+  POST https://api.paymentgateway.com/v1/charges (via PaymentGateway.charge, when category == 'payment')
+    Request params:
+      outbound response field: PaymentGateway.charge.amount (decimal) [HIGH] — assert correct amount sent
+      outbound response field: PaymentGateway.charge.currency (string) [HIGH] — assert correct currency sent
+      outbound response field: PaymentGateway.charge.user_id (integer) [HIGH] — assert correct user_id sent
+    Response:
+      outbound response field: PaymentGateway.charge.status_code (HTTP status) [HIGH] — 200/500/timeout
+      outbound response field: PaymentGateway.charge.success? (boolean) [HIGH] — true/false/ChargeError
+      outbound response field: PaymentGateway.charge.transaction_id (string, nullable) [MEDIUM] — reconciliation
 ============================
 ```
