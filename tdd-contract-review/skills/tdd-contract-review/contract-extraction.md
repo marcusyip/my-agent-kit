@@ -111,26 +111,27 @@ API Contract (inbound):
     Status codes: 200, 401
 
 DB Contract:
-  db field: transaction.user_id (integer, NOT NULL, FK) [HIGH]
-  db field: transaction.wallet_id (integer, NOT NULL, FK) [HIGH]
-  db field: transaction.amount (decimal(20,8), NOT NULL) [HIGH]
-  db field: transaction.currency (string, NOT NULL) [HIGH]
-  db field: transaction.status (string, enum: pending/completed/failed/reversed) [HIGH]
-  db field: transaction.description (string, nullable) [HIGH]
-  db field: transaction.category (string, enum: transfer/payment/deposit/withdrawal) [HIGH]
+  Input (preconditions — set in test setup):
+    db field (input): wallet.balance — amount constrained by balance (balance >= amount) [HIGH]
+    db field (input): wallet.status — wallet must be active [HIGH]
+    db field (input): wallet.currency — currency must match wallet currency [HIGH]
 
-  Business rules:
-  db field: wallet.balance — amount constrained by balance (balance >= amount) [HIGH]
-  db field: wallet.status — wallet must be active [HIGH]
-  db field: wallet.currency — currency must match wallet currency [HIGH]
+  Assertion (postconditions — verify after request):
+    db field (assertion): transaction.user_id (integer, NOT NULL, FK) [HIGH]
+    db field (assertion): transaction.wallet_id (integer, NOT NULL, FK) [HIGH]
+    db field (assertion): transaction.amount (decimal(20,8), NOT NULL) [HIGH]
+    db field (assertion): transaction.currency (string, NOT NULL) [HIGH]
+    db field (assertion): transaction.status (string, enum: pending/completed/failed/reversed) [HIGH]
+    db field (assertion): transaction.description (string, nullable) [HIGH]
+    db field (assertion): transaction.category (string, enum: transfer/payment/deposit/withdrawal) [HIGH]
 
 Outbound API:
   POST https://api.paymentgateway.com/v1/charges (via PaymentGateway.charge, when category == 'payment')
-    Request params:
-      outbound response field: PaymentGateway.charge.amount (decimal) [HIGH] — assert correct amount sent
-      outbound response field: PaymentGateway.charge.currency (string) [HIGH] — assert correct currency sent
-      outbound response field: PaymentGateway.charge.user_id (integer) [HIGH] — assert correct user_id sent
-    Response:
+    Assertion (verify correct params sent to external API):
+      outbound request field: PaymentGateway.charge.amount (decimal) [HIGH]
+      outbound request field: PaymentGateway.charge.currency (string) [HIGH]
+      outbound request field: PaymentGateway.charge.user_id (integer) [HIGH]
+    Input (set via mock — upstream untrusted, validate each):
       outbound response field: PaymentGateway.charge.status_code (HTTP status) [HIGH] — 200/500/timeout
       outbound response field: PaymentGateway.charge.success? (boolean) [HIGH] — true/false/ChargeError
       outbound response field: PaymentGateway.charge.transaction_id (string, nullable) [MEDIUM] — reconciliation

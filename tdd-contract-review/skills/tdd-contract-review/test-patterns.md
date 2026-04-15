@@ -2,6 +2,22 @@
 
 Detailed guidance for Steps 4-5 of the TDD Contract Review workflow.
 
+## Input/Assertion Model
+
+Every field is either an **input** (you set it in the test) or an **assertion** (you verify it after the request), or both:
+
+| Prefix | Role | How |
+|---|---|---|
+| `request field:` | Input | Set in request params |
+| `request header:` | Input | Set in request headers |
+| `db field:` | Input AND assertion | Input: set in setup (precondition). Assertion: verify after request (postcondition) |
+| `outbound response field:` | Input | Set via mock return value |
+| `outbound request field:` | Assertion | Verify correct params sent to external API mock |
+| `prop:` | Input | Set as component props |
+
+**Input fields** get tree entries with scenarios — each scenario sets a different value.
+**Assertion fields** (`outbound request field:`, `db field:` as assertion) are verified in the happy path and relevant scenarios. They don't get their own tree branch with scenarios.
+
 ## One Endpoint Per Test File
 
 Each API endpoint gets its own test file. Do not combine multiple endpoints in a single file — it obscures gaps and makes the tree harder to audit.
@@ -180,18 +196,18 @@ When these non-boundary test files are found in scope, **flag them as anti-patte
 
 Each test should assert the **full picture**, not just one side effect:
 
-**For happy path tests:**
-- Response status code
-- Every response field value
-- DB record created/updated with correct values
-- Correct params sent to external APIs
+**For happy path tests (verify ALL assertion fields):**
+- Response status code + response field values
+- `db field (assertion):` — every DB field persisted correctly (e.g. transaction.user_id == user.id)
+- `outbound request field (assertion):` — correct params sent to external API mock (e.g. expect(Gateway).to have_received(:charge).with(amount: 100))
 - Side effects triggered (emails, jobs, events)
 
-**For error/invalid scenario tests:**
+**For error/invalid scenario tests (verify nothing happened):**
 - Error response (status code + error message)
 - No DB records created or updated (assert count unchanged)
 - No outbound API calls made (assert mock not called)
 - No side effects triggered
+- No data leak in error response
 
 Flag tests that only assert status code without checking DB or API side effects.
 

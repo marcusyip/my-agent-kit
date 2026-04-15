@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.21.0
+version: 0.22.0
 ---
 
 # TDD Contract Review
@@ -23,21 +23,29 @@ Tests protect against breaking changes by verifying contracts -- the agreements 
 
 ## Typed Field Prefixes (enforced across all agents)
 
-Every field in the Test Structure Tree and Contract Map MUST use one of these typed prefixes:
-- `request field:` — user input validation (nil, invalid, boundary, etc.)
-- `request header:` — HTTP headers (missing auth, expired token)
-- `db field:` — pre-existing database state (suspended, insufficient balance, already exists)
-- `outbound response field:` — external API response handling + outbound request param assertions + DB state after + upstream validation (mismatch, null, malformed)
-- `prop:` — UI component props
+Every field is either an **input** (you set it in the test) or an **assertion** (you verify it after the request), or both.
 
-**Do NOT use:** `field: X (request param)`, `security:`, `business:`, `external:`, `response body`, `DB assertions`. These are old formats. Use the typed prefixes above.
+| Prefix | Role | How to set/verify |
+|---|---|---|
+| `request field:` | Input | Set in request params |
+| `request header:` | Input | Set in request headers |
+| `db field:` | Input AND assertion | Input: set in test setup (e.g. create wallet with status: 'suspended'). Assertion: verify DB state after request (e.g. transaction.user_id == user.id) |
+| `outbound response field:` | Input | Set via mock return value (e.g. mock gateway to return success: false) |
+| `outbound request field:` | Assertion | Verify correct params sent to external API mock (e.g. expect(Gateway).to have_received(:charge).with(amount: 100)) |
+| `prop:` | Input | Set as component props |
 
-Every field is reviewed 1 by 1. DB fields and outbound response fields get the same per-field treatment as request fields.
+**Input fields** get tree entries with scenarios (each scenario sets a different value and checks the outcome).
+**Assertion fields** (`outbound request field:`) are verified within the happy path and outbound response scenarios — they don't get their own tree branch with scenarios.
+**db field:** appears in both roles: as input (precondition scenarios) AND as assertion (postcondition verification in happy path).
+
+**Do NOT use:** `field: X (request param)`, `security:`, `business:`, `external:`, `response body`, `DB assertions`. These are old formats.
+
+Every field is reviewed 1 by 1. Same per-field treatment for all types.
 
 **Assertion rules per scenario type:**
 - Error scenarios: assert status code + no DB write + no outbound API call + no data leak in error response
-- Success scenarios: assert status code + response fields + DB state + outbound params sent
-- Outbound response scenarios: assert DB state after change + validate upstream response fields (mismatch, null)
+- Success scenarios: assert status code + db fields (assertion) + outbound request fields (assertion)
+- Outbound response scenarios: set mock return value (input) + assert db fields after change + assert outbound request fields sent correctly + validate upstream response fields (mismatch, null)
 
 ## Review Workflow
 
