@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.19.1
+version: 0.20.0
 ---
 
 # TDD Contract Review
@@ -70,12 +70,22 @@ Locate test files by convention:
 
 ### Step 3: Contract Extraction (Agent 1)
 
-Read `contract-extraction.md` (in the same directory as this file). Then dispatch an Agent with description "Contract extraction", model "opus", and a prompt containing:
+Determine the absolute path to this skill's directory (the directory containing this SKILL.md file). Dispatch an Agent with description "Contract extraction", model "opus", and a prompt containing:
 
-1. The full content of `contract-extraction.md`
-2. If fintech mode detected, also read and include `fintech-checklists.md` (extraction sections only: "Contract Extraction Details" through "Security & Access Control")
-3. The list of source file paths found in Step 2
-4. The instruction: "Read every source file listed. Extract all contracts following the guidance. Produce a Contract Extraction Summary using typed prefixes per field — every field must be labeled with its prefix (request field:, request header:, db field:, outbound response field:). Use the format from the example in contract-extraction.md exactly. This format flows directly into the Test Structure Tree and Contract Map without restructuring. Then fill in the Checkpoint 1 table (mandatory, every row). If fintech mode, also fill in the Fintech Dimension Template (mandatory, every row). Use the three-state enum: Extracted / Not detected / Not applicable (with rationale). Output the complete extraction summary, Checkpoint 1 table, and fintech dimensions table."
+1. The absolute path to the skill directory so the agent can read reference files
+2. The list of source file paths found in Step 2
+3. Whether fintech mode was detected in Step 2
+4. The instruction:
+   "You are a contract extractor. Follow these steps exactly:
+   (a) Read the file `contract-extraction.md` at [skill directory path]/contract-extraction.md using the Read tool. This contains per-framework extraction guidance and the output format example.
+   (b) If fintech mode is detected, also read `fintech-checklists.md` at [skill directory path]/fintech-checklists.md for fintech-specific extraction dimensions.
+   (c) Read every source file listed below.
+   (d) Extract all contracts using the guidance from contract-extraction.md.
+   (e) Produce a Contract Extraction Summary using typed prefixes per field — every field must be labeled with its prefix (request field:, request header:, db field:, outbound response field:). Use the format from the example in contract-extraction.md exactly. This format flows directly into the Test Structure Tree and Contract Map without restructuring.
+   (f) Fill in the Checkpoint 1 table (mandatory, every row).
+   (g) If fintech mode, fill in the Fintech Dimension Template (mandatory, every row).
+   (h) Use the three-state enum: Extracted / Not detected / Not applicable (with rationale).
+   (i) Output the complete extraction summary, Checkpoint 1 table, and fintech dimensions table."
 
 The Checkpoint 1 table the agent must produce:
 
@@ -93,58 +103,62 @@ Save the agent's full output as `$EXTRACTION`.
 
 ### Step 4-5: Test Audit (Agent 2)
 
-Read `test-patterns.md` (in the same directory as this file). Then dispatch an Agent with description "Test structure audit", model "opus", and a prompt containing:
+Dispatch an Agent with description "Test structure audit", model "opus", and a prompt containing:
 
-1. The full content of `test-patterns.md`
-2. The typed prefix rules from the "Typed Field Prefixes" section above (copy them into the prompt)
-3. The assertion rules: "Error scenarios: assert status code + no DB write + no outbound API call + no data leak in error response. Success scenarios: assert status code + response fields + DB state + outbound params sent."
-4. The list of test file paths found in Step 2
-5. The `$EXTRACTION` output from Agent 1 (so the auditor knows which contracts to check coverage for)
-6. The instruction: "Read every test file listed. Audit test structure (sessions pattern, one endpoint per file, test foundation). Audit test case quality (assertion completeness, readability, isolation, flaky patterns). Flag anti-patterns with file:line references. For each contract field from the extraction, note whether a test group exists and what scenarios are covered. Output: test structure audit findings, quality issues, anti-patterns list, and per-field coverage notes."
+1. The absolute path to the skill directory
+2. The list of test file paths found in Step 2
+3. The `$EXTRACTION` output from Agent 1 (so the auditor knows which contracts to check coverage for)
+4. The instruction:
+   "You are a test auditor. Follow these steps exactly:
+   (a) Read the file `test-patterns.md` at [skill directory path]/test-patterns.md using the Read tool. This contains the sessions pattern, test foundation examples, contract boundary rules, anti-patterns to flag, and test case quality checklists.
+   (b) Read every test file listed below.
+   (c) Audit test structure: sessions pattern, one endpoint per file, test foundation (defaults, subject/runTest).
+   (d) Audit test case quality: assertion completeness, readability, isolation, flaky patterns.
+   (e) Flag anti-patterns with file:line references.
+   (f) For each contract field from the extraction, note whether a test group exists and what scenarios are covered.
+   (g) Typed prefix rules: use request field:, request header:, db field:, outbound response field:, prop:. Never use bare field:, security:, business:, external:.
+   (h) Assertion rules: Error scenarios must assert status code + no DB write + no outbound API call + no data leak. Success scenarios must assert status code + response fields + DB state + outbound params sent.
+   (i) Output: test structure audit findings, quality issues, anti-patterns list, and per-field coverage notes."
 
 Save the agent's full output as `$AUDIT`.
 
 ### Step 6: Gap Analysis (Agent 3)
 
-Read `fintech-checklists.md` (in the same directory as this file), specifically the "Gap Analysis Scenario Checklists" section. Then dispatch an Agent with description "Gap analysis", model "opus", and a prompt containing:
+Dispatch an Agent with description "Gap analysis", model "opus", and a prompt containing:
 
-1. The gap analysis rules (copy from below into the prompt):
-   - For each field, check by prefix type:
-     - `request field:` — null/nil, empty, zero, boundary, invalid type/format, very large, permission denied
-     - `request header:` — missing, expired, malformed
-     - `db field:` — record not exists, belongs to another user, suspended/inactive, insufficient balance, already exists (duplicate)
-     - `outbound response field:` — success, error, timeout, mismatch (amount/currency differs from sent), null/missing, malformed response + assert outbound request params + DB state after change
-   - Priority: HIGH = no tests at all, MEDIUM = missing scenarios, LOW = rare corner cases
-2. The common field type scenarios (pagination, date/time, string format, file upload):
-   - Pagination: zero, negative, very large limit, beyond last page, default values
-   - Date/time: invalid format, future/past constraints, timezone, boundaries
-   - String format: valid, invalid, edge, max length, empty vs null
-   - File upload: too large, wrong MIME, empty, missing
-3. If fintech mode, the full fintech gap analysis categories (1-8):
-   - Money/amount, Idempotency, State machine, Balance/ledger, Concurrency, Outbound response validation, Security & access control, Absence flagging
-   - Include the fintech checklists content
-4. The `$EXTRACTION` output from Agent 1
-5. The `$AUDIT` output from Agent 2
-6. The Test Structure Tree format (include this example in the prompt so the agent follows the grouped-by-field structure):
-   ```
-   POST /api/v1/transactions
-   ├── request field: amount
-   │   ├── ✓ happy path → 201, response.amount == "100.50", db transaction.amount == 100.50
-   │   ├── ✓ nil → 422, no DB write, no data leak
-   │   ├── ✗ zero (boundary)
-   │   └── ✗ over max (1_000_001) → 422, no data leak
-   ├── request header: Authorization — NO TESTS
-   │   └── ✗ missing → 401
-   ├── db field: wallet.status — NO TESTS
-   │   └── ✗ suspended → 422, no DB write, no outbound API call, no data leak
-   ├── db field: transaction.user_id — NO TESTS
-   │   └── ✗ happy path asserts correct user_id stored
-   └── outbound response field: PaymentGateway.charge.success? — NO TESTS
-       ├── ✗ true → 201, db transaction.status == completed
-       └── ✗ false → db transaction.status == failed
-   ```
-   Each endpoint is a root node. Each field is a branch with its typed prefix. Each scenario is a leaf with ✓/✗. Fields with no tests get "— NO TESTS". Error scenarios include "no data leak".
-7. The instruction: "For every contract field from the extraction, determine gap status. Produce: (a) a Test Structure Tree following the grouped-by-field format above — every field gets its own branch with scenarios nested under it, (b) a Contract Map table with one row per field using typed prefix in Type column, (c) gap analysis by priority (HIGH/MEDIUM/LOW) with full descriptions, (d) for each HIGH gap generate a test stub following the project's existing patterns from the audit, (e) a Checkpoint 2 table. IMPORTANT: every error scenario MUST include 'no data leak' assertion. Do NOT use old formats (field:, security:, business:, external:, response body, DB assertions)."
+1. The absolute path to the skill directory
+2. Whether fintech mode was detected
+3. The `$EXTRACTION` output from Agent 1
+4. The `$AUDIT` output from Agent 2
+5. The instruction:
+   "You are a gap analyzer. Follow these steps exactly:
+   (a) If fintech mode is detected, read `fintech-checklists.md` at [skill directory path]/fintech-checklists.md using the Read tool, specifically the 'Gap Analysis Scenario Checklists' section.
+   (b) For every contract field from the extraction, determine gap status by checking the audit output.
+   (c) Check scenarios by prefix type:
+       - request field: null/nil, empty, zero, boundary, invalid type/format, very large, permission denied
+       - request header: missing, expired, malformed
+       - db field: record not exists, belongs to another user, suspended/inactive, insufficient balance, already exists (duplicate)
+       - outbound response field: success, error, timeout, mismatch (amount/currency differs from sent), null/missing, malformed response + assert outbound request params + DB state after change
+   (d) Also check common field type scenarios: pagination (zero, negative, very large limit, beyond last page), date/time (invalid format, future/past, timezone), string format (valid, invalid, max length, empty vs null), file upload (too large, wrong MIME).
+   (e) If fintech mode, apply all 8 fintech gap categories from the checklists file: Money/amount, Idempotency, State machine, Balance/ledger, Concurrency, Outbound response validation, Security & access control, Absence flagging.
+   (f) Produce the Test Structure Tree. MANDATORY FORMAT — follow this structure exactly:
+       POST /api/v1/endpoint
+       ├── request field: fieldname
+       │   ├── ✓ scenario (covered)
+       │   └── ✗ scenario (missing)
+       ├── request header: Authorization — NO TESTS
+       │   └── ✗ missing → 401
+       ├── db field: model.fieldname — NO TESTS
+       │   └── ✗ scenario
+       └── outbound response field: Service.method.fieldname — NO TESTS
+           └── ✗ scenario
+       Each endpoint is a root node. Each field is a branch with typed prefix. Scenarios nested under fields. Fields with no tests get '— NO TESTS'. Error scenarios include 'no data leak'.
+   (g) Produce a Contract Map table with one row per field, typed prefix in Type column.
+   (h) Produce gap analysis by priority (HIGH/MEDIUM/LOW) with full descriptions.
+   (i) For each HIGH gap, generate a test stub following the project's existing patterns from the audit.
+   (j) Produce a Checkpoint 2 table.
+   (k) Priority: HIGH = no tests at all, MEDIUM = missing scenarios, LOW = rare corner cases.
+   (l) IMPORTANT: every error scenario MUST include 'no data leak' assertion. Do NOT use old formats (field:, security:, business:, external:, response body, DB assertions)."
 
 The Checkpoint 2 table the agent must produce:
 
@@ -162,14 +176,22 @@ Save the agent's full output as `$GAPS`.
 
 ### Step 7-8: Report Writing (Agent 4)
 
-Read `report-template.md` (in the same directory as this file). Then dispatch an Agent with description "Report writing", model "opus", and a prompt containing:
+Dispatch an Agent with description "Report writing", model "opus", and a prompt containing:
 
-1. The full content of `report-template.md`
+1. The absolute path to the skill directory
 2. The `$EXTRACTION` output from Agent 1
 3. The `$AUDIT` output from Agent 2
 4. The `$GAPS` output from Agent 3
 5. Whether quick mode is enabled
-6. The instruction: "Using the report template, write one report file per test file and a summary file. Write reports to `tdd-contract-review/{datetime}-report/` using the Write tool. Get the current time by running `date +%Y%m%d-%H%M`. Each per-file report MUST include: Contract Extraction Summary, Fintech Dimensions Summary (if applicable), Test Structure Tree (using typed prefixes from the gap analysis), Contract Map, Gap Analysis with test stubs, Anti-Patterns table, Score breakdown. The summary is a strict rollup — no findings that don't appear in per-file reports. After writing, verify files exist by listing the directory. If quick mode, output only the quick summary template."
+6. The instruction:
+   "You are a report writer. Follow these steps exactly:
+   (a) Read the file `report-template.md` at [skill directory path]/report-template.md using the Read tool. This contains the full report template, scoring rubric, calibration anchors, multi-file summary format, and quick mode template.
+   (b) Get the current time by running `date +%Y%m%d-%H%M` via Bash.
+   (c) Write one report file per test file and a summary file to `tdd-contract-review/{datetime}-report/` using the Write tool.
+   (d) Each per-file report MUST include: Contract Extraction Summary, Fintech Dimensions Summary (if applicable), Test Structure Tree (using typed prefixes from the gap analysis), Contract Map, Gap Analysis with test stubs, Anti-Patterns table, Score breakdown.
+   (e) The summary is a strict rollup — no findings that don't appear in per-file reports.
+   (f) After writing, verify files exist by listing the directory.
+   (g) If quick mode, output only the quick summary template."
 
 **GATE — Report Files Must Be Written:** Verify the agent wrote report files. List the report directory. If no files exist, the review is not complete — ask the agent to write them.
 
