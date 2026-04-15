@@ -75,7 +75,7 @@ Read `contract-extraction.md` (in the same directory as this file). Then dispatc
 1. The full content of `contract-extraction.md`
 2. If fintech mode detected, also read and include `fintech-checklists.md` (extraction sections only: "Contract Extraction Details" through "Security & Access Control")
 3. The list of source file paths found in Step 2
-4. The instruction: "Read every source file listed. Extract all contracts following the guidance. Produce a Contract Extraction Summary. Then fill in the Checkpoint 1 table (mandatory, every row). If fintech mode, also fill in the Fintech Dimension Template (mandatory, every row). Use the three-state enum: Extracted / Not detected / Not applicable (with rationale). Output the complete extraction summary, Checkpoint 1 table, and fintech dimensions table."
+4. The instruction: "Read every source file listed. Extract all contracts following the guidance. Produce a Contract Extraction Summary using typed prefixes per field — every field must be labeled with its prefix (request field:, request header:, db field:, outbound response field:). Use the format from the example in contract-extraction.md exactly. This format flows directly into the Test Structure Tree and Contract Map without restructuring. Then fill in the Checkpoint 1 table (mandatory, every row). If fintech mode, also fill in the Fintech Dimension Template (mandatory, every row). Use the three-state enum: Extracted / Not detected / Not applicable (with rationale). Output the complete extraction summary, Checkpoint 1 table, and fintech dimensions table."
 
 The Checkpoint 1 table the agent must produce:
 

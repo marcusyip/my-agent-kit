@@ -80,63 +80,40 @@ Framework: Rails/RSpec
 
 API Contract (inbound):
   POST /api/v1/transactions
-    Request params:
-      - currency (string, required, in: USD/EUR/GBP/BTC/ETH) [HIGH confidence]
-      - amount (decimal, required, > 0, <= 1_000_000) [HIGH confidence]
-      - wallet_id (integer, required) [HIGH confidence]
-      - description (string, optional, max: 500) [HIGH confidence]
-      - category (string, optional, enum: transfer/payment/deposit/withdrawal, default: transfer) [HIGH confidence]
-    Response fields:
-      - id (integer) [HIGH confidence]
-      - amount (string, decimal-as-string) [HIGH confidence]
-      - currency (string) [HIGH confidence]
-      - status (string) [HIGH confidence]
-      - description (string, nullable) [HIGH confidence]
-      - category (string) [HIGH confidence]
-      - wallet_id (integer) [HIGH confidence]
-      - created_at (datetime, ISO8601) [HIGH confidence]
+    request field: amount (decimal, required, > 0, <= 1_000_000) [HIGH]
+    request field: currency (string, required, in: USD/EUR/GBP/BTC/ETH) [HIGH]
+    request field: wallet_id (integer, required) [HIGH]
+    request field: description (string, optional, max: 500) [HIGH]
+    request field: category (string, optional, enum: transfer/payment/deposit/withdrawal, default: transfer) [HIGH]
+    request header: Authorization (bearer token, required) [HIGH]
     Status codes: 201, 422, 401, 500
-    Auth: before_action :authenticate_user!
 
   GET /api/v1/transactions
-    Request params:
-      - page (integer, optional) [MEDIUM confidence]
-      - per_page (integer, optional, default: 25) [MEDIUM confidence]
-    Response fields:
-      - transactions (array) [HIGH confidence]
-      - meta.total (integer) [HIGH confidence]
-      - meta.page (integer) [HIGH confidence]
+    request field: page (integer, optional) [MEDIUM]
+    request field: per_page (integer, optional, default: 25) [MEDIUM]
     Status codes: 200, 401
 
 DB Contract:
-  Transaction model:
-    - user_id (integer, NOT NULL, FK) [HIGH confidence]
-    - wallet_id (integer, NOT NULL, FK) [HIGH confidence]
-    - amount (decimal(20,8), NOT NULL) [HIGH confidence]
-    - currency (string, NOT NULL) [HIGH confidence]
-    - status (string, enum: pending/completed/failed/reversed) [HIGH confidence]
-    - description (string, nullable) [HIGH confidence]
-    - category (string, enum: transfer/payment/deposit/withdrawal) [HIGH confidence]
+  db field: transaction.user_id (integer, NOT NULL, FK) [HIGH]
+  db field: transaction.wallet_id (integer, NOT NULL, FK) [HIGH]
+  db field: transaction.amount (decimal(20,8), NOT NULL) [HIGH]
+  db field: transaction.currency (string, NOT NULL) [HIGH]
+  db field: transaction.status (string, enum: pending/completed/failed/reversed) [HIGH]
+  db field: transaction.description (string, nullable) [HIGH]
+  db field: transaction.category (string, enum: transfer/payment/deposit/withdrawal) [HIGH]
 
   Business rules:
-    - amount must be > 0 and <= 1_000_000 [HIGH confidence]
-    - currency must match wallet currency [HIGH confidence]
-    - wallet must be active [HIGH confidence]
-    - amount constrained by wallet balance (service checks balance >= amount) [HIGH confidence]
+  db field: wallet.balance — amount constrained by balance (balance >= amount) [HIGH]
+  db field: wallet.status — wallet must be active [HIGH]
+  db field: wallet.currency — currency must match wallet currency [HIGH]
 
 Outbound API:
   PaymentGateway.charge (when category == 'payment'):
-    Request params (assert correct values sent):
-      - amount (decimal) [HIGH confidence]
-      - currency (string) [HIGH confidence]
-      - user_id (integer) [HIGH confidence]
-    Response fields (upstream untrusted — validate each):
-      - success? (boolean) [HIGH confidence]
-      - transaction_id (string, nullable) [MEDIUM confidence]
-      - status_code (HTTP status) [HIGH confidence]
-    Response handling:
-      - On success: status → completed [HIGH confidence]
-      - On failure: status → failed [HIGH confidence]
-      - On ChargeError: returns 422 [HIGH confidence]
+    outbound response field: PaymentGateway.charge.amount (decimal) [HIGH] — assert correct amount sent
+    outbound response field: PaymentGateway.charge.currency (string) [HIGH] — assert correct currency sent
+    outbound response field: PaymentGateway.charge.user_id (integer) [HIGH] — assert correct user_id sent
+    outbound response field: PaymentGateway.charge.status_code (HTTP status) [HIGH] — 200/500/timeout
+    outbound response field: PaymentGateway.charge.success? (boolean) [HIGH] — true/false/ChargeError
+    outbound response field: PaymentGateway.charge.transaction_id (string, nullable) [MEDIUM] — reconciliation
 ============================
 ```
