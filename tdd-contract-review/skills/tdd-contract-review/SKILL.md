@@ -70,7 +70,7 @@ Locate test files by convention:
 
 ### Step 3: Contract Extraction (Agent 1)
 
-Read `contract-extraction.md` (in the same directory as this file). Then dispatch an Agent with description "Contract extraction" and a prompt containing:
+Read `contract-extraction.md` (in the same directory as this file). Then dispatch an Agent with description "Contract extraction", model "opus", and a prompt containing:
 
 1. The full content of `contract-extraction.md`
 2. If fintech mode detected, also read and include `fintech-checklists.md` (extraction sections only: "Contract Extraction Details" through "Security & Access Control")
@@ -93,7 +93,7 @@ Save the agent's full output as `$EXTRACTION`.
 
 ### Step 4-5: Test Audit (Agent 2)
 
-Read `test-patterns.md` (in the same directory as this file). Then dispatch an Agent with description "Test structure audit" and a prompt containing:
+Read `test-patterns.md` (in the same directory as this file). Then dispatch an Agent with description "Test structure audit", model "opus", and a prompt containing:
 
 1. The full content of `test-patterns.md`
 2. The typed prefix rules from the "Typed Field Prefixes" section above (copy them into the prompt)
@@ -106,7 +106,7 @@ Save the agent's full output as `$AUDIT`.
 
 ### Step 6: Gap Analysis (Agent 3)
 
-Read `fintech-checklists.md` (in the same directory as this file), specifically the "Gap Analysis Scenario Checklists" section. Then dispatch an Agent with description "Gap analysis" and a prompt containing:
+Read `fintech-checklists.md` (in the same directory as this file), specifically the "Gap Analysis Scenario Checklists" section. Then dispatch an Agent with description "Gap analysis", model "opus", and a prompt containing:
 
 1. The gap analysis rules (copy from below into the prompt):
    - For each field, check by prefix type:
@@ -143,7 +143,7 @@ Save the agent's full output as `$GAPS`.
 
 ### Step 7-8: Report Writing (Agent 4)
 
-Read `report-template.md` (in the same directory as this file). Then dispatch an Agent with description "Report writing" and a prompt containing:
+Read `report-template.md` (in the same directory as this file). Then dispatch an Agent with description "Report writing", model "opus", and a prompt containing:
 
 1. The full content of `report-template.md`
 2. The `$EXTRACTION` output from Agent 1
