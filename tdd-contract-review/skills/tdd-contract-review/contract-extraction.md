@@ -47,13 +47,28 @@ Jobs and message consumers are contract boundaries just like API endpoints. They
 
 ### API Calls Contract (outbound service calls)
 
+**Only classify as `outbound response field:` if the call crosses a process or network boundary.** This means:
+
+**IS outbound (extract as outbound response field):**
+- HTTP requests to 3rd-party APIs (Stripe, Twilio, payment gateways, quote feeds)
+- Message queue publishing (Kafka, RabbitMQ, SQS)
+- External cache calls (Redis, Memcached) when used as a shared service
+- Webhook/callback calls to external systems
+
+**IS NOT outbound (do NOT extract as outbound response field):**
+- Internal domain services injected as interfaces (`orderService`, `validateService`, `userCouponRepo`) — these run in-process in the same codebase
+- Internal repositories that wrap DB queries — treat their fields as `db field:` instead
+- Internal validators, formatters, or utility services — these are implementation details, not contract boundaries
+
+**How to tell the difference:** trace the service/interface to its implementation. If the implementation makes an HTTP call, sends a message, or calls an external system → outbound. If the implementation queries the DB or runs in-process logic → not outbound. When in doubt, check for HTTP client imports (`HTTParty`, `Faraday`, `net/http`, `axios`, `fetch`, `requests`, `httpx`) in the implementation.
+
 Extract the actual outbound HTTP API, not just the service layer wrapper:
 - **API endpoint**: HTTP method + URL (e.g. `POST https://api.stripe.com/v1/charges`). Find this by reading the HTTP client call inside the wrapper method.
 - **Request params**: fields sent in the request body/query/headers (amount, currency, user_id, etc.)
 - **Response fields**: fields parsed from the response body (success?, transaction_id, status, amount — upstream is untrusted, each field needs validation)
 - **HTTP-level handling**: status codes expected (200, 4xx, 5xx), timeout, malformed response
 
-How to extract: read HTTP client calls (`HTTParty`, `Faraday`, `net/http`, `axios`, `fetch`, `requests`, `httpx`) inside service/wrapper classes. Trace from the wrapper method (e.g. `PaymentGateway.charge`) to the actual HTTP call to find the URL, HTTP method, request body shape, and response parsing. Both request params and response fields are contract fields — request params are assertions, response fields need validation scenarios (mismatch, null, malformed).
+How to extract: read HTTP client calls inside service/wrapper classes. Trace from the wrapper method (e.g. `PaymentGateway.charge`) to the actual HTTP call to find the URL, HTTP method, request body shape, and response parsing. Both request params and response fields are contract fields — request params are assertions, response fields need validation scenarios (mismatch, null, malformed).
 
 ### UI Props Contract (components)
 
