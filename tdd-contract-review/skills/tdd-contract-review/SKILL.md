@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.20.0
+version: 0.20.1
 ---
 
 # TDD Contract Review
@@ -63,17 +63,38 @@ Locate test files by convention:
 
 1. **Find test files.** Glob for `**/*.test.{ts,tsx,js,jsx}`, `**/*.spec.{ts,tsx,js,jsx}`, `**/*_test.go`, `**/*_spec.rb`, `**/*.test.py`, `**/test_*.py`
 2. **Detect test framework.** Read test files to identify framework from imports and syntax.
-3. **Find source files.** Include controllers/handlers, jobs (`app/jobs/`, `app/workers/`), and message consumers (`app/consumers/`).
-4. **Check project conventions.** Read CLAUDE.md, jest.config, .rspec, Makefile.
-5. **Detect mixed frameworks.**
-6. **Detect fintech domain.** Scan for money/amount/balance/currency fields, payment gateway integrations, decimal/money types, idempotency key params, ledger patterns. If detected, enable **fintech mode**.
+3. **Find source files — handlers/controllers.** Locate source files corresponding to each test file. Include controllers/handlers, jobs (`app/jobs/`, `app/workers/`), and message consumers (`app/consumers/`).
+4. **Find DB schema files — trace from handlers.** This is critical. Do NOT rely on handler code alone for DB contracts. Find the actual schema source of truth:
+   - **Migrations:** Glob for `db/migrate/*.rb`, `database/migrations/*.sql`, `migrations/*.sql`, `**/migrations/*.py`, `**/migrate/*.go`
+   - **Model/entity definitions:** From handler imports, trace to model files. Glob for `app/models/*.rb`, `internal/model/*.go`, `src/models/*.ts`, `src/entities/*.ts`, `**/models.py`
+   - **ORM schema files:** `prisma/schema.prisma`, `db/schema.rb`, `**/schema.sql`
+   - **Generated query files:** SQLC (`**/queries.sql.go`, `**/query.sql.go`, `sqlc.yaml`), TypeORM entities, Drizzle schema
+   - **Go struct tags:** Files with `db:` or `gorm:` tags in the handler's package or `internal/model/`
+   All discovered DB schema files must be passed to Agent 1 alongside handler files.
+5. **Find outbound API client files — trace from handlers.** Do NOT rely on handler code alone for outbound contracts. Find the actual HTTP client code:
+   - From handler imports, trace to service/client files that make HTTP calls
+   - Glob for `app/services/*.rb`, `internal/service/*.go`, `src/services/*.ts`, `**/client/*.go`, `**/gateway/*.rb`
+   - Look for HTTP client imports: `HTTParty`, `Faraday`, `net/http`, `axios`, `fetch`, `requests`, `httpx`
+   All discovered outbound client files must be passed to Agent 1 alongside handler files.
+6. **Check project conventions.** Read CLAUDE.md, jest.config, .rspec, Makefile.
+7. **Detect mixed frameworks.**
+8. **Detect fintech domain.** Scan for money/amount/balance/currency fields, payment gateway integrations, decimal/money types, idempotency key params, ledger patterns. If detected, enable **fintech mode**.
+
+**GATE — Source File Completeness:** Before proceeding to Step 3, verify you have three categories of source files:
+- Handler/controller files (the entry points)
+- DB schema files (migrations, models, entity definitions, generated queries)
+- Outbound API client files (services, HTTP client wrappers)
+If any category is empty, glob more broadly. Do NOT proceed with only handler files — the extraction will be incomplete.
 
 ### Step 3: Contract Extraction (Agent 1)
 
 Determine the absolute path to this skill's directory (the directory containing this SKILL.md file). Dispatch an Agent with description "Contract extraction", model "opus", and a prompt containing:
 
 1. The absolute path to the skill directory so the agent can read reference files
-2. The list of source file paths found in Step 2
+2. The list of source file paths found in Step 2, organized by category:
+   - Handler/controller files
+   - DB schema files (migrations, models, entity definitions, generated queries)
+   - Outbound API client files (services, HTTP client wrappers)
 3. Whether fintech mode was detected in Step 2
 4. The instruction:
    "You are a contract extractor. Follow these steps exactly:
