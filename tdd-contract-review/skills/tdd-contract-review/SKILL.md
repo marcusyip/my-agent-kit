@@ -88,7 +88,7 @@ If any category is empty, glob more broadly. Do NOT proceed with only handler fi
 
 ### Step 3: Contract Extraction (Agent 1)
 
-Determine the absolute path to this skill's directory (the directory containing this SKILL.md file). Dispatch an Agent with description "Contract extraction", model "opus", and a prompt containing:
+Determine the absolute path to this skill's directory (the directory containing this SKILL.md file). Dispatch an Agent with description "Contract extraction", model "sonnet", and a prompt containing:
 
 1. The absolute path to the skill directory so the agent can read reference files
 2. The list of source file paths found in Step 2, organized by category:
@@ -124,7 +124,7 @@ Save the agent's full output as `$EXTRACTION`.
 
 ### Step 4-5: Test Audit (Agent 2)
 
-Dispatch an Agent with description "Test structure audit", model "opus", and a prompt containing:
+Dispatch an Agent with description "Test structure audit", model "sonnet", and a prompt containing:
 
 1. The absolute path to the skill directory
 2. The list of test file paths found in Step 2
@@ -197,7 +197,7 @@ Save the agent's full output as `$GAPS`.
 
 ### Step 7-8: Report Writing (Agent 4)
 
-Dispatch an Agent with description "Report writing", model "opus", and a prompt containing:
+Dispatch an Agent with description "Report writing", model "sonnet", and a prompt containing:
 
 1. The absolute path to the skill directory
 2. The `$EXTRACTION` output from Agent 1
