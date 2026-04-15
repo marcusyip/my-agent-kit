@@ -125,7 +125,26 @@ Read `fintech-checklists.md` (in the same directory as this file), specifically 
    - Include the fintech checklists content
 4. The `$EXTRACTION` output from Agent 1
 5. The `$AUDIT` output from Agent 2
-6. The instruction: "For every contract field from the extraction, determine gap status. Produce: (a) a Test Structure Tree using typed prefixes (request field:, request header:, db field:, outbound response field:) with ✓/✗ for every scenario — every field gets its own entry reviewed 1 by 1, (b) a Contract Map table with one row per field using typed prefix in Type column, (c) gap analysis by priority (HIGH/MEDIUM/LOW) with full descriptions, (d) for each HIGH gap generate a test stub following the project's existing patterns from the audit, (e) a Checkpoint 2 table. IMPORTANT: every error scenario MUST include 'no data leak' assertion. Do NOT use old formats (field:, security:, business:, external:, response body, DB assertions)."
+6. The Test Structure Tree format (include this example in the prompt so the agent follows the grouped-by-field structure):
+   ```
+   POST /api/v1/transactions
+   ├── request field: amount
+   │   ├── ✓ happy path → 201, response.amount == "100.50", db transaction.amount == 100.50
+   │   ├── ✓ nil → 422, no DB write, no data leak
+   │   ├── ✗ zero (boundary)
+   │   └── ✗ over max (1_000_001) → 422, no data leak
+   ├── request header: Authorization — NO TESTS
+   │   └── ✗ missing → 401
+   ├── db field: wallet.status — NO TESTS
+   │   └── ✗ suspended → 422, no DB write, no outbound API call, no data leak
+   ├── db field: transaction.user_id — NO TESTS
+   │   └── ✗ happy path asserts correct user_id stored
+   └── outbound response field: PaymentGateway.charge.success? — NO TESTS
+       ├── ✗ true → 201, db transaction.status == completed
+       └── ✗ false → db transaction.status == failed
+   ```
+   Each endpoint is a root node. Each field is a branch with its typed prefix. Each scenario is a leaf with ✓/✗. Fields with no tests get "— NO TESTS". Error scenarios include "no data leak".
+7. The instruction: "For every contract field from the extraction, determine gap status. Produce: (a) a Test Structure Tree following the grouped-by-field format above — every field gets its own branch with scenarios nested under it, (b) a Contract Map table with one row per field using typed prefix in Type column, (c) gap analysis by priority (HIGH/MEDIUM/LOW) with full descriptions, (d) for each HIGH gap generate a test stub following the project's existing patterns from the audit, (e) a Checkpoint 2 table. IMPORTANT: every error scenario MUST include 'no data leak' assertion. Do NOT use old formats (field:, security:, business:, external:, response body, DB assertions)."
 
 The Checkpoint 2 table the agent must produce:
 
