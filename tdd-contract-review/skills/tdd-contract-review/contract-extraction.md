@@ -55,10 +55,10 @@ Jobs and message consumers are contract boundaries just like API endpoints. They
 - External cache calls (Redis, Memcached) when used as a shared service
 - Webhook/callback calls to external systems
 
-**IS NOT outbound (do NOT extract as outbound response field):**
-- Internal domain services injected as interfaces (`orderService`, `validateService`, `userCouponRepo`) — these run in-process in the same codebase
-- Internal repositories that wrap DB queries — treat their fields as `db field:` instead
-- Internal validators, formatters, or utility services — these are implementation details, not contract boundaries
+**IS NOT outbound — do NOT extract at all (these are implementation, not contract boundaries):**
+- Internal domain services injected as interfaces (`orderService`, `validateService`, `userCouponRepo`) — these run in-process in the same codebase. Do NOT list them in the extraction. Their behavior is tested implicitly through the API endpoint.
+- Internal repositories that wrap DB queries — the DB fields are already extracted from schema/model files as `db field:`. Do NOT also list the repository as outbound.
+- Internal validators, formatters, or utility services — implementation details, invisible to the contract
 
 **How to tell the difference:** trace the service/interface to its implementation. If the implementation makes an HTTP call, sends a message, or calls an external system → outbound. If the implementation queries the DB or runs in-process logic → not outbound. When in doubt, check for HTTP client imports (`HTTParty`, `Faraday`, `net/http`, `axios`, `fetch`, `requests`, `httpx`) in the implementation.
 
