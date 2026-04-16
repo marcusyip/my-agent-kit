@@ -31,12 +31,12 @@ Every field is either an **input** (you set it in the test) or an **assertion** 
 | `request header:` | Input | Set in request headers |
 | `db field:` | Input AND assertion | Input: set in test setup (e.g. create wallet with status: 'suspended'). Assertion: verify DB state after request (e.g. transaction.user_id == user.id) |
 | `outbound response field:` | Input | Set via mock return value (e.g. mock gateway to return success: false) |
-| `outbound request field:` | Assertion AND input | Assertion: verify correct params sent to external API mock. Input: edge cases for what gets passed (precision, nil, format) |
+| `outbound request field:` | Assertion only | Verify correct params sent to external API mock (e.g. expect(Gateway).to have_received(:charge).with(amount: 100)). No tree branch — checked in happy path assertions. |
 | `prop:` | Input | Set as component props |
 
-**Every field gets its own tree branch with scenarios.** No exceptions. All field types — request fields, db fields, outbound request fields, outbound response fields — each get their own branch reviewed 1 by 1 with edge cases.
-**db field:** appears in both roles: as input (precondition scenarios) AND as assertion (postcondition verification in happy path).
-**outbound request field:** appears in both roles: as assertion (happy path verifies correct params sent) AND as input (edge cases for what gets passed to the external API).
+**Input fields get their own tree branch with scenarios.** Every input field — request fields, request headers, db fields (as input), outbound response fields — gets its own branch reviewed 1 by 1 with edge cases.
+**Assertion fields (`outbound request field:`) do NOT get their own tree branch.** They are checked in the happy path assertions (verify correct params sent to external API).
+**db field:** appears in both roles: as input (precondition scenarios with own tree branch) AND as assertion (postcondition verification in happy path).
 
 **Do NOT use:** `field: X (request param)`, `security:`, `business:`, `external:`, `response body`, `DB assertions`. These are old formats.
 
@@ -244,7 +244,7 @@ After Agent 4 writes report files, dispatch an Agent with description "Report qu
    - [ ] Every request param field has its own branch (request field: amount, request field: currency, etc.)
    - [ ] Every DB table field has its own branch (db field: transaction.user_id, db field: transaction.amount, db field: transaction.status, etc.) — not grouped under a table name
    - [ ] Every response body field is covered as an assertion in the happy path (verify each field value returned)
-   - [ ] Every outbound request field has its own branch with scenarios (outbound request field: charge.amount — happy path asserts correct value sent, edge cases for what gets passed)
+   - [ ] Every outbound request field is verified as an assertion in the happy path (outbound request field: charge.amount — no tree branch, checked via mock expectations)
    - [ ] Every outbound response field has its own branch with scenarios (outbound response field: charge.success?, etc.)
    - [ ] Each field branch has edge case scenarios: nil, invalid, boundary, empty for inputs; mismatch, null for outbound responses
    - [ ] Uses typed prefixes: request field:, request header:, db field:, outbound response field:

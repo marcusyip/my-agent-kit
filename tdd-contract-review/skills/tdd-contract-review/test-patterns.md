@@ -12,11 +12,11 @@ Every field is either an **input** (you set it in the test) or an **assertion** 
 | `request header:` | Input | Set in request headers |
 | `db field:` | Input AND assertion | Input: set in setup (precondition). Assertion: verify after request (postcondition) |
 | `outbound response field:` | Input | Set via mock return value |
-| `outbound request field:` | Assertion | Verify correct params sent to external API mock |
+| `outbound request field:` | Assertion only | Verify correct params sent to external API mock. No tree branch — checked in happy path assertions. |
 | `prop:` | Input | Set as component props |
 
-**Input fields** get tree entries with scenarios — each scenario sets a different value.
-**Assertion fields** (`outbound request field:`, `db field:` as assertion) are verified in the happy path and relevant scenarios. They don't get their own tree branch with scenarios.
+**Input fields get their own tree branch with scenarios.** Request fields, request headers, db fields (as input), outbound response fields — each get their own branch reviewed 1 by 1 with edge cases.
+**Assertion-only fields (`outbound request field:`) do NOT get their own tree branch.** They are verified in the happy path assertions.
 
 ## One Endpoint Per Test File
 
