@@ -77,7 +77,28 @@ Extract from the boundary, not the wrapper:
 - **Response fields**: fields parsed from the response body (success?, transaction_id, status, amount — upstream is untrusted, each field needs validation)
 - **HTTP-level handling**: status codes expected (200, 4xx, 5xx), timeout, malformed response
 
-How to extract: read HTTP client calls or SDK calls inside service/wrapper classes. Trace from the wrapper method (e.g. `PaymentGateway.charge`) to the actual HTTP call or SDK invocation to find the URL/method, request body shape, and response parsing. If the wrapper uses a SDK (e.g. `Stripe::Charge.create`, `stripe.charges.create`), use the SDK interface as the boundary. Both request params and response fields are contract fields — request params are assertions, response fields need validation scenarios (mismatch, null, malformed).
+**How to extract — dig deep, don't stop at the first layer:**
+
+Finding the actual outbound boundary often requires tracing through 2-3 levels of abstraction. Do NOT stop at the handler or the first service method. Follow the call chain until you find the HTTP client call or SDK invocation.
+
+Example trace:
+```
+handler.CreateOrder()
+  → orderService.Create()          ← internal service, keep tracing
+    → paymentClient.Charge()       ← wrapper, keep tracing
+      → http.Post("https://...")   ← FOUND IT. This is the boundary.
+```
+
+Steps:
+1. Find the service/client call in the handler
+2. Read that service/client file — find the method implementation
+3. If it calls another internal method, follow that too
+4. Stop when you find: `http.Post()`, `axios.post()`, `HTTParty.post()`, `fetch()`, `requests.post()`, `Stripe::Charge.create()`, or similar
+5. Extract the URL, request body fields, response parsing from THAT level
+
+If you cannot find the actual HTTP call (e.g. the SDK completely hides it), use the SDK interface as the boundary (e.g. `stripe.charges.create(amount:, currency:)`).
+
+Both request params and response fields are contract fields — request params are assertions, response fields need validation scenarios (mismatch, null, malformed).
 
 ### UI Props Contract (components)
 
