@@ -240,12 +240,17 @@ After Agent 4 writes report files, dispatch an Agent with description "Report qu
    - [ ] Outbound request fields (assertions) and outbound response fields (inputs) both present
    - [ ] Every contract type from Checkpoint 1 with Status 'Extracted' has fields listed
 
-   **Test Structure Tree:**
-   - [ ] Grouped by field — each field is a branch with scenarios nested under it
+   **Test Structure Tree (every field must have its own branch):**
+   - [ ] Every request param field has its own branch (request field: amount, request field: currency, etc.)
+   - [ ] Every DB table field has its own branch (db field: transaction.user_id, db field: transaction.amount, db field: transaction.status, etc.) — not grouped under a table name
+   - [ ] Every response body field is covered as an assertion in the happy path (verify each field value returned)
+   - [ ] Every outbound request field has its own assertion entry (outbound request field: charge.amount, etc.)
+   - [ ] Every outbound response field has its own branch with scenarios (outbound response field: charge.success?, etc.)
+   - [ ] Each field branch has edge case scenarios: nil, invalid, boundary, empty for inputs; mismatch, null for outbound responses
    - [ ] Uses typed prefixes: request field:, request header:, db field:, outbound response field:
    - [ ] Does NOT use old formats: field:, security:, business:, external:, response body, DB assertions
    - [ ] Error scenarios include 'no data leak' assertion
-   - [ ] Each field reviewed 1 by 1 (db fields and outbound fields get same treatment as request fields)
+   - [ ] Cross-reference: count of fields in the tree should match count of fields in the Contract Extraction Summary
 
    **Contract Map:**
    - [ ] One row per field with typed prefix in Type column
