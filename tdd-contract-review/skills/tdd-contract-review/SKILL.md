@@ -25,18 +25,19 @@ Tests protect against breaking changes by verifying contracts -- the agreements 
 
 Every field is either an **input** (you set it in the test) or an **assertion** (you verify it after the request), or both.
 
-| Prefix | Role | How to set/verify |
-|---|---|---|
-| `request field:` | Input | Set in request params |
-| `request header:` | Input | Set in request headers |
-| `db field:` | Input AND assertion | Input: set in test setup (e.g. create wallet with status: 'suspended'). Assertion: verify DB state after request (e.g. transaction.user_id == user.id) |
-| `outbound response field:` | Input | Set via mock return value (e.g. mock gateway to return success: false) |
-| `outbound request field:` | Assertion only | Verify correct params sent to external API mock (e.g. expect(Gateway).to have_received(:charge).with(amount: 100)). No tree branch — checked in happy path assertions. |
-| `prop:` | Input | Set as component props |
+| Prefix | Role | Tree branch? | How |
+|---|---|---|---|
+| `request field:` | Input | Yes | Set in request params. Scenarios: nil, invalid, boundary. |
+| `request header:` | Input | Yes | Set in request headers. Scenarios: missing, expired. |
+| `db field:` (input) | Input | Yes | Set in test setup (e.g. wallet.status = 'suspended'). Scenarios: suspended, insufficient balance, already exists. |
+| `db field:` (assertion) | Assertion | No | Verify DB state after request (e.g. transaction.user_id == user.id). Checked in happy path. |
+| `response field:` | Assertion | No | Verify inbound API response body fields (e.g. response.id, response.amount, response.status). Checked in happy path. |
+| `outbound response field:` | Input | Yes | Set via mock return value. Scenarios: success, failure, mismatch, null, timeout. |
+| `outbound request field:` | Assertion | No | Verify correct params sent to external API mock. Checked in happy path. |
+| `prop:` | Input | Yes | Set as component props. |
 
-**Input fields get their own tree branch with scenarios.** Every input field — request fields, request headers, db fields (as input), outbound response fields — gets its own branch reviewed 1 by 1 with edge cases.
-**Assertion fields (`outbound request field:`) do NOT get their own tree branch.** They are checked in the happy path assertions (verify correct params sent to external API).
-**db field:** appears in both roles: as input (precondition scenarios with own tree branch) AND as assertion (postcondition verification in happy path).
+**Input fields get their own tree branch with scenarios.** Request fields, request headers, db fields (as input), outbound response fields, props.
+**Assertion fields do NOT get their own tree branch.** `response field:`, `db field:` (as assertion), `outbound request field:` are verified in the happy path.
 
 **Do NOT use:** `field: X (request param)`, `security:`, `business:`, `external:`, `response body`, `DB assertions`. These are old formats.
 
@@ -243,11 +244,11 @@ After Agent 4 writes report files, dispatch an Agent with description "Report qu
    **Test Structure Tree (every field must have its own branch):**
    - [ ] Every request param field has its own branch (request field: amount, request field: currency, etc.)
    - [ ] Every DB table field has its own branch (db field: transaction.user_id, db field: transaction.amount, db field: transaction.status, etc.) — not grouped under a table name
-   - [ ] Every response body field is covered as an assertion in the happy path (verify each field value returned)
-   - [ ] Every outbound request field is verified as an assertion in the happy path (outbound request field: charge.amount — no tree branch, checked via mock expectations)
+   - [ ] Every inbound response body field listed as assertion (response field: id, response field: amount, etc.) — verified in happy path, no tree branch
+   - [ ] Every outbound request field listed as assertion (outbound request field: charge.amount, etc.) — verified in happy path, no tree branch
    - [ ] Every outbound response field has its own branch with scenarios (outbound response field: charge.success?, etc.)
    - [ ] Each field branch has edge case scenarios: nil, invalid, boundary, empty for inputs; mismatch, null for outbound responses
-   - [ ] Uses typed prefixes: request field:, request header:, db field:, outbound response field:
+   - [ ] Uses typed prefixes: request field:, request header:, db field:, response field:, outbound response field:, outbound request field:
    - [ ] Does NOT use old formats: field:, security:, business:, external:, response body, DB assertions
    - [ ] Error scenarios include 'no data leak' assertion
    - [ ] Cross-reference: count of fields in the tree should match count of fields in the Contract Extraction Summary

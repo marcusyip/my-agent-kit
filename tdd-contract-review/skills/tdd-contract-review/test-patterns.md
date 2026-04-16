@@ -6,17 +6,19 @@ Detailed guidance for Steps 4-5 of the TDD Contract Review workflow.
 
 Every field is either an **input** (you set it in the test) or an **assertion** (you verify it after the request), or both:
 
-| Prefix | Role | How |
-|---|---|---|
-| `request field:` | Input | Set in request params |
-| `request header:` | Input | Set in request headers |
-| `db field:` | Input AND assertion | Input: set in setup (precondition). Assertion: verify after request (postcondition) |
-| `outbound response field:` | Input | Set via mock return value |
-| `outbound request field:` | Assertion only | Verify correct params sent to external API mock. No tree branch — checked in happy path assertions. |
-| `prop:` | Input | Set as component props |
+| Prefix | Role | Tree branch? | How |
+|---|---|---|---|
+| `request field:` | Input | Yes | Set in request params |
+| `request header:` | Input | Yes | Set in request headers |
+| `db field:` (input) | Input | Yes | Set in test setup (precondition) |
+| `db field:` (assertion) | Assertion | No | Verify DB state after request (postcondition) |
+| `response field:` | Assertion | No | Verify inbound API response body fields |
+| `outbound response field:` | Input | Yes | Set via mock return value |
+| `outbound request field:` | Assertion | No | Verify correct params sent to external API mock |
+| `prop:` | Input | Yes | Set as component props |
 
-**Input fields get their own tree branch with scenarios.** Request fields, request headers, db fields (as input), outbound response fields — each get their own branch reviewed 1 by 1 with edge cases.
-**Assertion-only fields (`outbound request field:`) do NOT get their own tree branch.** They are verified in the happy path assertions.
+**Input fields get their own tree branch with scenarios.** Request fields, request headers, db fields (as input), outbound response fields, props.
+**Assertion fields do NOT get their own tree branch.** `response field:`, `db field:` (assertion), `outbound request field:` are verified in the happy path.
 
 ## One Endpoint Per Test File
 

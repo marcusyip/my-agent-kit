@@ -127,17 +127,32 @@ Framework: Rails/RSpec
 
 API Contract (inbound):
   POST /api/v1/transactions
-    request field: amount (decimal, required, > 0, <= 1_000_000) [HIGH]
-    request field: currency (string, required, in: USD/EUR/GBP/BTC/ETH) [HIGH]
-    request field: wallet_id (integer, required) [HIGH]
-    request field: description (string, optional, max: 500) [HIGH]
-    request field: category (string, optional, enum: transfer/payment/deposit/withdrawal, default: transfer) [HIGH]
-    request header: Authorization (bearer token, required) [HIGH]
+    Input:
+      request field: amount (decimal, required, > 0, <= 1_000_000) [HIGH]
+      request field: currency (string, required, in: USD/EUR/GBP/BTC/ETH) [HIGH]
+      request field: wallet_id (integer, required) [HIGH]
+      request field: description (string, optional, max: 500) [HIGH]
+      request field: category (string, optional, enum: transfer/payment/deposit/withdrawal, default: transfer) [HIGH]
+      request header: Authorization (bearer token, required) [HIGH]
+    Assertion (verify in happy path):
+      response field: id (integer) [HIGH]
+      response field: amount (string, decimal-as-string) [HIGH]
+      response field: currency (string) [HIGH]
+      response field: status (string) [HIGH]
+      response field: description (string, nullable) [HIGH]
+      response field: category (string) [HIGH]
+      response field: wallet_id (integer) [HIGH]
+      response field: created_at (datetime, ISO8601) [HIGH]
     Status codes: 201, 422, 401, 500
 
   GET /api/v1/transactions
-    request field: page (integer, optional) [MEDIUM]
-    request field: per_page (integer, optional, default: 25) [MEDIUM]
+    Input:
+      request field: page (integer, optional) [MEDIUM]
+      request field: per_page (integer, optional, default: 25) [MEDIUM]
+    Assertion (verify in happy path):
+      response field: transactions (array) [HIGH]
+      response field: meta.total (integer) [HIGH]
+      response field: meta.page (integer) [HIGH]
     Status codes: 200, 401
 
 DB Contract:
