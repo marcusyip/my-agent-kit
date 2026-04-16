@@ -62,13 +62,22 @@ Jobs and message consumers are contract boundaries just like API endpoints. They
 
 **How to tell the difference:** trace the service/interface to its implementation. If the implementation makes an HTTP call, sends a message, or calls an external system → outbound. If the implementation queries the DB or runs in-process logic → not outbound. When in doubt, check for HTTP client imports (`HTTParty`, `Faraday`, `net/http`, `axios`, `fetch`, `requests`, `httpx`) in the implementation.
 
-Extract the actual outbound HTTP API, not just the service layer wrapper:
-- **API endpoint**: HTTP method + URL (e.g. `POST https://api.stripe.com/v1/charges`). Find this by reading the HTTP client call inside the wrapper method.
+**Priority order for identifying the outbound boundary:**
+
+1. **HTTP endpoint URL** (best) — trace to the actual HTTP call in the wrapper:
+   `POST https://api.stripe.com/v1/charges`
+2. **SDK/library interface** (good) — when using an SDK that abstracts the HTTP layer:
+   `stripe.charges.create(amount:, currency:, source:)`
+3. **Never** — internal service wrappers, domain services, repositories:
+   ~~`paymentService.process()`~~ ← this is NOT the boundary, it's implementation
+
+Extract from the boundary, not the wrapper:
+- **API endpoint or SDK call**: the actual external interface being called
 - **Request params**: fields sent in the request body/query/headers (amount, currency, user_id, etc.)
 - **Response fields**: fields parsed from the response body (success?, transaction_id, status, amount — upstream is untrusted, each field needs validation)
 - **HTTP-level handling**: status codes expected (200, 4xx, 5xx), timeout, malformed response
 
-How to extract: read HTTP client calls inside service/wrapper classes. Trace from the wrapper method (e.g. `PaymentGateway.charge`) to the actual HTTP call to find the URL, HTTP method, request body shape, and response parsing. Both request params and response fields are contract fields — request params are assertions, response fields need validation scenarios (mismatch, null, malformed).
+How to extract: read HTTP client calls or SDK calls inside service/wrapper classes. Trace from the wrapper method (e.g. `PaymentGateway.charge`) to the actual HTTP call or SDK invocation to find the URL/method, request body shape, and response parsing. If the wrapper uses a SDK (e.g. `Stripe::Charge.create`, `stripe.charges.create`), use the SDK interface as the boundary. Both request params and response fields are contract fields — request params are assertions, response fields need validation scenarios (mismatch, null, malformed).
 
 ### UI Props Contract (components)
 
@@ -126,14 +135,16 @@ DB Contract:
     db field (assertion): transaction.category (string, enum: transfer/payment/deposit/withdrawal) [HIGH]
 
 Outbound API:
-  POST https://api.paymentgateway.com/v1/charges (via PaymentGateway.charge, when category == 'payment')
+  POST https://api.paymentgateway.com/v1/charges
+  (wrapper: PaymentGateway.charge, triggered when category == 'payment')
+  — OR if SDK-based: stripe.charges.create(amount:, currency:, source:)
     Assertion (verify correct params sent to external API):
-      outbound request field: PaymentGateway.charge.amount (decimal) [HIGH]
-      outbound request field: PaymentGateway.charge.currency (string) [HIGH]
-      outbound request field: PaymentGateway.charge.user_id (integer) [HIGH]
+      outbound request field: amount (decimal) [HIGH]
+      outbound request field: currency (string) [HIGH]
+      outbound request field: user_id (integer) [HIGH]
     Input (set via mock — upstream untrusted, validate each):
-      outbound response field: PaymentGateway.charge.status_code (HTTP status) [HIGH] — 200/500/timeout
-      outbound response field: PaymentGateway.charge.success? (boolean) [HIGH] — true/false/ChargeError
-      outbound response field: PaymentGateway.charge.transaction_id (string, nullable) [MEDIUM] — reconciliation
+      outbound response field: status_code (HTTP status) [HIGH] — 200/500/timeout
+      outbound response field: success? (boolean) [HIGH] — true/false/ChargeError
+      outbound response field: transaction_id (string, nullable) [MEDIUM] — reconciliation
 ============================
 ```
