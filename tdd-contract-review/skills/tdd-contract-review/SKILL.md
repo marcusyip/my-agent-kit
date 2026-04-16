@@ -3,12 +3,12 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.25.0
+version: 0.26.0
 ---
 
 # TDD Contract Review
 
-Contract-based test quality review. Dispatches a Principal QA Engineer agent for each step with focused context.
+Contract-based test quality review. Dispatches a Staff Engineer agent for each step with focused context.
 
 ## Review Workflow
 
@@ -46,7 +46,7 @@ Resolve `$ARGUMENTS` to find test and source files.
 Determine the skill directory path and the plugin root path (parent of `skills/`). Dispatch the Principal QA Engineer agent:
 
 ```
-Agent:       tdd-contract-review:principal-qa-engineer
+Agent:       tdd-contract-review:staff-engineer
 Model:       sonnet
 Description: Contract extraction
 Prompt:
@@ -70,7 +70,7 @@ Prompt:
 ### Step 4-5: Test Audit
 
 ```
-Agent:       tdd-contract-review:principal-qa-engineer
+Agent:       tdd-contract-review:staff-engineer
 Model:       sonnet
 Description: Test structure audit
 Prompt:
@@ -89,7 +89,7 @@ Save output as `$AUDIT`.
 ### Step 6: Gap Analysis
 
 ```
-Agent:       tdd-contract-review:principal-qa-engineer
+Agent:       tdd-contract-review:staff-engineer
 Model:       opus
 Description: Gap analysis
 Prompt:
@@ -109,7 +109,7 @@ Prompt:
 ### Step 7-8: Report Writing
 
 ```
-Agent:       tdd-contract-review:principal-qa-engineer
+Agent:       tdd-contract-review:staff-engineer
 Model:       sonnet
 Description: Report writing
 Prompt:
@@ -131,7 +131,7 @@ Prompt:
 ### Step 9: Report Review
 
 ```
-Agent:       tdd-contract-review:principal-qa-engineer
+Agent:       tdd-contract-review:staff-engineer
 Model:       opus
 Description: Report quality review
 Prompt:
