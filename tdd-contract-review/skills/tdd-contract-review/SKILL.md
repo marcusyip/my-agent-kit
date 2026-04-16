@@ -109,7 +109,7 @@ Determine the absolute path to this skill's directory (the directory containing 
    "You are a contract extractor. Follow these steps exactly:
    (a) Read the file `contract-extraction.md` at [skill directory path]/contract-extraction.md using the Read tool. This contains per-framework extraction guidance and the output format example.
    (b) If fintech mode is detected, also read `fintech-checklists.md` at [skill directory path]/fintech-checklists.md for fintech-specific extraction dimensions.
-   (c) Read every source file listed below.
+   (c) Read every source file listed below. IMPORTANT: for DB contracts, you MUST read the actual migration files and model/entity struct files — do NOT infer DB fields from handler code. The handler shows how fields are used, but the migration/model files are the source of truth for column names, types, constraints (NOT NULL, UNIQUE, DEFAULT), and enum values.
    (d) Extract all contracts using the guidance from contract-extraction.md.
    (e) Produce a Contract Extraction Summary using typed prefixes per field — every field must be labeled with its prefix (request field:, request header:, db field:, outbound response field:). Use the format from the example in contract-extraction.md exactly. This format flows directly into the Test Structure Tree and Contract Map without restructuring.
    (f) Fill in the Checkpoint 1 table (mandatory, every row).
@@ -236,7 +236,7 @@ After Agent 4 writes report files, dispatch an Agent with description "Report qu
 
    **Extraction completeness:**
    - [ ] Checkpoint 1 table present with all 5 rows filled
-   - [ ] DB contract fields extracted per-field (db field: model.fieldname), not just table names
+   - [ ] DB contract fields extracted per-field from actual migration files or model structs (db field: transaction.user_id, db field: transaction.amount, etc.) — NOT summarized as table names ("Transaction model: 7 fields") and NOT inferred from handler code. Each field must show column name, type, and constraints from the schema source.
    - [ ] Outbound API shows actual HTTP endpoint URL or SDK interface, not internal service wrapper
    - [ ] Outbound request fields (assertions) and outbound response fields (inputs) both present
    - [ ] Every contract type from Checkpoint 1 with Status 'Extracted' has fields listed
