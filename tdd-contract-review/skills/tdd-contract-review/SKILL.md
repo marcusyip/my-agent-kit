@@ -43,7 +43,7 @@ Resolve `$ARGUMENTS` to find test and source files.
 
 ### Step 3: Contract Extraction
 
-Determine the skill directory path and the plugin root path (parent of `skills/`). Dispatch the Principal QA Engineer agent:
+Determine the skill directory path and the plugin root path (parent of `skills/`). Dispatch the Staff Engineer agent:
 
 ```
 Agent:       tdd-contract-review:staff-engineer
