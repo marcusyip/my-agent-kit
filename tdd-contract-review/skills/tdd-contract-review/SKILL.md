@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Extracts contracts from source code, maps test coverage per field, identifies gaps, produces a scored report with prioritized actions, and auto-generates test stubs for high-priority gaps.
 argument-hint: "[path, file, or 'quick' for abbreviated output -- defaults to PR scope or project root]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.22.0
+version: 0.23.0
 ---
 
 # TDD Contract Review
@@ -224,7 +224,58 @@ Dispatch an Agent with description "Report writing", model "sonnet", and a promp
 
 **GATE — Report Files Must Be Written:** Verify the agent wrote report files. List the report directory. If no files exist, the review is not complete — ask the agent to write them.
 
-After the agent completes, print a short summary to the conversation showing files created and scores.
+### Step 9: Report Review (Agent 5)
+
+After Agent 4 writes report files, dispatch an Agent with description "Report quality review", model "opus", and a prompt containing:
+
+1. The absolute path to the report directory (from Agent 4)
+2. The `$EXTRACTION` output from Agent 1 (for cross-referencing)
+3. The instruction:
+   "You are a report quality reviewer. Read every report file in the report directory. Check each report against this quality checklist:
+
+   **Extraction completeness:**
+   - [ ] Checkpoint 1 table present with all 5 rows filled
+   - [ ] DB contract fields extracted per-field (db field: model.fieldname), not just table names
+   - [ ] Outbound API shows actual HTTP endpoint URL or SDK interface, not internal service wrapper
+   - [ ] Outbound request fields (assertions) and outbound response fields (inputs) both present
+   - [ ] Every contract type from Checkpoint 1 with Status 'Extracted' has fields listed
+
+   **Test Structure Tree:**
+   - [ ] Grouped by field — each field is a branch with scenarios nested under it
+   - [ ] Uses typed prefixes: request field:, request header:, db field:, outbound response field:
+   - [ ] Does NOT use old formats: field:, security:, business:, external:, response body, DB assertions
+   - [ ] Error scenarios include 'no data leak' assertion
+   - [ ] Each field reviewed 1 by 1 (db fields and outbound fields get same treatment as request fields)
+
+   **Contract Map:**
+   - [ ] One row per field with typed prefix in Type column
+   - [ ] Row count per type consistent with Checkpoint 1 field counts
+
+   **Gap Analysis:**
+   - [ ] Checkpoint 2 table present
+   - [ ] Every contract type from Checkpoint 1 with Status 'Extracted' shows 'Yes' in Gaps Checked
+   - [ ] HIGH gaps have auto-generated test stubs
+
+   For each failed check, output:
+   - Which check failed
+   - Which report file
+   - Which agent should fix it: Agent 1 (extraction), Agent 2 (audit), Agent 3 (gap analysis), or Agent 4 (report writing)
+   - What specifically is wrong
+
+   If all checks pass, output: 'QUALITY: PASS — all checks passed.'
+   If any checks fail, output: 'QUALITY: FAIL' followed by the list of failures."
+
+Save the agent's output as `$REVIEW`.
+
+**If QUALITY: PASS** — proceed to print summary.
+
+**If QUALITY: FAIL** — re-dispatch the responsible agent(s) to fix, max 1 round:
+- Parse the failures to identify which agent(s) need to re-run
+- Re-dispatch only the responsible agent with the specific fix needed
+- Re-run downstream agents that depend on the fixed output (e.g., if Agent 1 is fixed, re-run Agents 3 and 4)
+- After the fix round, proceed to print summary. Do NOT re-run Agent 5. If issues persist after one fix round, note them as concerns in the summary.
+
+After the review completes (pass or fix round done), print a short summary to the conversation showing files created, scores, and review result.
 
 ## Review Principles
 

@@ -1,5 +1,5 @@
 {
-  "version": "0.22.0",
+  "version": "0.23.0",
   "name": "tdd-contract-review",
   "description": "Contract-based test quality reviewer. Extracts contracts (API fields, DB fields, outbound API params, UI props) from source code, maps test coverage per field, identifies gaps, scores quality, and auto-generates test stubs for missing coverage.",
   "author": {
