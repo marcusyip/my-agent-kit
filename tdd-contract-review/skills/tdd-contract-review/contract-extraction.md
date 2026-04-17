@@ -1,3 +1,4 @@
+<!-- version: 0.28.0 -->
 # Contract Extraction Reference
 
 Detailed guidance for Step 3 of the TDD Contract Review workflow.

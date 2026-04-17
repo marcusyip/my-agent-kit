@@ -1,24 +1,49 @@
+<!-- version: 0.28.0 -->
 # Report Template Reference
 
-Detailed guidance for Step 8 of the TDD Contract Review workflow.
+Detailed guidance for Step 7-8 of the TDD Contract Review workflow.
 
-## Report File Conventions
+## Output Files
 
-**One report per test file, written to separate files.** Each test file gets its own report file with its own contract extraction, test structure tree, gap analysis, and score. A summary file is also written.
+The Step 7-8 agent writes TWO files to `$RUN_DIR`:
 
-**Write reports to `tdd-contract-review/{datetime}-report/`** in the project root (create it if it doesn't exist). Use the current date and time for `{datetime}` in `YYYYMMDD-HHMM` format (e.g. `tdd-contract-review/20260412-1630-report/`). Get the current time by running `date +%Y%m%d-%H%M` via Bash. File naming convention:
-- Per-file reports: kebab-case of the test file name, e.g. `tdd-contract-review/20260412-1630-report/post-transactions-spec.md`
-- Summary: `tdd-contract-review/20260412-1630-report/summary.md`
+1. **`report.md`** — human-readable scored report (the template below)
+2. **`findings.json`** — machine-readable gap list for eval.sh + Step 9 deterministic check
 
-Do all analysis (reading files, extracting contracts, auditing tests) first, then write all report files.
+One unit per run, so there is no multi-file summary. `summary.md` does not exist in this workflow.
 
-**If file writes are blocked**, fall back to printing all reports inline in a single response. Do not retry blocked writes.
+## findings.json Schema
 
-If a test file contains multiple endpoints (anti-pattern), still produce one report for that file but flag the multi-endpoint issue prominently.
+```json
+{
+  "unit": "POST /api/v1/transactions",
+  "fintech": true,
+  "gaps": [
+    {
+      "id": "G001",
+      "priority": "HIGH",
+      "field": "request field: amount",
+      "type": "API inbound",
+      "description": "No test for negative amount (should return 422)",
+      "stub": "it 'returns 422 for negative amount' do\n  post '/api/v1/transactions', params: { amount: -1 }\n  expect(response.status).to eq(422)\n  expect(Transaction.count).to eq(0)\nend"
+    }
+  ]
+}
+```
+
+**Field rules:**
+- `id`: sequential `G001`, `G002`, ... unique per run
+- `priority`: `HIGH` | `MEDIUM` | `LOW`
+- `field`: typed prefix + field name (e.g., `db field: wallets.status`, `outbound response field: Stripe.Charge.status`)
+- `type`: one of `API inbound` | `DB` | `Outbound API` | `Jobs` | `UI Props` | `Fintech:<dimension name>`
+- `description`: what's missing, plain English
+- `stub`: test stub code. **REQUIRED for HIGH gaps.** Optional for MEDIUM/LOW. Use `\n` for newlines in JSON.
+
+Step 9 validates this file; invalid JSON or HIGH gaps without stubs = FAIL.
 
 ## Scoring
 
-Score each report across 6 categories:
+Score the unit across 6 categories:
 
 | Category | Weight | Focus |
 |---|---|---|
@@ -32,37 +57,35 @@ Score each report across 6 categories:
 **Verdicts:** STRONG (8-10) / ADEQUATE (6-7.9) / NEEDS IMPROVEMENT (4-5.9) / WEAK (0-3.9)
 
 **Scoring calibration anchors:**
-- **9-10 (STRONG):** Every contract field has a test group. Happy paths assert all response fields + DB state. All enum values covered. External API mocked with success/failure/timeout. No anti-patterns. Rare -- most mature codebases top out at 8.
+- **9-10 (STRONG):** Every contract field has a test group. Happy paths assert all response fields + DB state. All enum values covered. External API mocked with success/failure/timeout. No anti-patterns. Rare — most mature codebases top out at 8.
 - **7 (ADEQUATE):** Most contract fields tested. Happy paths exist but may miss some response fields. A few enum values or edge cases missing. Minor anti-patterns (e.g., some status-only assertions).
 - **5 (NEEDS IMPROVEMENT):** Core fields tested but significant gaps: missing error path coverage, incomplete happy path assertions, untested endpoints, no external API scenarios.
 - **2-3 (WEAK):** Minimal tests exist. Most contract fields untested. No test foundation pattern. Status-only assertions throughout. Major features have zero coverage.
 
-## Full Report Template
+## report.md Template
 
 ```markdown
-## TDD Contract Review: [test file path]
+## TDD Contract Review: [unit identifier]
 
-**Test file:** [e.g. spec/requests/api/v1/post_transactions_spec.rb]
-**Endpoint:** [e.g. POST /api/v1/transactions]
-**Source files:** [list of source files this test covers]
+**Unit:** [e.g. POST /api/v1/transactions]
+**Source file:** [resolved path]
+**Test file(s):** [list]
 **Framework:** [detected framework and language]
+**Fintech mode:** [yes / no]
 
 ### How to Read This Report
 
-**What is a contract?** A contract is the agreement between components about data shape, behavior, and error handling. Every API endpoint, job, and message consumer has contracts: what fields it accepts, what it returns, what happens on invalid input, and what side effects it triggers. A field without tests means changes to it can break things silently.
+**What is a contract?** A contract is the agreement between components about data shape, behavior, and error handling. Every endpoint, job, and consumer has contracts: what fields it accepts, what it returns, what happens on invalid input, and what side effects it triggers. A field without tests means changes to it can break things silently.
 
 **Test Structure Tree** shows your test coverage at a glance:
 - `✓` = scenario is tested
 - `✗` = scenario is missing (potential silent breakage)
-- Each entry point (endpoint, job, consumer) gets its own section
 - Fields use typed prefixes: `request field:` (user input), `request header:` (HTTP headers), `db field:` (database state), `outbound response field:` (response handling + outbound params + DB assertions)
 - Each field lists every scenario individually so you can see exactly what's covered and what's not
 
-**One endpoint per file:** Each API endpoint, job, or consumer should have its own test file. This makes gaps immediately visible — if a file doesn't exist, the entire contract is untested.
+**Contract boundary:** Tests should verify behavior at the contract boundary (endpoint entry, job entry, consumer entry), not internal implementation. Testing that a service method is called is implementation testing. Testing that POST returns 422 when the wallet is suspended is contract testing.
 
-**Contract boundary:** Tests should verify behavior at the contract boundary (API endpoint, job entry point), not internal implementation. Testing that a service method is called is implementation testing — testing that POST returns 422 when the wallet is suspended is contract testing.
-
-**Scoring:** The score reflects how well your tests protect against breaking changes, not how many tests you have. A codebase with 100 tests that only check status codes scores lower than one with 20 tests that verify response fields, DB state, and error paths.
+**Scoring:** The score reflects how well your tests protect against breaking changes, not how many tests you have.
 
 ### Overall Score: X.X / 10
 
@@ -80,11 +103,11 @@ Score each report across 6 categories:
 
 ### Contract Extraction Summary
 
-[Include the full contract extraction summary from Step 3. MUST include ALL contract types found: API (inbound) request/response fields, DB table fields and enum values, outbound API call params and response shapes, job/consumer payloads, UI props. If a contract type was extracted in Step 3, it MUST appear here. Do not omit DB or outbound contracts.]
+[Copy from 01-extraction.md. MUST include ALL contract types found: API inbound request/response fields, DB table fields and enum values, outbound API call params and response shapes, job payloads, UI props. If a contract type was extracted, it MUST appear here.]
 
 ### Fintech Dimensions Summary
 
-When fintech mode is active, include this table in every per-file report. Copy the status from the Step 3 extraction template. For "Not detected" dimensions, show the gap count from the absence flagging in Step 6. For "Not applicable" dimensions, show "—" in both Fields and Gaps columns.
+[If fintech mode is active, include this table. Otherwise omit this section entirely.]
 
 | # | Dimension | Status | Fields | Gaps |
 |---|-----------|--------|--------|------|
@@ -97,26 +120,26 @@ When fintech mode is active, include this table in every per-file report. Copy t
 | 7 | Concurrency & Data Integrity | Not detected — flagged | — | Infrastructure gap |
 | 8 | Security & Access Control | Extracted | 5 fields | 3 HIGH |
 
-**Fintech mode:** Active — all 8 dimensions evaluated.
-
 ### Test Structure Tree
 
-[See SKILL.md for the tree format rules and typed prefix gate]
+[See staff-engineer.md for the tree format rules and typed prefix gate]
 
 ### Contract Map
 
-Every contract field from the extraction summary MUST appear in this table — each field gets its own row, reviewed 1 by 1. The Type column MUST use the same typed prefixes as the Test Structure Tree: `request field`, `request header`, `db field`, `outbound response field`, `prop`. Do not use `Security`, `Business rule`, or generic labels. **Cross-reference Checkpoint 1:** the number of rows per contract type in this table must be consistent with the Fields Found count from Checkpoint 1. If Checkpoint 1 shows 8 DB fields extracted but the Contract Map has fewer than 8 DB rows, fields were dropped — go back and add the missing rows.
+Every contract field from the extraction summary MUST appear in this table — each field gets its own row, reviewed 1 by 1. The Type column MUST use typed prefixes: `request field`, `request header`, `db field`, `outbound response field`, `prop`. **Cross-reference Checkpoint 1:** row count per type must match the Fields Found count from Checkpoint 1.
 
 | Type | Field | Confidence | Test Group | Scenarios Covered | Gaps |
 |---|---|---|---|---|---|
 
 ### Gap Analysis by Priority
 
-**HIGH** (core contract fields with no tests)
-- [ ] `[typed prefix]: [field]` ([endpoint]) -- [gap description]
+**HIGH** (core contract fields with no tests — MUST have stubs in findings.json)
+- [ ] `[typed prefix]: [field]` — [gap description]
 
   Suggested test:
-  [auto-generated test stub from Step 7]
+  ```
+  [auto-generated test stub]
+  ```
 
 **MEDIUM** (tested but missing scenarios)
 - [ ] ...
@@ -138,43 +161,19 @@ Every contract field from the extraction summary MUST appear in this table — e
 5. [Fifth]
 ```
 
-## Multi-File Summary
-
-When the scope includes multiple test files, write one report file per test file, then write `summary.md` in the same report directory.
-
-**The summary is strictly a rollup.** Every finding, gap, anti-pattern, and recommendation MUST appear in a per-file report first. The summary MUST NOT contain details, findings, or analysis not already in a per-file report. If a finding doesn't belong to a specific test file (e.g. missing infrastructure, cross-cutting concerns), include it in the most relevant per-file report.
-
-```markdown
-## TDD Contract Review — Summary
-
-| Test File | Endpoint | Score | Verdict | HIGH Gaps | MEDIUM Gaps |
-|---|---|---|---|---|---|
-
-**Missing test files** (source exists but no test file):
-- [endpoint] — no test file exists
-
-**Overall: X files reviewed, X HIGH gaps, X MEDIUM gaps**
-
-### Fintech Dimensions (aggregated)
-
-When fintech mode is active, aggregate the dimension status across all per-file reports:
-
-| # | Dimension | Status | Files With Gaps | Total Gaps |
-|---|-----------|--------|----------------|------------|
-```
-
 ## Quick Mode Template
 
-When quick mode is enabled (user passed `quick` as first argument), output only:
+When quick mode is enabled (user passed `quick` as an argument), `report.md` is abbreviated to:
 
 ```markdown
-## TDD Contract Review -- Quick Summary
+## TDD Contract Review — Quick Summary
 
+**Unit:** [unit identifier]
 **Score: X.X / 10** ([VERDICT])
-**Scope:** [scope description]
+**Fintech mode:** [yes/no]
 
 ### HIGH Priority Gaps ([count])
-- `[contract]` field `[field]` ([confidence]) -- [gap description]
+- `[typed prefix]: [field]` — [gap description]
 - ...
 
 ### Summary
@@ -182,5 +181,7 @@ When quick mode is enabled (user passed `quick` as first argument), output only:
 - LOW gaps: [count]
 - Anti-patterns: [count]
 
-Run `/tdd-contract-review [same scope]` for full report with auto-generated test stubs.
+Run `/tdd-contract-review [unit]` without `quick` for the full report with auto-generated test stubs.
 ```
+
+`findings.json` is STILL written in quick mode — it's the machine-readable output, not a rendering choice.

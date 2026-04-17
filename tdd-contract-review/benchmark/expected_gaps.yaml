@@ -1,0 +1,118 @@
+# Expected gaps for tdd-contract-review benchmark
+#
+# Keyed by unit-slug. When you run /tdd-contract-review on a unit, eval.sh compares
+# the produced findings.json against the list here.
+#
+# Matching: eval.sh looks for each `match` pattern (substring, case-insensitive) in
+# the findings.json entries' field + description. If any gap row has a matching entry
+# at the expected priority, it counts as FOUND. Otherwise MISSING.
+#
+# Starter coverage: POST /api/v1/transactions (the richest unit in the sample app).
+# Other units (GET /transactions, GET /transactions/:id, wallets endpoints) to be
+# added as the benchmark grows.
+
+units:
+  post-api-v1-transactions:
+    source_file: app/controllers/api/v1/transactions_controller.rb
+    method: create
+    fintech: true
+    gaps:
+      # Known gaps (from results.md, rows 1-17)
+      - id: G1
+        priority: HIGH
+        match: ["happy path", "response field", "assertion"]
+        description: Happy path assertions incomplete
+      - id: G2
+        priority: HIGH
+        match: ["PaymentGateway", "external API", "outbound"]
+        description: No PaymentGateway external API scenarios
+      - id: G4
+        priority: HIGH
+        match: ["wallet", "another user", "IDOR"]
+        description: No wallet-belongs-to-another-user test
+      - id: G5
+        priority: HIGH
+        match: ["suspended", "closed", "wallet status"]
+        description: No suspended/closed wallet scenarios
+      - id: G6
+        priority: MEDIUM
+        match: ["currency mismatch", "currency"]
+        description: No currency mismatch test
+      - id: G7
+        priority: MEDIUM
+        match: ["description", "category"]
+        description: Missing description/category assertions
+      - id: G10
+        priority: MEDIUM
+        match: ["boundary", "amount=0", "zero", "max amount"]
+        description: Missing boundary cases (amount=0, max)
+      - id: G14
+        priority: HIGH
+        match: ["insufficient balance", "amount > balance"]
+        description: No insufficient balance test
+      - id: G15
+        priority: MEDIUM
+        match: ["exact balance", "amount == balance", "zero balance"]
+        description: No exact balance test
+      - id: G17
+        priority: HIGH
+        match: ["data leak", "error response leaks", "balance leaked"]
+        description: Error response leaks balance/user_id
+
+      # Fintech gaps (from results.md, F1-F21)
+      - id: F2
+        priority: HIGH
+        match: ["precision overflow", "decimal precision", "9+ decimal", "scale:8", "decimal(20,8)", "beyond scale"]
+        description: No precision overflow test
+      - id: F3
+        priority: MEDIUM
+        match: ["zero amount"]
+        description: No zero amount test
+      - id: F4
+        priority: MEDIUM
+        match: ["max amount", "1M boundary", "1_000_000"]
+        description: No max amount (1M) boundary test
+      - id: F5
+        priority: MEDIUM
+        match: ["over-max", "1M+1", "above max", "just-over", "exceeds 1_000_000", "greater than 1_000_000", "1_000_000.00000001", "regulatory limit"]
+        description: No over-max (1M+1) test
+      - id: F6
+        priority: HIGH
+        match: ["idempotency", "idempotent"]
+        description: No idempotency key on POST
+      - id: F7
+        priority: HIGH
+        match: ["state machine", "transition", "status transition"]
+        description: Transaction state transitions untested
+      - id: F8
+        priority: HIGH
+        match: ["invalid transition", "illegal transition"]
+        description: No invalid transition test
+      - id: F10
+        priority: HIGH
+        match: ["TOCTOU", "race condition", "concurrent"]
+        description: TransactionService TOCTOU risk
+      - id: F11
+        priority: HIGH
+        match: ["concurrent debit", "concurrent transfer", "concurrent withdraw"]
+        description: No concurrent debit test
+      - id: F12
+        priority: MEDIUM
+        match: ["double-submit", "double submit", "duplicate request", "duplicate transaction", "duplicate charge", "retried http post", "retry creates"]
+        description: No double-submit prevention
+      - id: F13
+        priority: HIGH
+        match: ["missing token", "no auth", "401"]
+        description: No auth tests (missing token → 401)
+      - id: F14
+        priority: HIGH
+        match: ["IDOR", "other user's transaction", "another user's transaction"]
+        description: IDOR — other user's transaction
+      - id: F16
+        priority: MEDIUM
+        match: ["rate limit", "rate limiting", "throttle", "rack::attack", "request budget", "velocity limit"]
+        description: No rate limiting
+      - id: F18
+        priority: MEDIUM
+        match: ["audit trail", "audit log"]
+        description: No audit trail fields

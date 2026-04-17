@@ -1,3 +1,4 @@
+<!-- version: 0.28.0 -->
 # Fintech Checklists — Contract Extraction & Gap Analysis
 
 Reference file loaded on demand when fintech mode is detected. Contains detailed per-field extraction guidance and scenario checklists.
