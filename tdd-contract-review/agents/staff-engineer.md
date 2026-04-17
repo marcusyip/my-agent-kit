@@ -91,32 +91,4 @@ Trace through 2-3 layers to find the actual HTTP call or SDK invocation.
 
 **MUST read actual migration files and model/entity structs.** Do NOT infer DB fields from handler code. The migration/model is the source of truth for column names, types, constraints (NOT NULL, UNIQUE, DEFAULT), and enum values. Exhaustively list every enum value.
 
-## Quality Checklist (for report review task)
-
-When reviewing reports, check each item:
-
-**Extraction completeness:**
-- [ ] Checkpoint 1 table present with all 5 rows filled
-- [ ] DB contract fields extracted per-field from migration/model files, not table name summaries
-- [ ] Outbound API shows actual HTTP endpoint URL or SDK interface
-- [ ] Outbound request fields (assertions) and outbound response fields (inputs) both present
-- [ ] Every contract type with Status "Extracted" has fields listed
-
-**Test Structure Tree:**
-- [ ] Every request param field has its own branch
-- [ ] Every DB table field has its own branch (per-field, not grouped under table)
-- [ ] Every response body field listed as assertion in happy path
-- [ ] Every outbound request field listed as assertion in happy path
-- [ ] Every outbound response field has its own branch with scenarios
-- [ ] Uses typed prefixes, NOT old formats
-- [ ] Error scenarios include "no data leak"
-- [ ] Field count matches Contract Extraction Summary
-
-**Contract Map:**
-- [ ] One row per field with typed prefix
-- [ ] Row count consistent with Checkpoint 1
-
-**Gap Analysis:**
-- [ ] Checkpoint 2 table present
-- [ ] Every extracted type shows "Yes" in Gaps Checked
-- [ ] HIGH gaps have auto-generated test stubs
+Ruby-on-Rails note: prefer `db/schema.rb` over individual migration files when available — it's the consolidated truth after all migrations have run. Only fall back to individual migrations if `schema.rb` is absent.

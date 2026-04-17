@@ -1,3 +1,4 @@
+<!-- version: 0.28.0 -->
 # Test Patterns Reference
 
 Detailed guidance for Steps 4-5 of the TDD Contract Review workflow.

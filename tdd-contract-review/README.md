@@ -1,8 +1,8 @@
 # tdd-contract-review
 
-A Claude Code plugin that reviews test quality through **contract-based analysis** and auto-generates test stubs for gaps.
+A Claude Code plugin that reviews test quality through **contract-based analysis**, identifies gaps, and auto-generates test stubs for the missing coverage.
 
-Extract contracts from source code (API request/response fields, DB model fields, outbound API call params, UI component props), map test coverage per field, identify gaps, and generate test stubs for missing coverage.
+One run reviews ONE unit -- one HTTP endpoint, one background job, or one queue consumer. The plugin extracts contracts from source (API request/response fields, DB model fields, outbound API call params, UI component props), maps test coverage per field, identifies gaps, and emits a scored report plus a machine-readable `findings.json` for CI grading.
 
 ## Philosophy
 
@@ -25,25 +25,30 @@ Or manually copy the plugin directory into your Claude Code plugins location.
 ## Usage
 
 ```
-/tdd-contract-review                              # PR-scoped (on branch) or entire project
-/tdd-contract-review src/auth/                    # Review tests for auth module
-/tdd-contract-review src/services/payment.ts      # Review tests for a source file
-/tdd-contract-review spec/models/user_spec.rb     # Review a specific test file
-/tdd-contract-review internal/handler/order.go    # Review tests for a Go handler
-/tdd-contract-review quick                        # Quick mode: score + HIGH gaps only
-/tdd-contract-review quick src/auth/              # Quick mode for a specific directory
+/tdd-contract-review "POST /api/v1/transactions"
+/tdd-contract-review ProcessPaymentJob
+/tdd-contract-review app/controllers/api/v1/transactions_controller.rb
+/tdd-contract-review "POST /api/v1/transactions" quick
+/tdd-contract-review "POST /api/v1/transactions" critical
+/tdd-contract-review "POST /api/v1/transactions" no-critical
 ```
+
+**Arguments:**
+- **unit identifier** (required): `VERB /path`, a class name, or a source file path
+- **`quick`** (optional): abbreviated report, HIGH gaps only
+- **`critical`** / **`no-critical`** (optional): force critical mode on or off. Critical mode loads BOTH the money-correctness and API-security checklists and runs two extra cross-cutting gap agents. It is auto-detected from money/balance/currency fields, payment gateways, and decimal types.
 
 ## What It Does
 
-1. **Determines scope** -- resolves paths, detects PR-scoped mode on branches
-2. **Discovers** test files and detects the test framework
-3. **Extracts contracts** from source code with confidence indicators
-4. **Audits test structure** for the sessions pattern (group by feature > field)
-5. **Audits test case quality** for assertion completeness, readability, isolation
-6. **Maps gaps** per contract field with edge cases and priority levels
-7. **Auto-generates test stubs** for HIGH priority gaps following your project's patterns
-8. **Scores and reports** across 6 categories with weighted overall score
+The skill dispatches a Staff Engineer agent at each step and pauses for user review at three checkpoints:
+
+1. **Discovery + Unit Guard** -- resolves the unit to exactly one source file, fails fast on 0 or >1 matches
+2. **Contract Extraction** -- extracts API inbound, DB, Outbound API, Jobs, UI Props contracts with typed field prefixes; writes `01-extraction.md` -> **Checkpoint 1**
+3. **Test Audit** -- audits test structure, quality, anti-patterns against the extracted contract; writes `02-audit.md` -> **Checkpoint 2**
+4. **Gap Analysis** -- parallel per-type agents (API, DB, Outbound) plus, in critical mode, two cross-cutting agents (Money-correctness, API-security) each enumerate every scenario per field; a merge agent produces `03-gaps.md` -> **Checkpoint 3**
+5. **Report + findings.json** -- scored `report.md` with test stubs + machine-readable `findings.json` for CI
+
+Every run writes to a flat, unit-scoped directory: `tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/`.
 
 ## Scoring
 
@@ -72,13 +77,20 @@ Or manually copy the plugin directory into your Claude Code plugins location.
 tdd-contract-review/
 +-- .claude-plugin/
 |   +-- plugin.json
++-- agents/
+|   +-- staff-engineer.md         # dispatched at every step
 +-- skills/
 |   +-- tdd-contract-review/
-|       +-- SKILL.md
-|       +-- fintech-checklists.md
+|       +-- SKILL.md                         # orchestrator workflow
+|       +-- contract-extraction.md
+|       +-- test-patterns.md
+|       +-- money-correctness-checklists.md  # critical mode: money lifecycle
+|       +-- api-security-checklists.md       # critical mode: auth / trust / audit
+|       +-- report-template.md
 +-- benchmark/
-|   +-- sample-app/
-|   +-- reports-v*/
+|   +-- sample-app/               # ground-truth Rails app
+|   +-- eval.sh                   # substring-match grader
+|   +-- expected_gaps.yaml        # expected findings per unit
 +-- README.md
 +-- LICENSE
 ```
