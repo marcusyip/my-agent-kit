@@ -2,21 +2,7 @@
 
 **Sample app:** Rails 7.1 API (transactions, wallets, users) with 3 test files and 17 known gaps
 
-**Convention:** Each run writes to `reports-v{version}/`. Raw stdout goes to `stdout-summary.md`, per-file reports keep their original names.
-
-| Folder | Date | Version |
-|---|---|---|
-| `reports-v0.7.0/` | 2026-04-11 | v0.7.0 (pre-fintech) |
-| `reports-v0.9.0/` | 2026-04-12 | v0.9.0 (fintech/concurrency/security) |
-| `reports-v0.10.0/` | 2026-04-12 | v0.10.0 (reference file + gates) |
-| `reports-v0.11.0/` | 2026-04-12 | v0.11.0 (inline scenarios + absence flagging) |
-| `reports-v0.12.0/` | 2026-04-12 | v0.12.0 (report quality: full contract map, readable stubs, strict summary) |
-| `reports-v0.14.0/` | 2026-04-12 | v0.14.0 (balance/position validation, common field type scenarios) |
-| `reports-v0.14.1/` | 2026-04-12 | v0.14.1 (re-eval with updated sample app: balance deduction, date filters, data leaks) |
-| `reports-v0.15.0/` | 2026-04-14 | v0.15.0 (enforced checkpoints: mandatory contract type table, gap analysis verification) |
-| `reports-v0.16.x/` | 2026-04-14 | v0.16.0-v0.16.1 (typed field prefixes, per-field db/outbound review, no data leak assertions) |
-| `reports-v0.17.0/` | 2026-04-14 | v0.17.0 (split SKILL.md into reference files: contract-extraction.md, test-patterns.md, report-template.md) |
-| `reports-v0.18.0/` | 2026-04-15 | v0.18.0 (multi-agent pipeline: 4 agents with focused context) |
+_Per-version report snapshots (v0.7 through v0.18) were removed from the working tree; see git history for archived outputs. Current benchmark runs write to `sample-app/tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/` per the current output layout._
 
 ## Version Comparison
 

@@ -1,4 +1,4 @@
-<!-- version: 0.28.0 -->
+<!-- version: 0.29.0 -->
 # Report Template Reference
 
 Detailed guidance for Step 7-8 of the TDD Contract Review workflow.
@@ -17,7 +17,7 @@ One unit per run, so there is no multi-file summary. `summary.md` does not exist
 ```json
 {
   "unit": "POST /api/v1/transactions",
-  "fintech": true,
+  "critical": true,
   "gaps": [
     {
       "id": "G001",
@@ -35,7 +35,7 @@ One unit per run, so there is no multi-file summary. `summary.md` does not exist
 - `id`: sequential `G001`, `G002`, ... unique per run
 - `priority`: `HIGH` | `MEDIUM` | `LOW`
 - `field`: typed prefix + field name (e.g., `db field: wallets.status`, `outbound response field: Stripe.Charge.status`)
-- `type`: one of `API inbound` | `DB` | `Outbound API` | `Jobs` | `UI Props` | `Fintech:<dimension name>`
+- `type`: one of `API inbound` | `DB` | `Outbound API` | `Jobs` | `UI Props` | `Money:<dimension>` | `Security:<dimension>`
 - `description`: what's missing, plain English
 - `stub`: test stub code. **REQUIRED for HIGH gaps.** Optional for MEDIUM/LOW. Use `\n` for newlines in JSON.
 
@@ -71,7 +71,7 @@ Score the unit across 6 categories:
 **Source file:** [resolved path]
 **Test file(s):** [list]
 **Framework:** [detected framework and language]
-**Fintech mode:** [yes / no]
+**Critical mode:** [yes / no]
 
 ### How to Read This Report
 
@@ -105,9 +105,9 @@ Score the unit across 6 categories:
 
 [Copy from 01-extraction.md. MUST include ALL contract types found: API inbound request/response fields, DB table fields and enum values, outbound API call params and response shapes, job payloads, UI props. If a contract type was extracted, it MUST appear here.]
 
-### Fintech Dimensions Summary
+### Money-Correctness Dimensions Summary
 
-[If fintech mode is active, include this table. Otherwise omit this section entirely.]
+[If critical mode is active, include this table. Otherwise omit this section entirely.]
 
 | # | Dimension | Status | Fields | Gaps |
 |---|-----------|--------|--------|------|
@@ -115,10 +115,26 @@ Score the unit across 6 categories:
 | 2 | Idempotency | Extracted | 2 fields | 1 HIGH |
 | 3 | Transaction State Machine | Not detected — flagged | — | Infrastructure gap |
 | 4 | Balance & Ledger Integrity | Extracted | 3 fields | 1 HIGH, 2 MEDIUM |
-| 5 | External Payment Integrations | Not applicable | — | — |
-| 6 | Regulatory & Compliance | Not detected — flagged | — | Infrastructure gap |
-| 7 | Concurrency & Data Integrity | Not detected — flagged | — | Infrastructure gap |
-| 8 | Security & Access Control | Extracted | 5 fields | 3 HIGH |
+| 5 | Position & Inventory | Not applicable | — | — |
+| 6 | External Payment Integrations | Extracted | 3 fields | 1 MEDIUM |
+| 7 | Refunds & Reversals | Not applicable | — | — |
+| 8 | Fees & Tax | Not detected — flagged | — | Infrastructure gap |
+| 9 | Holds & Authorizations | Not applicable | — | — |
+| 10 | Time, Settlement & Cutoffs | Not detected — flagged | — | Infrastructure gap |
+| 11 | FX & Currency Conversion | Not applicable | — | — |
+| 12 | Concurrency & Data Integrity | Not detected — flagged | — | Infrastructure gap |
+| 13 | Transaction Limits | Extracted | 1 field | 1 MEDIUM |
+
+### API-Security Dimensions Summary
+
+[If critical mode is active, include this table. Otherwise omit this section entirely.]
+
+| # | Dimension | Status | Fields | Gaps |
+|---|-----------|--------|--------|------|
+| 1 | Security & Access Control | Extracted | 5 fields | 3 HIGH |
+| 2 | Audit Trail & Immutable Records | Not detected — flagged | — | Infrastructure gap |
+| 3 | Regulatory & Compliance (KYC/AML/PCI) | Not detected — flagged | — | Infrastructure gap |
+| 4 | Webhook & Callback Trust | Not applicable | — | — |
 
 ### Test Structure Tree
 
@@ -170,7 +186,7 @@ When quick mode is enabled (user passed `quick` as an argument), `report.md` is 
 
 **Unit:** [unit identifier]
 **Score: X.X / 10** ([VERDICT])
-**Fintech mode:** [yes/no]
+**Critical mode:** [yes/no]
 
 ### HIGH Priority Gaps ([count])
 - `[typed prefix]: [field]` — [gap description]

@@ -29,14 +29,14 @@ Or manually copy the plugin directory into your Claude Code plugins location.
 /tdd-contract-review ProcessPaymentJob
 /tdd-contract-review app/controllers/api/v1/transactions_controller.rb
 /tdd-contract-review "POST /api/v1/transactions" quick
-/tdd-contract-review "POST /api/v1/transactions" fintech
-/tdd-contract-review "POST /api/v1/transactions" no-fintech
+/tdd-contract-review "POST /api/v1/transactions" critical
+/tdd-contract-review "POST /api/v1/transactions" no-critical
 ```
 
 **Arguments:**
 - **unit identifier** (required): `VERB /path`, a class name, or a source file path
 - **`quick`** (optional): abbreviated report, HIGH gaps only
-- **`fintech`** / **`no-fintech`** (optional): force fintech mode on or off. Fintech mode is auto-detected from money/balance/currency fields, payment gateways, and decimal types.
+- **`critical`** / **`no-critical`** (optional): force critical mode on or off. Critical mode loads BOTH the money-correctness and API-security checklists and runs two extra cross-cutting gap agents. It is auto-detected from money/balance/currency fields, payment gateways, and decimal types.
 
 ## What It Does
 
@@ -45,7 +45,7 @@ The skill dispatches a Staff Engineer agent at each step and pauses for user rev
 1. **Discovery + Unit Guard** -- resolves the unit to exactly one source file, fails fast on 0 or >1 matches
 2. **Contract Extraction** -- extracts API inbound, DB, Outbound API, Jobs, UI Props contracts with typed field prefixes; writes `01-extraction.md` -> **Checkpoint 1**
 3. **Test Audit** -- audits test structure, quality, anti-patterns against the extracted contract; writes `02-audit.md` -> **Checkpoint 2**
-4. **Gap Analysis** -- parallel per-type agents (API, DB, Outbound, Fintech) each enumerate every scenario per field; a merge agent produces `03-gaps.md` -> **Checkpoint 3**
+4. **Gap Analysis** -- parallel per-type agents (API, DB, Outbound) plus, in critical mode, two cross-cutting agents (Money-correctness, API-security) each enumerate every scenario per field; a merge agent produces `03-gaps.md` -> **Checkpoint 3**
 5. **Report + findings.json** -- scored `report.md` with test stubs + machine-readable `findings.json` for CI
 
 Every run writes to a flat, unit-scoped directory: `tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/`.
@@ -81,10 +81,11 @@ tdd-contract-review/
 |   +-- staff-engineer.md         # dispatched at every step
 +-- skills/
 |   +-- tdd-contract-review/
-|       +-- SKILL.md              # orchestrator workflow
+|       +-- SKILL.md                         # orchestrator workflow
 |       +-- contract-extraction.md
 |       +-- test-patterns.md
-|       +-- fintech-checklists.md
+|       +-- money-correctness-checklists.md  # critical mode: money lifecycle
+|       +-- api-security-checklists.md       # critical mode: auth / trust / audit
 |       +-- report-template.md
 +-- benchmark/
 |   +-- sample-app/               # ground-truth Rails app

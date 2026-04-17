@@ -1,9 +1,9 @@
 ---
 name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
-argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [fintech|no-fintech]"
+argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.28.1
+version: 0.29.0
 ---
 
 # TDD Contract Review
@@ -16,15 +16,16 @@ Every run writes to a flat, unit-scoped directory:
 
 ```
 tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/
-├── 01-extraction.md     ← contract extracted from source
-├── 02-audit.md          ← test structure + quality findings
-├── 03a-gaps-api.md      ← per-type gap sub-report (API inbound)
-├── 03b-gaps-db.md       ← per-type gap sub-report (DB)
-├── 03c-gaps-outbound.md ← per-type gap sub-report (Outbound API)
-├── 03f-gaps-fintech.md  ← cross-cutting fintech gap sub-report (fintech mode only)
-├── 03-gaps.md           ← merged unified gap report
-├── report.md            ← final scored report
-└── findings.json        ← machine-readable gap list for eval.sh / CI
+├── 01-extraction.md      ← contract extracted from source
+├── 02-audit.md           ← test structure + quality findings
+├── 03a-gaps-api.md       ← per-type gap sub-report (API inbound)
+├── 03b-gaps-db.md        ← per-type gap sub-report (DB)
+├── 03c-gaps-outbound.md  ← per-type gap sub-report (Outbound API)
+├── 03f-gaps-money.md     ← cross-cutting money-correctness sub-report (critical mode only)
+├── 03g-gaps-security.md  ← cross-cutting API-security sub-report (critical mode only)
+├── 03-gaps.md            ← merged unified gap report
+├── report.md             ← final scored report
+└── findings.json         ← machine-readable gap list for eval.sh / CI
 ```
 
 Per-type sub-files are kept on disk for traceability. The merged `03-gaps.md` is what Step 7-8 consumes. Sub-reports for contract types marked `Not applicable` or `Not detected` are skipped entirely.
@@ -45,8 +46,8 @@ Split `$ARGUMENTS` on whitespace. The **first token is the unit identifier** and
   - Class name: `ProcessPaymentJob`, `WithdrawalConsumer`
   - File path: `app/controllers/api/v1/transactions_controller.rb`
 - **`quick`** (optional): abbreviated report output
-- **`fintech`** (optional): force fintech mode ON
-- **`no-fintech`** (optional): force fintech mode OFF (skip fintech checklist loading)
+- **`critical`** (optional): force critical mode ON — enables BOTH money-correctness and API-security checklists
+- **`no-critical`** (optional): force critical mode OFF (skip both checklists)
 
 If no unit identifier is provided, print: `ERROR: unit identifier required. Usage: /tdd-contract-review "POST /api/v1/transactions"` and stop.
 
@@ -61,7 +62,7 @@ If no unit identifier is provided, print: `ERROR: unit identifier required. Usag
 4. **Find DB schema files** traced from the unit's source (migrations, models, ORM schemas).
 5. **Find outbound API client files** traced from the unit's source.
 6. **Check project conventions.** Read CLAUDE.md, config files.
-7. **Detect fintech domain** unless overridden by `fintech`/`no-fintech` arg. Money/balance/currency fields, payment gateways, decimal types → fintech mode.
+7. **Detect critical mode** unless overridden by `critical`/`no-critical` arg. Money/balance/currency fields, payment gateways, or decimal types → critical mode ON (loads both money-correctness and API-security checklists).
 
 **GATE (one-unit):** Exactly one source file must resolve from the unit identifier.
 - **0 matches**: print `ERROR: unit '<arg>' not found. Searched: <scope>` and stop.
@@ -86,10 +87,10 @@ Prompt:
    Source file: [resolved path]
    DB schema files: [list]
    Outbound client files: [list]
-   Fintech mode: [yes/no]
+   Critical mode: [yes/no]
 
    Read `contract-extraction.md` at [skill dir]/contract-extraction.md for extraction guidance.
-   If fintech mode: also read `fintech-checklists.md` at [skill dir]/fintech-checklists.md.
+   If critical mode: also read BOTH `money-correctness-checklists.md` and `api-security-checklists.md` at [skill dir].
 
    OUTPUT FILE SHAPE — $RUN_DIR/01-extraction.md MUST open with two mandatory sections in this order:
 
@@ -141,7 +142,7 @@ Prompt:
    - `Not detected`: this unit could plausibly use this type but no evidence in source. Investigate before marking.
    - `Not applicable`: this contract type cannot apply to this unit (e.g., a consumer has no inbound API).
 
-   After those two sections: produce the Contract Extraction Summary (typed field prefixes per field) and fintech dimensions (if fintech mode).
+   After those two sections: produce the Contract Extraction Summary (typed field prefixes per field) and critical-mode dimensions (if critical mode: separate Money-correctness dimensions + API-security dimensions tables).
 
    WRITE the full output to $RUN_DIR/01-extraction.md. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.md' when done.
 
@@ -198,7 +199,9 @@ Read `$RUN_DIR/01-extraction.md`. For each Checkpoint 1 row, look at the Status 
 - `Extracted` → dispatch a per-type agent for this type
 - `Not detected` or `Not applicable` → skip this type (no sub-file produced)
 
-If fintech mode is yes, ALSO dispatch the fintech cross-cutting agent (regardless of which contract types are Extracted).
+If critical mode is yes, ALSO dispatch BOTH cross-cutting agents (regardless of which contract types are Extracted):
+- **F1 (money-correctness)** — reads `money-correctness-checklists.md`
+- **F2 (api-security)** — reads `api-security-checklists.md`
 
 #### Step 6b — Parallel per-type dispatch
 
@@ -240,12 +243,12 @@ Prompt:
   "TASK: Exhaustive per-field gap analysis for CONTRACT TYPE: <CONTRACT_TYPE>
    Skill directory: [skill dir]
    Run directory: $RUN_DIR
-   Fintech mode: [yes/no]
+   Critical mode: [yes/no]
 
    Read $RUN_DIR/01-extraction.md — focus ONLY on the <CONTRACT_TYPE> section. Ignore other contract types.
    Read $RUN_DIR/02-audit.md — identify existing test coverage for <CONTRACT_TYPE> fields.
    Read [skill dir]/test-patterns.md for scenario conventions.
-   If fintech mode: read [skill dir]/fintech-checklists.md for fintech-specific field-level checks (money precision, enum values, security leak, etc.).
+   If critical mode: read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md for per-field checks relevant to this contract type (precision, enum values, sensitive-data leak, injection, etc.).
 
    SCENARIO CHECKLIST — every field in the tree MUST enumerate every applicable scenario from this matrix:
    <INSERT INPUT/ASSERTION CHECKLIST FROM ABOVE>
@@ -290,47 +293,93 @@ Prompt:
 | B | DB | 03b-gaps-db.md | DB |
 | C | Outbound API | 03c-gaps-outbound.md | OUT |
 
-**Prompt template — fintech cross-cutting agent (F):**
+**Prompt template — F1 money-correctness cross-cutting agent:**
 
 ```
 Agent:       tdd-contract-review:staff-engineer
 Model:       opus
-Description: Gap analysis — fintech cross-cutting
+Description: Gap analysis — money-correctness cross-cutting
 Prompt:
-  "TASK: Cross-cutting fintech integrity gap analysis for this unit.
+  "TASK: Cross-cutting money-correctness gap analysis for this unit.
    Skill directory: [skill dir]
    Run directory: $RUN_DIR
 
    Read $RUN_DIR/01-extraction.md (full file) and $RUN_DIR/02-audit.md (full file).
-   Read [skill dir]/fintech-checklists.md for the 8 fintech dimensions and scenario checklists.
+   Read [skill dir]/money-correctness-checklists.md for the dimensions and scenario checklists.
 
-   Focus on SYSTEMIC cross-contract-type gaps: idempotency, concurrency (TOCTOU, lock placement),
-   state machine integrity (transitions + terminal states), multi-step DB transaction atomicity,
-   compensating actions on failures, double-writes to external systems, audit log absence,
-   sensitive data leak in error responses, rate limiting. Do NOT duplicate per-field gaps that
-   the per-type agents will find — focus on unit-level integrity that spans multiple contract types.
+   Focus on SYSTEMIC cross-contract-type money-correctness gaps: money precision anti-patterns,
+   idempotency, transaction state machine integrity (transitions + terminal states),
+   balance/ledger integrity, position/inventory integrity, concurrency (TOCTOU, lock placement,
+   atomic balance updates), multi-step DB transaction atomicity, compensating actions on failures,
+   external payment integration correctness (retry, reconciliation), refunds/reversals lifecycle,
+   fees/tax calculation, holds/authorizations lifecycle, time/settlement/cutoffs, FX/conversion,
+   transaction limit enforcement. Do NOT duplicate per-field gaps that the per-type agents will
+   find — focus on unit-level integrity that spans multiple contract types.
 
-   OUTPUT FILE SHAPE — $RUN_DIR/03f-gaps-fintech.md:
+   OUTPUT FILE SHAPE — $RUN_DIR/03f-gaps-money.md:
 
-   1) ## Cross-cutting Fintech Gaps
-      For each of the 8 dimensions, assess and list gaps. For dimensions without gaps, write 'No gaps detected'.
+   1) ## Cross-cutting Money-Correctness Gaps
+      For each dimension present in the checklist, assess and list gaps. For dimensions without gaps, write 'No gaps detected'.
 
    2) ## Gap List
       For each gap:
-      - id: GFIN-<NNN>
+      - id: GMONEY-<NNN>
       - priority: CRITICAL | HIGH | MEDIUM | LOW
-      - field: use `unit-level` for systemic dimensions (Idempotency, RateLimit, AuditLog, Reconciliation, StateMachine integrity, multi-step atomicity). Only use a specific field when the gap is genuinely scoped to one field (e.g., Money/Precision on a specific amount field). Do NOT attach a systemic concern to a loosely-related field (e.g., rate limiting is NOT `request header: Authorization`).
-      - type: Fintech:<dimension> (e.g., Fintech:Idempotency, Fintech:RateLimit, Fintech:StateMachine, Fintech:Concurrency, Fintech:BalanceLedger, Fintech:ExternalIntegration, Fintech:Compliance, Fintech:Security)
+      - field: use `unit-level` for systemic dimensions (Idempotency, StateMachine integrity, Concurrency, multi-step atomicity, Reconciliation, Settlement). Only use a specific field when the gap is genuinely scoped to one field (e.g., Money/Precision on a specific amount field, FX rate on a specific quote field). Do NOT attach a systemic concern to a loosely-related field.
+      - type: Money:<dimension> (e.g., Money:Precision, Money:Idempotency, Money:StateMachine, Money:BalanceLedger, Money:PositionInventory, Money:Concurrency, Money:ExternalIntegration, Money:Refunds, Money:FeesTax, Money:Holds, Money:Settlement, Money:FX, Money:Limits)
       - description: what integrity property is missing
       - stub: REQUIRED for CRITICAL and HIGH
 
    3) ## Test Stubs
       Pseudocode per HIGH/CRITICAL gap.
 
-   WRITE to $RUN_DIR/03f-gaps-fintech.md. Return only 'WROTE: $RUN_DIR/03f-gaps-fintech.md' when done."
+   WRITE to $RUN_DIR/03f-gaps-money.md. Return only 'WROTE: $RUN_DIR/03f-gaps-money.md' when done."
 ```
 
-**GATE (sub-files shape):** After all per-type agents return, verify each expected sub-file exists and contains both `## Test Structure Tree` and `## Contract Map` (or `## Cross-cutting Fintech Gaps` for fintech). If any required sub-file is missing or malformed, print which one and stop.
+**Prompt template — F2 API-security cross-cutting agent:**
+
+```
+Agent:       tdd-contract-review:staff-engineer
+Model:       opus
+Description: Gap analysis — API-security cross-cutting
+Prompt:
+  "TASK: Cross-cutting API-security gap analysis for this unit.
+   Skill directory: [skill dir]
+   Run directory: $RUN_DIR
+
+   Read $RUN_DIR/01-extraction.md (full file) and $RUN_DIR/02-audit.md (full file).
+   Read [skill dir]/api-security-checklists.md for the dimensions and scenario checklists.
+
+   Focus on SYSTEMIC cross-contract-type security gaps: authentication coverage, authorization
+   (IDOR on any resource-ID-accepting endpoint), privilege escalation, resource enumeration,
+   rate limiting (per-user, not just per-IP), sensitive-data leaks in error/list responses,
+   injection surfaces on string fields reaching DB/logs/HTML, audit trail absence and
+   immutability, KYC/AML/sanctions gating, PCI scope, high-value operation MFA/approval,
+   API key scoping, webhook trust (signature verification, replay protection, timestamp
+   tolerance, tampered payload rejection). Do NOT duplicate per-field gaps that the per-type
+   agents will find — focus on unit-level security integrity spanning contract types.
+
+   OUTPUT FILE SHAPE — $RUN_DIR/03g-gaps-security.md:
+
+   1) ## Cross-cutting API-Security Gaps
+      For each dimension present in the checklist, assess and list gaps. For dimensions without gaps, write 'No gaps detected'.
+
+   2) ## Gap List
+      For each gap:
+      - id: GSEC-<NNN>
+      - priority: CRITICAL | HIGH | MEDIUM | LOW
+      - field: use `unit-level` for systemic dimensions (Auth, AuthZ/IDOR, RateLimit, AuditLog, KYC, Webhook). Only use a specific field when the gap is genuinely scoped to one field (e.g., injection on `request field: description`). Do NOT attach a systemic concern to a loosely-related field (e.g., rate limiting is NOT `request header: Authorization`).
+      - type: Security:<dimension> (e.g., Security:Auth, Security:AuthZ, Security:RateLimit, Security:AuditTrail, Security:KYC, Security:Webhook, Security:DataLeak, Security:Injection, Security:PCI, Security:MFA)
+      - description: what integrity property is missing
+      - stub: REQUIRED for CRITICAL and HIGH
+
+   3) ## Test Stubs
+      Pseudocode per HIGH/CRITICAL gap.
+
+   WRITE to $RUN_DIR/03g-gaps-security.md. Return only 'WROTE: $RUN_DIR/03g-gaps-security.md' when done."
+```
+
+**GATE (sub-files shape):** After all per-type agents return, verify each expected sub-file exists and contains both `## Test Structure Tree` and `## Contract Map` (or `## Cross-cutting Money-Correctness Gaps` for F1, `## Cross-cutting API-Security Gaps` for F2). If any required sub-file is missing or malformed, print which one and stop.
 
 #### Step 6c — Merge
 
@@ -345,7 +394,7 @@ Prompt:
    Run directory: $RUN_DIR
 
    Read every sub-file that exists: $RUN_DIR/03a-gaps-api.md, $RUN_DIR/03b-gaps-db.md,
-   $RUN_DIR/03c-gaps-outbound.md, $RUN_DIR/03f-gaps-fintech.md.
+   $RUN_DIR/03c-gaps-outbound.md, $RUN_DIR/03f-gaps-money.md, $RUN_DIR/03g-gaps-security.md.
    Also read $RUN_DIR/02-audit.md for the anti-patterns section.
    Skip any sub-file that does not exist.
 
@@ -364,8 +413,9 @@ Prompt:
 
    3) ## Gap Analysis by Priority
       Merge gap lists from all sub-reports. DEDUPE by (field + description key phrase).
-      When duplicates appear (e.g., fintech agent + outbound agent both flag double-charge),
-      keep the highest priority, combine descriptions, keep the richer stub.
+      When duplicates appear (e.g., F1 money agent + outbound agent both flag amount-mismatch,
+      or F2 security agent + API agent both flag missing auth), keep the highest priority,
+      combine descriptions, keep the richer stub.
       Group by CRITICAL / HIGH / MEDIUM / LOW in that order.
 
    4) ## Hygiene (from audit)
@@ -416,16 +466,16 @@ Prompt:
 
    Write TWO files:
    1. $RUN_DIR/report.md — full scored report (or summary only if quick mode). Include a Hygiene section surfacing the anti-patterns from $RUN_DIR/03-gaps.md's Hygiene section.
-   2. $RUN_DIR/findings.json — machine-readable gap list. IMPORTANT: include ONLY contract gaps and fintech gaps from the Gap Analysis by Priority section of 03-gaps.md. DO NOT include hygiene/anti-pattern entries — those stay in report.md only. Schema:
+   2. $RUN_DIR/findings.json — machine-readable gap list. IMPORTANT: include ONLY contract gaps and critical-mode gaps (money + security) from the Gap Analysis by Priority section of 03-gaps.md. DO NOT include hygiene/anti-pattern entries — those stay in report.md only. Schema:
       {
         \"unit\": \"<unit identifier>\",
-        \"fintech\": <bool>,
+        \"critical\": <bool>,
         \"gaps\": [
           {
             \"id\": \"G001\",
             \"priority\": \"HIGH|MEDIUM|LOW\",
             \"field\": \"<typed prefix + field name>\",
-            \"type\": \"API inbound|DB|Outbound API|Jobs|UI Props|Fintech:<dimension>\",
+            \"type\": \"API inbound|DB|Outbound API|Jobs|UI Props|Money:<dimension>|Security:<dimension>\",
             \"description\": \"<what is missing>\",
             \"stub\": \"<test stub code, required for HIGH>\"
           }

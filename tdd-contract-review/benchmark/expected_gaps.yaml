@@ -15,7 +15,7 @@ units:
   post-api-v1-transactions:
     source_file: app/controllers/api/v1/transactions_controller.rb
     method: create
-    fintech: true
+    critical: true
     gaps:
       # Known gaps (from results.md, rows 1-17)
       - id: G1
@@ -59,7 +59,7 @@ units:
         match: ["data leak", "error response leaks", "balance leaked"]
         description: Error response leaks balance/user_id
 
-      # Fintech gaps (from results.md, F1-F21)
+      # Critical-mode gaps (from results.md, F1-F21 — money-correctness + security)
       - id: F2
         priority: HIGH
         match: ["precision overflow", "decimal precision", "9+ decimal", "scale:8", "decimal(20,8)", "beyond scale"]
