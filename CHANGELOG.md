@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.34.0] - 2026-04-17
+
+### tdd-contract-review
+
+#### Added
+- **Step 2.5 Previous Extraction Check** — if a previous run's `01-extraction.md` exists for the same unit-slug, the orchestrator offers a two-option AskUserQuestion (`Reuse` / `Extract fresh`) before dispatching the Step 3 extraction agent. Reuse copies the prior file into the current `$RUN_DIR`, runs the Checkpoint 1 shape GATE against the copy, and jumps straight to the Checkpoint 1 PAUSE. Extract fresh runs Step 3 normally. Saves the full extraction-agent cost when iterating on the same unit with unchanged source.
+- **Previous-extraction lookup in Step 2 discovery** — glob `tdd-contract-review/*-{unit-slug}/01-extraction.md`, exclude the current `$RUN_DIR`, pick the most recent by `YYYYMMDD-HHMM` directory prefix. Result stored as `$PREV_EXTRACTION` (empty if none).
+- **`Previous extraction:` line in the Run Preview** — shows `<path> (<timestamp>)` if one was found, or `none found (skip reuse ask)` otherwise. User sees the reuse opportunity before the first agent dispatches.
+- **Critical-mode mismatch warning** — if the prior extraction's `Critical mode:` value differs from the current run's, Step 2.5 prepends a one-line warning above the two options recommending Extract fresh.
+- **GATE-fail fallback** — if the reused file fails the Checkpoint 1 shape GATE (malformed or from an older skill version), the orchestrator prints the failure and falls through to a fresh Step 3 dispatch. No hard stop.
+
+#### Notes
+- Revise at Checkpoint 1 works identically on a reused file — the Step 3 DEEPEN REQUEST block overwrites `$RUN_DIR/01-extraction.md` regardless of how it arrived.
+- Out of scope for v0.34.0: audit (`02-audit.md`) reuse, gaps (`03-gaps.md`) reuse, a CLI `no-reuse` skip flag, and mtime-based staleness detection. Revisit audit reuse if real usage shows audit cost dominating after this lands.
+
+## [0.33.0] - 2026-04-17
+
+### tdd-contract-review
+
+#### Added
+- **READ PROTOCOL in the audit agent prompt.** Three non-negotiable steps before writing `02-audit.md`: (1) grep each test file with the framework's test-function pattern to get a ground-truth count and line numbers, (2) read every test file to EOF with chunked `Read(offset=0/500/1000/...)` calls until returned lines < 500, (3) pre-write verification that Test Inventory count equals grep count per file. Closes the silent-under-reading failure mode that burned ~353K tokens across 3 revision runs pre-v0.33.0.
+- **Per-framework grep pattern table** inlined in the audit prompt: Go testing, RSpec, Jest/Vitest, pytest, Minitest.
+- **5-section audit output spec** (explicit and ordered): `## Test Inventory`, `## Scenario Inventory`, `## Per-Field Coverage Matrix`, `## Assertion Depth`, `## Anti-Patterns`. Replaces the previous vague "produce test structure findings, quality issues, anti-patterns (with file:line), per-field coverage notes" one-liner.
+- **Grep-reconciliation bullets in `## Summary`**: `Test files (grep count): <N> files, <M> functions` + `Test Inventory (agent count): <M> functions ← MUST match`. The Checkpoint 2 Summary echo now surfaces any count mismatch directly in the terminal — user can spot incompleteness without opening the file.
+
+#### Changed
+- **Checkpoint 2 DEEPEN REQUEST block** now leads with reconciliation: verify grep-count vs agent-count first, re-run chunked reads on any short file, then proceed to the exhaustive-examination steps. Misreads get caught first, not after another full pass.
+- **Audit output explicitly excludes `## Gaps` and `## Scorecard`.** Gaps are Step 6's job; scoring is Step 7-8's job. The audit is an input to both, not a partial duplicate.
+
+#### Notes
+- Audit agent stays on `Model: sonnet`. The forcing functions (read protocol + 5-section spec + reconciliation) should land the audit on first run without a model upgrade. If sonnet with the hardened prompt still burns revision cycles, revisit upgrading to opus in a future version.
+
 ## [0.32.0] - 2026-04-17
 
 ### tdd-contract-review

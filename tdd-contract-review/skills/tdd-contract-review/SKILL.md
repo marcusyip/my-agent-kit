@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.32.0
+version: 0.34.0
 ---
 
 # TDD Contract Review
@@ -150,21 +150,58 @@ Flags:
 
 **Compute unit-slug** from the identifier. Compute run directory: `tdd-contract-review/$(date +%Y%m%d-%H%M)-{unit-slug}/`. Create the directory. Store path as `$RUN_DIR`.
 
+**Look for a previous extraction for this unit.** Glob `tdd-contract-review/*-{unit-slug}/01-extraction.md`, exclude `$RUN_DIR` itself, sort results by the `YYYYMMDD-HHMM` timestamp prefix in the directory name (lexicographic order works), pick the most recent. Store its path as `$PREV_EXTRACTION` (empty string if no match). This drives the optional reuse ask in Step 2.5.
+
 **Run preview.** Before proceeding to Step 3, print this 1-screen summary so the user can interrupt before the first agent dispatch:
 
 ```
 === TDD Contract Review — Run Preview ===
-Unit:          <unit identifier>
-Source:        <resolved source file:line of handler or class def>
-DB schema:     <N files, or "not found">
-Outbound:      <N clients, or "not found">
-Critical mode: ON (reason: <one-line signal that triggered it, e.g., "decimal column 'amount_cents' in db/migrate/001_create_wallets.rb">)
-               OR OFF
-Pipeline:      <N> agent dispatches, 3 checkpoints
-Run dir:       $RUN_DIR
+Unit:                <unit identifier>
+Source:              <resolved source file:line of handler or class def>
+DB schema:           <N files, or "not found">
+Outbound:            <N clients, or "not found">
+Critical mode:       ON (reason: <one-line signal that triggered it, e.g., "decimal column 'amount_cents' in db/migrate/001_create_wallets.rb">)
+                     OR OFF
+Previous extraction: found at <$PREV_EXTRACTION> (<YYYY-MM-DD HH:MM from dir prefix>)
+                     OR "none found (skip reuse ask)"
+Pipeline:            <N> agent dispatches, 3 checkpoints
+Run dir:             $RUN_DIR
 ```
 
-The first checkpoint fires within ~30s of this preview (after extraction). This preview is informational — it makes auto-detected critical mode visible and lets the user cancel early. It is NOT a hard gate; do not wait for input here.
+The first checkpoint fires within ~30s of this preview (after extraction, or sooner if the user picks Reuse at Step 2.5). This preview is informational — it makes auto-detected critical mode visible and flags when a prior extraction is available for reuse. It is NOT a hard gate; do not wait for input here.
+
+### Step 2.5: Previous Extraction Check (optional reuse)
+
+If `$PREV_EXTRACTION` is empty, skip this step entirely — do not print anything, do not ask — and proceed to Step 3.
+
+If `$PREV_EXTRACTION` is set, offer the user the choice to reuse it or run a fresh extraction. This saves the cost of re-extracting when iterating on the same unit with unchanged source.
+
+**Critical-mode mismatch check (do this BEFORE the ask):** Read the `Critical mode:` line from `$PREV_EXTRACTION` (it appears in the file's `## Summary` section) and compare to the current run's critical-mode. If they differ, include a one-line warning at the top of the AskUserQuestion prompt text: `Previous extraction was Critical mode: <X>, current run is Critical mode: <Y>. Fresh extraction recommended.`
+
+**AskUserQuestion** with two options (no Revise/Stop — nothing has been written in this run yet to revise):
+
+```
+Question:
+  "A previous extraction for this unit exists at <$PREV_EXTRACTION>
+   (<timestamp from dir prefix>). Reuse it as this run's 01-extraction.md,
+   or run a fresh extraction?
+   <critical-mode mismatch warning line if applicable>"
+Options:
+  A) Reuse       — copy into $RUN_DIR and go straight to Checkpoint 1
+  B) Extract fresh — run the Step 3 extraction agent as normal
+Multi-select: false
+```
+
+Free-text fallback (user typed something instead of picking): treat affirmative-sounding text ("reuse", "yes", "copy", "skip") as Reuse; anything else as Extract fresh.
+
+**Branch — Reuse:**
+
+1. Copy the file: `cp "$PREV_EXTRACTION" "$RUN_DIR/01-extraction.md"` via Bash.
+2. Run the **Checkpoint 1 shape GATE** (same grep used in Step 3, described under "GATE (Checkpoint 1 shape)" below): verify all 5 required rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`) appear with a valid three-state status (`Extracted` | `Not detected` | `Not applicable`).
+3. If GATE passes: jump directly to the **Checkpoint 1 PAUSE** in Step 3 — apply the Checkpoint Interaction Pattern with `<N>` = `1`, `<file>` = `01-extraction.md`, `<next step>` = `the test audit step`. The Revise target remains the Step 3 Contract extraction agent; Revise dispatches the agent with the DEEPEN REQUEST block, overwriting the reused file with a fresh, deeper extraction.
+4. If GATE fails: print `GATE FAILED on reused $PREV_EXTRACTION (file is malformed or from an older skill version) — falling through to fresh extraction`, then proceed to Step 3 normally. Do not leave the malformed copy in `$RUN_DIR` — either remove it first (`rm "$RUN_DIR/01-extraction.md"`) or let Step 3's agent overwrite it.
+
+**Branch — Extract fresh:** proceed to Step 3 directly with no file copy.
 
 ### Step 3: Contract Extraction
 
@@ -300,18 +337,80 @@ Prompt:
    Read $RUN_DIR/01-extraction.md for the contract (produced by Step 3).
    Read `test-patterns.md` at [skill dir]/test-patterns.md for sessions pattern, anti-patterns, quality checklists.
 
-   OUTPUT FILE SHAPE — $RUN_DIR/02-audit.md MUST open with a mandatory `## Summary` section BEFORE any test-structure or findings sections:
+   READ PROTOCOL — non-negotiable. Skip any step and your audit will be rejected.
+
+   Step 1. For each test file, count test functions using the framework's pattern.
+   Use the Grep tool with the pattern below (and -n to get line numbers):
+
+     Framework   | Grep pattern
+     ------------|----------------------------------------------
+     Go testing  | ^func Test
+     RSpec       | ^\s*(it|describe|context)\s+['\"]
+     Jest/Vitest | ^\s*(it|test|describe)\(
+     pytest      | ^def test_
+     Minitest    | ^\s*(def test_|test\s+['\"])
+
+   Record per file: file path, grep count (N), line numbers of every match.
+
+   Step 2. Read every test file to EOF. Use chunked Reads with explicit offsets:
+     Read(file, offset=0, limit=500)
+     Read(file, offset=500, limit=500)
+     Read(file, offset=1000, limit=500)
+     ...continue until returned lines < 500.
+   DO NOT stop early. DO NOT skim. Partial reads produce incomplete audits.
+
+   Step 3. Before writing $RUN_DIR/02-audit.md, verify:
+   - Test Inventory count EQUALS the grep count from Step 1 for every file.
+   - Every grep-matched line number appears in your Test Inventory.
+   If mismatch, re-read the short file at the correct offsets and extend the
+   inventory. Do NOT write the file until counts reconcile.
+
+   OUTPUT FILE SHAPE — $RUN_DIR/02-audit.md MUST open with `## Summary` first,
+   then these 5 sections in this exact order. Do NOT add a `## Gaps` section
+   (that belongs to Step 6) or a `## Scorecard` section (that belongs to Step 7-8).
 
    ```
    ## Summary
 
-   - Test framework: <RSpec | Jest | Vitest | Go testing | pytest | ...>
-   - Test files: <N> files, <M> test cases
-   - Anti-patterns found: <N> (see findings sections for file:line)
-   - Per-contract-type coverage: API: <X>% | DB: <Y>% | Outbound: <Z>% (use N/A for types not Extracted in Checkpoint 1)
+   - Test framework: <RSpec | Jest | Vitest | Go testing | pytest | Minitest | ...>
+   - Test files (grep count): <N> files, <M> test functions matching pattern `<pattern>`
+   - Test Inventory (agent count): <M> functions  ← MUST match grep count above
+   - Assertion depth: <S> strong, <P> partial (WEAK assertions flagged in Assertion Depth)
+   - Anti-patterns found: <N>
+   - Per-contract-type coverage: API: <X>% | DB: <Y>% | Outbound: <Z>% (N/A for types not Extracted in Checkpoint 1)
    ```
 
-   After Summary: produce test structure findings, quality issues, anti-patterns (with file:line), per-field coverage notes.
+   1) ## Test Inventory
+      Per test file. For each file, start with a one-line header:
+      `### <file path> — <grep count> test functions`
+      Then one row per test function: `- L<line>: <function name>`.
+      The count in the header MUST equal the grep count from READ PROTOCOL Step 1.
+
+   2) ## Scenario Inventory
+      Per test function, keyed by `<file>:L<line>:<function_name>`, enumerate the
+      scenarios it covers (happy path, error branch, edge case, concurrency,
+      boundary, enum value, etc.). Line-cited within the function body.
+      This is the test-centric view.
+
+   3) ## Per-Field Coverage Matrix
+      For every contract field from $RUN_DIR/01-extraction.md, list the tests
+      that cover it (`<file>:L<line>`), or mark UNCOVERED.
+      Column header: | Field | Role | Tests Covering (file:line) | Status |
+      Status: COVERED | PARTIAL | UNCOVERED.
+      This is the field-centric inverse of Scenario Inventory.
+
+   4) ## Assertion Depth
+      For each COVERED or PARTIAL field in the Per-Field Coverage Matrix,
+      classify the assertion as:
+      - STRONG: verifies value, type, and format
+      - WEAK: presence-only, smoke-check, or assertion-free
+      WEAK assertions downgrade the field in the Coverage Matrix to PARTIAL.
+      Cite the assertion line: `<file>:L<line>: <one-line excerpt>`.
+
+   5) ## Anti-Patterns
+      All with `<file>:L<line>`: mocking internal code, assertion-free tests,
+      over-stubbing, fragile setup, order-dependent tests, time-sensitive tests,
+      shared mutable state across tests, brittle selectors.
 
    WRITE the full output to $RUN_DIR/02-audit.md. Return only 'WROTE: $RUN_DIR/02-audit.md' when done."
 ```
@@ -326,17 +425,27 @@ Prompt:
 
 ```
 DEEPEN REQUEST: The user reviewed $RUN_DIR/02-audit.md and asked for a more
-complete pass. Re-examine the tests exhaustively:
-- Re-read every test file. Look for cases you skipped: nested describes,
-  shared examples, helpers, setup/teardown blocks, parameterised tests.
+complete pass. START WITH RECONCILIATION:
+- Verify the `## Summary`: `Test files (grep count)` MUST equal
+  `Test Inventory (agent count)`. If mismatch, the inventory is incomplete —
+  that is the first thing to fix.
+- Re-run READ PROTOCOL Step 1 (framework-pattern grep) on every test file
+  to confirm the grep count is current.
+- Re-run READ PROTOCOL Step 2 (chunked reads) on any file where your original
+  Test Inventory was short of the grep count.
+Then re-examine the tests exhaustively:
+- Re-read every test file to EOF. Look for cases you skipped: nested
+  describes, shared examples, helpers, setup/teardown blocks, parameterised
+  tests.
 - For every contract field from $RUN_DIR/01-extraction.md: confirm whether a
-  test exists and cite test file:line.
+  test exists and cite test file:line in the Per-Field Coverage Matrix.
 - Look harder for anti-patterns: mocking internal code, assertion-free tests,
   over-stubbing, fragile setup, order-dependent tests, time-sensitive tests.
 - Re-check per-field coverage: each assertion, each boundary, each enum
-  value, each error branch.
-Overwrite $RUN_DIR/02-audit.md. The `## Summary` section MUST reflect updated
-findings. Return only 'WROTE: $RUN_DIR/02-audit.md' when done.
+  value, each error branch. Downgrade WEAK assertions to PARTIAL in the
+  Coverage Matrix.
+Overwrite $RUN_DIR/02-audit.md. The `## Summary` reconciliation lines MUST
+match after revision. Return only 'WROTE: $RUN_DIR/02-audit.md' when done.
 ```
 
 ### Step 6: Gap Analysis (parallel per-type + merge)
