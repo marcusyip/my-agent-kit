@@ -1,0 +1,710 @@
+{
+  "unit": "POST /api/v1/transactions",
+  "fintech": true,
+  "gaps": [
+    {
+      "id": "GOUT-001",
+      "priority": "CRITICAL",
+      "field": "outbound call-count: PaymentGateway.charge exactly once per payment",
+      "type": "Fintech:ExternalIntegration",
+      "description": "Source has TWO call paths to PaymentGateway.charge: TransactionService#charge_payment_gateway (line 78) and Transaction#notify_payment_gateway after_create callback (model line 28). For category='payment', the gateway is charged twice per request — customers are double-charged. No test pins call count to 1. Merged from GOUT-001 + GFIN-001.",
+      "stub": "context 'outbound PaymentGateway.charge call count (category=payment)' do\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: true)) }\n\n  it 'invokes PaymentGateway.charge exactly once per request' do\n    run_test\n    expect(PaymentGateway).to have_received(:charge).once\n    # Regression guard: dual call paths (service#charge_payment_gateway + model after_create)\n    # would cause this to fail with .twice.\n  end\n\n  it 'sends exactly one charge referring to the persisted transaction id' do\n    run_test\n    expect(PaymentGateway).to have_received(:charge).with(\n      hash_including(transaction_id: Transaction.last.id)\n    ).once\n  end\nend"
+    },
+    {
+      "id": "GAPI-001",
+      "priority": "CRITICAL",
+      "field": "response field: details",
+      "type": "Fintech:Security",
+      "description": "Error response details array currently includes raw balance in the InsufficientBalanceError path (\"Current balance: #{@wallet.balance}, requested: #{@params[:amount]}\"). No test asserts that sensitive financial data is NOT leaked in error responses. Merged from GAPI-001 + GFIN-005.",
+      "stub": "context 'when amount exceeds balance (FINTECH: no balance leak)' do\n  let(:amount) { '10000' } # far above WALLET_BALANCE\n\n  it 'returns 422 and does not leak balance in error details' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n\n    body = JSON.parse(response.body)\n    expect(body['error']).to be_present\n    expect(body['details']).to be_an(Array)\n    serialized = body.to_json\n    expect(serialized).not_to match(/#{Regexp.escape(wallet.balance.to_s)}/)\n    expect(serialized).not_to match(/Current balance/i)\n  end\nend"
+    },
+    {
+      "id": "GAPI-002",
+      "priority": "CRITICAL",
+      "field": "request field: transaction.wallet_id",
+      "type": "API inbound",
+      "description": "No test exercises the IDOR scenario — a valid wallet_id belonging to a different user. Controller uses current_user.wallets.find_by(...) which should return 422, but without a test any future refactor (e.g. to Wallet.find_by) would silently permit cross-tenant writes. Must also assert the error response does NOT leak that the wallet exists for another user.",
+      "stub": "context 'when wallet_id belongs to a different user' do\n  let(:other_user)    { create(:user) }\n  let!(:other_wallet) { create(:wallet, user: other_user, currency: DEFAULT_CURRENCY, balance: '500') }\n  let(:wallet_id)     { other_wallet.id }\n\n  it 'returns 422, writes nothing, and does not confirm the other wallet exists' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n\n    body = JSON.parse(response.body)\n    expect(body['error']).to be_present\n    serialized = body.to_json\n    expect(serialized).not_to include(other_user.id.to_s)\n  end\nend"
+    },
+    {
+      "id": "GAPI-003",
+      "priority": "CRITICAL",
+      "field": "request header: Authorization",
+      "type": "API inbound",
+      "description": "Zero coverage of any 401 path. Missing token, malformed token, expired token, and token for disabled user all unenforced in tests. Without these, a regression in authenticate_user! could expose the transactions endpoint publicly. Merged from GAPI-003 + GFIN-015.",
+      "stub": "context 'when Authorization header is missing' do\n  let(:headers) { {} }\n\n  it 'returns 401 and writes nothing' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unauthorized)\n    expect(PaymentGateway).not_to have_received(:charge)\n    body = JSON.parse(response.body)\n    expect(body.to_json).not_to match(/stack|ActiveRecord|NoMethodError/)\n  end\nend\n\ncontext 'when Authorization header is malformed' do\n  let(:headers) { { 'Authorization' => 'Bearer not-a-real-token' } }\n  it 'returns 401 and writes nothing' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unauthorized)\n  end\nend"
+    },
+    {
+      "id": "GDB-001",
+      "priority": "CRITICAL",
+      "field": "db field (input): wallet.balance",
+      "type": "Fintech:Concurrency",
+      "description": "Concurrent debit TOCTOU. TransactionService#validate_sufficient_balance! reads balance outside the with_lock used by wallet.withdraw!. Two concurrent requests can each pass the check and both withdraw, driving balance negative. Balance check must be INSIDE with_lock or use atomic UPDATE wallets SET balance = balance - ? WHERE balance >= ?. No test exercises this race. Merged from GDB-001 + GFIN-003.",
+      "stub": "context 'under concurrent debit requests' do\n  it 'rejects the second request when two simultaneous debits would overdraw the wallet' do\n    wallet = create(:wallet, user: user, balance: 100, currency: 'USD', status: 'active')\n\n    results = Parallel.map([60, 60], in_threads: 2) do |amount|\n      post '/api/v1/transactions',\n        params: { transaction: { amount: amount, currency: 'USD', wallet_id: wallet.id, category: 'transfer' } },\n        headers: auth_headers\n      response.status\n    end\n\n    expect(results.count(201)).to eq(1)\n    expect(results.count(422)).to eq(1)\n    expect(wallet.reload.balance).to be >= 0\n    expect(Transaction.where(wallet_id: wallet.id, status: 'completed').sum(:amount)).to be <= 100\n  end\nend"
+    },
+    {
+      "id": "GDB-002",
+      "priority": "CRITICAL",
+      "field": "db field (assertion): wallet.balance (post-state, rollback)",
+      "type": "Fintech:BalanceLedger",
+      "description": "On PaymentGateway::ChargeError, the service rescues and returns 422, but wallet.withdraw! already ran (or not, depending on order). No DB transaction wraps save! + withdraw! + charge + update!. No compensating rollback — real money is lost from the wallet view. Money-safety invariant: balance MUST match sum of non-failed transactions. Merged from GDB-002 + GFIN-002.",
+      "stub": "context 'when PaymentGateway raises ChargeError after wallet has been debited' do\n  it 'rolls back wallet.balance to its pre-request value' do\n    wallet = create(:wallet, user: user, balance: 100, currency: 'USD', status: 'active')\n    allow(PaymentGateway).to receive(:charge).and_raise(PaymentGateway::ChargeError.new('boom'))\n\n    expect {\n      post '/api/v1/transactions',\n        params: { transaction: { amount: 30, currency: 'USD', wallet_id: wallet.id, category: 'payment' } },\n        headers: auth_headers\n    }.not_to change { wallet.reload.balance }\n\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(Transaction.where(wallet_id: wallet.id, status: 'completed').count).to eq(0)\n  end\nend"
+    },
+    {
+      "id": "GDB-003",
+      "priority": "CRITICAL",
+      "field": "db field (assertion): transaction.status",
+      "type": "DB",
+      "description": "pending → completed and pending → failed transitions are entirely untested. State machine contract is undefended — a code change that leaves every payment stuck in 'pending' would ship green. Each valid transition (including the ChargeError path) must be asserted at the DB layer.",
+      "stub": "context 'pending → completed transition (payment success)' do\n  let(:params) { super().merge(category: 'payment') }\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: true)) }\n\n  it 'persists transaction.status as completed' do\n    run_test\n    expect(Transaction.last.status).to eq('completed')\n  end\nend\n\ncontext 'pending → failed transition (payment success?=false)' do\n  let(:params) { super().merge(category: 'payment') }\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: false)) }\n\n  it 'persists transaction.status as failed' do\n    run_test\n    expect(Transaction.last.status).to eq('failed')\n  end\nend"
+    },
+    {
+      "id": "GDB-004",
+      "priority": "CRITICAL",
+      "field": "db field (assertion): wallet.balance (deposit category)",
+      "type": "DB",
+      "description": "deduct_balance! skips wallet.withdraw! for deposit category and no wallet.deposit! call is made. The current contract is 'deposit does nothing to balance' — this is probably a bug, but must be locked by an explicit test so any future fix is caught. Absent a test, either behavior ships silently.",
+      "stub": "context 'when category = deposit' do\n  let(:params) { super().merge(category: 'deposit') }\n\n  it 'does NOT decrement wallet.balance' do\n    expect { run_test }.not_to change { wallet.reload.balance }\n  end\n\n  it 'persists transaction with category=deposit' do\n    run_test\n    expect(Transaction.last.category).to eq('deposit')\n  end\nend"
+    },
+    {
+      "id": "GDB-005",
+      "priority": "CRITICAL",
+      "field": "db field (assertion): transaction row presence on error paths",
+      "type": "DB",
+      "description": "Every 422 error scenario asserts only status code. A regression that inserts a 'pending' orphan transaction on validation failure would ship green. Every error path must assert Transaction.count unchanged.",
+      "stub": "shared_examples 'does not create a transaction row' do\n  it 'leaves Transaction.count unchanged' do\n    expect { run_test }.not_to change(Transaction, :count)\n  end\nend\n\ncontext 'amount nil'              do let(:params) { super().merge(amount: nil) };       include_examples 'does not create a transaction row'; end\ncontext 'currency invalid'        do let(:params) { super().merge(currency: 'XYZ') };   include_examples 'does not create a transaction row'; end\ncontext 'wallet suspended'        do before { wallet.update!(status: 'suspended') };    include_examples 'does not create a transaction row'; end\ncontext 'insufficient balance'    do let(:params) { super().merge(amount: '9999') };    include_examples 'does not create a transaction row'; end\ncontext 'currency mismatch'       do let(:params) { super().merge(currency: 'EUR') };   include_examples 'does not create a transaction row'; end"
+    },
+    {
+      "id": "GAPI-004",
+      "priority": "HIGH",
+      "field": "request field: transaction.amount",
+      "type": "API inbound",
+      "description": "No test submits an amount larger than wallet.balance. Must assert 422, zero DB writes, no PaymentGateway.charge call, and no balance value in error body.",
+      "stub": "context 'when amount exceeds wallet.balance' do\n  let(:amount) { (BigDecimal(WALLET_BALANCE) + 1).to_s }\n  it 'returns 422, no DB write, no gateway call' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n    expect(wallet.reload.balance).to eq(BigDecimal(WALLET_BALANCE))\n  end\nend"
+    },
+    {
+      "id": "GAPI-005",
+      "priority": "HIGH",
+      "field": "request field: transaction.amount",
+      "type": "API inbound",
+      "description": "No test submits amount == wallet.balance. Critical boundary where the account should drain to exactly zero. Must assert 201 and final wallet.balance == 0.",
+      "stub": "context 'when amount equals wallet.balance' do\n  let(:amount) { WALLET_BALANCE }\n  it 'returns 201 and sets wallet.balance to 0' do\n    run_test\n    expect(response).to have_http_status(:created)\n    expect(wallet.reload.balance).to eq(0)\n    body = JSON.parse(response.body)\n    expect(body['transaction']['amount']).to eq(BigDecimal(WALLET_BALANCE).to_s)\n  end\nend"
+    },
+    {
+      "id": "GAPI-006",
+      "priority": "HIGH",
+      "field": "request field: transaction.amount",
+      "type": "API inbound",
+      "description": "No boundary test at the regulatory limit. less_than_or_equal_to: 1_000_000 means exactly 1_000_000 should succeed, 1_000_000.00000001 must reject. Neither covered.",
+      "stub": "context 'when amount is exactly 1_000_000' do\n  let!(:wallet) { create(:wallet, user: user, currency: 'USD', balance: '1000000') }\n  let(:amount) { '1000000' }\n  it 'returns 201' do\n    run_test\n    expect(response).to have_http_status(:created)\n  end\nend\n\ncontext 'when amount is just above 1_000_000' do\n  let(:amount) { '1000000.00000001' }\n  it 'returns 422, no DB write' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n  end\nend"
+    },
+    {
+      "id": "GAPI-007",
+      "priority": "HIGH",
+      "field": "request field: transaction.amount",
+      "type": "API inbound",
+      "description": "No test for amount=0. numericality greater_than: 0 means zero must be rejected with 422. A change to >= 0 would pass silently.",
+      "stub": "context 'when amount is zero' do\n  let(:amount) { '0' }\n  it 'returns 422 and writes nothing' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n  end\nend"
+    },
+    {
+      "id": "GAPI-008",
+      "priority": "HIGH",
+      "field": "request field: transaction.amount",
+      "type": "API inbound",
+      "description": "No test submits 'abc' or other non-numeric string. BigDecimal coercion behavior on junk input is undefined without a test pinning it.",
+      "stub": "context 'when amount is a non-numeric string' do\n  let(:amount) { 'abc' }\n  it 'returns 422 and writes nothing, no 500' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    body = JSON.parse(response.body)\n    expect(body.to_json).not_to match(/BigDecimal|ArgumentError|stack/)\n  end\nend"
+    },
+    {
+      "id": "GAPI-009",
+      "priority": "HIGH",
+      "field": "request field: transaction.amount",
+      "type": "API inbound",
+      "description": "No test submits amount with 9+ decimal places. DB schema is decimal(20,8); the system must either round, truncate, or reject — pin the behavior with a test.",
+      "stub": "context 'when amount has precision beyond decimal(20,8)' do\n  let(:amount) { '100.123456789' } # 9 decimal places\n  it 'rounds/truncates/rejects per pinned contract' do\n    run_test\n    if response.status == 201\n      persisted = Transaction.last.amount\n      expect(persisted.to_s.split('.').last.length).to be <= 8\n    else\n      expect(response).to have_http_status(:unprocessable_entity)\n      expect(Transaction.count).to eq(0)\n    end\n  end\nend"
+    },
+    {
+      "id": "GAPI-010",
+      "priority": "HIGH",
+      "field": "request field: transaction.currency",
+      "type": "API inbound",
+      "description": "No test where request currency does not match wallet currency. validate_currency_match! is untested through the endpoint. Must assert 422, no DB write, no outbound call.",
+      "stub": "context 'when request currency does not match wallet.currency' do\n  let(:currency) { 'EUR' } # wallet is USD\n  it 'returns 422, no DB write, no gateway call' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n  end\nend"
+    },
+    {
+      "id": "GAPI-011",
+      "priority": "HIGH",
+      "field": "request field: transaction.currency",
+      "type": "API inbound",
+      "description": "Only USD is exercised (and only for status code). EUR, GBP, BTC, ETH each need their own happy-path test with matching wallet currency and response assertion.",
+      "stub": "%w[USD EUR GBP BTC ETH].each do |iso|\n  context \"when currency is #{iso} (matching wallet)\" do\n    let!(:wallet) { create(:wallet, user: user, currency: iso, balance: '500') }\n    let(:currency) { iso }\n    it \"returns 201 and response.currency == #{iso}\" do\n      run_test\n      expect(response).to have_http_status(:created)\n      body = JSON.parse(response.body)\n      expect(body['transaction']['currency']).to eq(iso)\n    end\n  end\nend"
+    },
+    {
+      "id": "GAPI-012",
+      "priority": "HIGH",
+      "field": "request field: transaction.category",
+      "type": "API inbound",
+      "description": "Zero coverage for category field. Each enum value drives different code paths: 'payment' triggers PaymentGateway.charge, 'deposit' skips balance deduction. Each enum must be its own test.",
+      "stub": "context \"when category is 'transfer'\" do\n  let(:category) { 'transfer' }\n  it 'returns 201, debits balance, does not call PaymentGateway' do\n    run_test\n    expect(response).to have_http_status(:created)\n    expect(wallet.reload.balance).to eq(BigDecimal(WALLET_BALANCE) - BigDecimal(DEFAULT_AMOUNT))\n    expect(PaymentGateway).not_to have_received(:charge)\n  end\nend\n\ncontext \"when category is 'payment'\" do\n  let(:category) { 'payment' }\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: true)) }\n  it 'returns 201 and calls PaymentGateway.charge exactly once' do\n    run_test\n    expect(response).to have_http_status(:created)\n    expect(PaymentGateway).to have_received(:charge)\n      .with(hash_including(amount: BigDecimal(DEFAULT_AMOUNT), currency: DEFAULT_CURRENCY, user_id: user.id))\n      .once\n  end\nend\n\ncontext \"when category is 'deposit'\" do\n  let(:category) { 'deposit' }\n  it 'returns 201 and does NOT decrement wallet.balance' do\n    run_test\n    expect(response).to have_http_status(:created)\n    expect(wallet.reload.balance).to eq(BigDecimal(WALLET_BALANCE))\n  end\nend\n\ncontext \"when category is 'withdrawal'\" do\n  let(:category) { 'withdrawal' }\n  it 'returns 201 and decrements wallet.balance' do\n    run_test\n    expect(response).to have_http_status(:created)\n    expect(wallet.reload.balance).to eq(BigDecimal(WALLET_BALANCE) - BigDecimal(DEFAULT_AMOUNT))\n  end\nend"
+    },
+    {
+      "id": "GAPI-013",
+      "priority": "HIGH",
+      "field": "request field: transaction.category",
+      "type": "API inbound",
+      "description": "No test confirms that omitting category results in 'transfer'. TransactionService#build_transaction default is untested.",
+      "stub": "context 'when category is omitted' do\n  let(:category) { nil }\n  it \"defaults to 'transfer'\" do\n    run_test\n    expect(response).to have_http_status(:created)\n    body = JSON.parse(response.body)\n    expect(body['transaction']['category']).to eq('transfer')\n    expect(Transaction.last.category).to eq('transfer')\n  end\nend"
+    },
+    {
+      "id": "GAPI-014",
+      "priority": "HIGH",
+      "field": "request field: transaction.category",
+      "type": "API inbound",
+      "description": "No test for an invalid category value (e.g. 'refund'). Must return 422 with no DB write and no outbound call.",
+      "stub": "context 'when category is invalid' do\n  let(:category) { 'refund' }\n  it 'returns 422 and writes nothing' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n  end\nend"
+    },
+    {
+      "id": "GAPI-015",
+      "priority": "HIGH",
+      "field": "request field: transaction.description",
+      "type": "API inbound",
+      "description": "No test for description field at all. Needs boundary tests at 500 chars (accepted) and 501 chars (422) to guard the length maximum: 500 validation.",
+      "stub": "context 'when description is exactly 500 chars' do\n  let(:description) { 'a' * 500 }\n  it 'returns 201 and persists it verbatim' do\n    run_test\n    expect(response).to have_http_status(:created)\n    expect(Transaction.last.description.length).to eq(500)\n  end\nend\n\ncontext 'when description is 501 chars' do\n  let(:description) { 'a' * 501 }\n  it 'returns 422 and writes nothing' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n  end\nend"
+    },
+    {
+      "id": "GAPI-016",
+      "priority": "HIGH",
+      "field": "response field: transaction.id / amount / currency / status / wallet_id / category / description / created_at / updated_at",
+      "type": "API inbound",
+      "description": "Happy path at transactions_spec.rb:35-40 asserts only status 201 — response body is never parsed. Every response field needs value + type + format assertions. amount must be asserted as decimal-as-string; created_at/updated_at as ISO8601.",
+      "stub": "context 'happy path — full response contract' do\n  let(:description) { 'coffee' }\n  let(:category)    { 'transfer' }\n\n  it 'returns 201 with all response fields correctly typed and formatted' do\n    run_test\n    expect(response).to have_http_status(:created)\n    body = JSON.parse(response.body)\n    txn  = body['transaction']\n\n    expect(txn['id']).to be_a(Integer).and be > 0\n    expect(txn['amount']).to eq(BigDecimal(DEFAULT_AMOUNT).to_s)\n    expect(txn['amount']).to be_a(String)\n    expect(txn['currency']).to eq(DEFAULT_CURRENCY)\n    expect(txn['status']).to eq('pending')\n    expect(txn['description']).to eq('coffee')\n    expect(txn['category']).to eq('transfer')\n    expect(txn['wallet_id']).to eq(wallet.id)\n    expect(txn['created_at']).to match(/\\A\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}/)\n    expect(txn['updated_at']).to match(/\\A\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}/)\n    expect(Time.iso8601(txn['updated_at'])).to be >= Time.iso8601(txn['created_at'])\n  end\nend"
+    },
+    {
+      "id": "GAPI-017",
+      "priority": "HIGH",
+      "field": "response field: error",
+      "type": "API inbound",
+      "description": "No error-body assertions in any error test. Each 422 must assert error string is present, human-readable, and free of SQL/stack trace content. ChargeError path must assert exact 'Payment processing failed' message.",
+      "stub": "context 'error envelope on every 422 path' do\n  let(:amount) { '-1' }\n  it 'returns { error: String, details: Array } with no stack leak' do\n    run_test\n    expect(response).to have_http_status(:unprocessable_entity)\n    body = JSON.parse(response.body)\n    expect(body['error']).to be_a(String).and be_present\n    expect(body['details']).to be_an(Array)\n    expect(body.to_json).not_to match(/ActiveRecord::|NoMethodError|\\.rb:\\d+/)\n  end\nend\n\ncontext 'ChargeError path returns exact error message' do\n  let(:category) { 'payment' }\n  before { allow(PaymentGateway).to receive(:charge).and_raise(PaymentGateway::ChargeError) }\n  it \"error == 'Payment processing failed'\" do\n    run_test\n    expect(response).to have_http_status(:unprocessable_entity)\n    body = JSON.parse(response.body)\n    expect(body['error']).to eq('Payment processing failed')\n  end\nend"
+    },
+    {
+      "id": "GAPI-018",
+      "priority": "HIGH",
+      "field": "request field: transaction.currency",
+      "type": "API inbound",
+      "description": "nil is covered but empty string \"\" is not. These take separate controller validation paths.",
+      "stub": "context 'when currency is empty string' do\n  let(:currency) { '' }\n  it 'returns 422 and writes nothing' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n  end\nend"
+    },
+    {
+      "id": "GAPI-019",
+      "priority": "HIGH",
+      "field": "request field: transaction.wallet_id",
+      "type": "API inbound",
+      "description": "No test for nil wallet_id — the find_by(id: nil) path.",
+      "stub": "context 'when wallet_id is nil' do\n  let(:wallet_id) { nil }\n  it 'returns 422 and writes nothing' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n  end\nend"
+    },
+    {
+      "id": "GAPI-020",
+      "priority": "HIGH",
+      "field": "request field: transaction.amount / transaction.currency / transaction.wallet_id",
+      "type": "API inbound",
+      "description": "Existing error tests at transactions_spec.rb:42,51,60,69,78 assert only have_http_status(:unprocessable_entity). None assert no DB record created, no PaymentGateway.charge call, and no data leak in body. Upgrade existing PARTIAL tests.",
+      "stub": "shared_examples 'a rejected request with no side effects' do\n  it 'does not create a transaction, does not call gateway, does not leak' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n    body = JSON.parse(response.body)\n    expect(body.to_json).not_to match(/ActiveRecord|stack|BigDecimal/)\n  end\nend\n\ncontext 'when amount is nil' do\n  let(:amount) { nil }\n  it_behaves_like 'a rejected request with no side effects'\nend\n\ncontext 'when amount is negative' do\n  let(:amount) { '-100' }\n  it_behaves_like 'a rejected request with no side effects'\nend\n\ncontext 'when currency is nil' do\n  let(:currency) { nil }\n  it_behaves_like 'a rejected request with no side effects'\nend\n\ncontext 'when currency is invalid enum' do\n  let(:currency) { 'ZZZ' }\n  it_behaves_like 'a rejected request with no side effects'\nend\n\ncontext 'when wallet does not exist' do\n  let(:wallet_id) { 0 }\n  it_behaves_like 'a rejected request with no side effects'\nend"
+    },
+    {
+      "id": "GDB-010",
+      "priority": "HIGH",
+      "field": "db field (input): wallet.status",
+      "type": "DB",
+      "description": "No test creates a wallet with status: 'suspended' and asserts 422 + no transaction row + no outbound call. Enum value coverage gap.",
+      "stub": "context 'when wallet.status is suspended' do\n  before { wallet.update!(status: 'suspended') }\n  it 'returns 422, no transaction row, no outbound call' do\n    allow(PaymentGateway).to receive(:charge)\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n    expect(wallet.reload.balance).to eq(INITIAL_BALANCE)\n  end\nend"
+    },
+    {
+      "id": "GDB-011",
+      "priority": "HIGH",
+      "field": "db field (input): wallet.status",
+      "type": "DB",
+      "description": "No test creates a wallet with status: 'closed' and asserts 422 + no transaction row + no outbound call.",
+      "stub": "context 'when wallet.status is closed' do\n  before { wallet.update!(status: 'closed') }\n  it 'returns 422, no transaction row, no outbound call' do\n    allow(PaymentGateway).to receive(:charge)\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n  end\nend"
+    },
+    {
+      "id": "GDB-012",
+      "priority": "HIGH",
+      "field": "db field (input): wallet.balance",
+      "type": "DB",
+      "description": "amount == balance must succeed and leave balance at exactly 0.00000000. Untested. This is where precision/off-by-one bugs hide.",
+      "stub": "context 'when amount exactly equals wallet.balance' do\n  let(:params) { super().merge(amount: INITIAL_BALANCE.to_s) }\n\n  it 'succeeds and drives wallet.balance to exactly 0' do\n    run_test\n    expect(response).to have_http_status(:created)\n    expect(wallet.reload.balance).to eq(BigDecimal('0'))\n  end\nend"
+    },
+    {
+      "id": "GDB-013",
+      "priority": "HIGH",
+      "field": "db field (input): wallet.balance",
+      "type": "DB",
+      "description": "amount > balance must 422 and leave balance unchanged + no transaction row. Untested at the boundary level.",
+      "stub": "context 'when amount exceeds wallet.balance' do\n  let(:params) { super().merge(amount: (INITIAL_BALANCE + 1).to_s) }\n\n  it 'returns 422, no transaction row, no balance change, no balance leak' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(wallet.reload.balance).to eq(INITIAL_BALANCE)\n    body = JSON.parse(response.body)\n    expect(body.to_s).not_to include(INITIAL_BALANCE.to_s)\n  end\nend"
+    },
+    {
+      "id": "GDB-014",
+      "priority": "HIGH",
+      "field": "db field (input): wallet.currency",
+      "type": "DB",
+      "description": "wallet.currency == 'USD', request currency = 'EUR' must 422, no DB write, no outbound call. Factory pins both to USD today.",
+      "stub": "context 'when wallet.currency != request.currency' do\n  let(:params) { super().merge(currency: 'EUR') } # wallet is USD\n\n  it 'returns 422, no transaction row, no outbound call' do\n    allow(PaymentGateway).to receive(:charge)\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n    expect(PaymentGateway).not_to have_received(:charge)\n  end\nend"
+    },
+    {
+      "id": "GDB-015",
+      "priority": "HIGH",
+      "field": "db field (input): wallet (IDOR ownership)",
+      "type": "DB",
+      "description": "Request with wallet_id belonging to a different user must 422, no DB write, no outbound call, and error response must NOT leak the other user's wallet attributes. Untested.",
+      "stub": "context 'when wallet_id belongs to a different user' do\n  let(:other_user)    { create(:user) }\n  let!(:other_wallet) { create(:wallet, user: other_user, currency: DEFAULT_CURRENCY, balance: INITIAL_BALANCE) }\n  let(:params)        { super().merge(wallet_id: other_wallet.id) }\n\n  it 'returns 422, no DB write, no outbound call, no leak of other wallet attrs' do\n    allow(PaymentGateway).to receive(:charge)\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(other_wallet.reload.balance).to eq(INITIAL_BALANCE)\n    expect(response).to have_http_status(:unprocessable_entity)\n    body = JSON.parse(response.body).to_s\n    expect(body).not_to include(other_user.email)\n    expect(body).not_to include(other_wallet.id.to_s)\n  end\nend"
+    },
+    {
+      "id": "GDB-020",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.user_id",
+      "type": "DB",
+      "description": "Happy path never asserts transaction.user_id == current_user.id. A regression that pins user_id to the first admin would ship green.",
+      "stub": "context 'happy path DB assertions bundle' do\n  let(:params) { super().except(:category) }\n\n  it 'persists transaction.user_id as current_user.id' do\n    freeze_time do\n      expect { run_test }.to change(Transaction, :count).by(1)\n      t = Transaction.last\n      expect(t.user_id).to eq(user.id)\n      expect(t.wallet_id).to eq(wallet.id)\n      expect(t.amount).to eq(DEFAULT_AMOUNT)\n      expect(t.currency).to eq(DEFAULT_CURRENCY)\n      expect(t.status).to eq('pending')\n      expect(t.category).to eq('transfer')\n      expect(wallet.reload.balance).to eq(INITIAL_BALANCE - DEFAULT_AMOUNT)\n    end\n  end\nend"
+    },
+    {
+      "id": "GDB-021",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.wallet_id",
+      "type": "DB",
+      "description": "Happy path never asserts transaction.wallet_id == request.wallet_id. Untested FK value.",
+      "stub": "# Covered by GDB-020 happy-path DB assertion bundle — see stub above."
+    },
+    {
+      "id": "GDB-022",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.amount",
+      "type": "DB",
+      "description": "With decimal(20,8), an input of '0.12345678' must persist exactly as 0.12345678. No precision assertion exists. Float drift or to_f truncation would ship green.",
+      "stub": "context 'amount with 8-decimal precision' do\n  let(:params) { super().merge(amount: '0.12345678') }\n  it 'persists amount with exact decimal precision' do\n    run_test\n    expect(Transaction.last.amount).to eq(BigDecimal('0.12345678'))\n  end\nend"
+    },
+    {
+      "id": "GDB-023",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.currency",
+      "type": "DB",
+      "description": "No test asserts transaction.currency == request.currency at the DB layer.",
+      "stub": "# Covered by GDB-020 happy-path DB assertion bundle — see stub above."
+    },
+    {
+      "id": "GDB-024",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.status",
+      "type": "DB",
+      "description": "For category=transfer (default), transaction.status must be 'pending' post-create (no PaymentGateway triggered). Untested.",
+      "stub": "# Covered by GDB-020 happy-path DB assertion bundle — see stub above."
+    },
+    {
+      "id": "GDB-025",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.status",
+      "type": "DB",
+      "description": "category='payment' + mocked PaymentGateway.charge returning success?: true must leave transaction.status == 'completed' in DB. Untested.",
+      "stub": "# Covered by GDB-003 state machine stub — see stub above."
+    },
+    {
+      "id": "GDB-026",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.status",
+      "type": "DB",
+      "description": "category='payment' + mocked PaymentGateway.charge returning success?: false must leave transaction.status == 'failed' in DB. Untested.",
+      "stub": "# Covered by GDB-003 state machine stub — see stub above."
+    },
+    {
+      "id": "GDB-027",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.status",
+      "type": "DB",
+      "description": "category='payment' + mocked PaymentGateway.charge raising ChargeError must leave DB in a consistent state: either no transaction row OR transaction row with status 'failed'. Contract currently unspecified.",
+      "stub": "context 'pending → failed via ChargeError' do\n  let(:params) { super().merge(category: 'payment') }\n  before { allow(PaymentGateway).to receive(:charge).and_raise(PaymentGateway::ChargeError) }\n\n  it 'leaves DB in consistent state (no row OR row with status=failed)' do\n    run_test\n    t = Transaction.last\n    if t && t.wallet_id == wallet.id\n      expect(t.status).to eq('failed')\n    else\n      expect(Transaction.where(wallet_id: wallet.id)).to be_empty\n    end\n  end\nend"
+    },
+    {
+      "id": "GDB-028",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.description",
+      "type": "DB",
+      "description": "Provided description must persist verbatim; omitted must persist as NULL (not empty string). Untested.",
+      "stub": "context 'description provided' do\n  let(:params) { super().merge(description: 'groceries') }\n  it 'persists the description verbatim' do\n    run_test\n    expect(Transaction.last.description).to eq('groceries')\n  end\nend\n\ncontext 'description omitted' do\n  let(:params) { super().except(:description) }\n  it 'persists description as NULL' do\n    run_test\n    expect(Transaction.last.description).to be_nil\n  end\nend"
+    },
+    {
+      "id": "GDB-029",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.category",
+      "type": "DB",
+      "description": "When category omitted in request, DB row must have category == 'transfer'. Untested.",
+      "stub": "# Covered by GDB-020 happy-path DB assertion bundle — see stub above."
+    },
+    {
+      "id": "GDB-030",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.category",
+      "type": "DB",
+      "description": "Each of transfer, payment, deposit, withdrawal must persist to DB unchanged. Untested for all four.",
+      "stub": "%w[transfer payment deposit withdrawal].each do |cat|\n  context \"category = #{cat}\" do\n    let(:params) { super().merge(category: cat) }\n    before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: true)) }\n\n    it \"persists transaction.category as '#{cat}'\" do\n      run_test\n      expect(Transaction.last.category).to eq(cat)\n    end\n  end\nend"
+    },
+    {
+      "id": "GDB-031",
+      "priority": "HIGH",
+      "field": "db field (assertion): wallet.balance (post-state)",
+      "type": "DB",
+      "description": "Post-create, wallet.balance must equal initial_balance - request.amount exactly. Untested — this is the core ledger invariant.",
+      "stub": "# Covered by GDB-020 happy-path DB assertion bundle — see stub above."
+    },
+    {
+      "id": "GOUT-002",
+      "priority": "HIGH",
+      "field": "outbound response field: PaymentGateway.charge.success?",
+      "type": "Outbound API",
+      "description": "No test stubs PaymentGateway.charge to return double(success?: true) on a category='payment' request and asserts: (1) response 201, (2) db transaction.status == 'completed', (3) response body transaction.status == 'completed', (4) wallet.balance decremented once. Core payment happy path entirely absent from request spec.",
+      "stub": "context 'when PaymentGateway.charge returns success?=true (category=payment)' do\n  let(:params) { base_params.merge(category: 'payment') }\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: true)) }\n\n  it 'returns 201 and marks transaction completed' do\n    run_test\n    expect(response).to have_http_status(:created)\n\n    body = JSON.parse(response.body)\n    expect(body['transaction']['status']).to eq('completed')\n\n    db_txn = Transaction.last\n    expect(db_txn.status).to eq('completed')\n    expect(db_txn.category).to eq('payment')\n\n    expect(db_wallet.reload.balance).to eq(initial_balance - BigDecimal(params[:amount]))\n  end\nend"
+    },
+    {
+      "id": "GOUT-003",
+      "priority": "HIGH",
+      "field": "outbound response field: PaymentGateway.charge.success?",
+      "type": "Outbound API",
+      "description": "No test stubs gateway to return double(success?: false) on payment category. Must assert: response status (pin current behavior), db transaction.status == 'failed', no data leak in error body.",
+      "stub": "context 'when PaymentGateway.charge returns success?=false (category=payment)' do\n  let(:params) { base_params.merge(category: 'payment') }\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: false)) }\n\n  it 'marks transaction failed and does not leak gateway internals' do\n    run_test\n    db_txn = Transaction.last\n    expect(db_txn.status).to eq('failed')\n\n    body = JSON.parse(response.body)\n    expect(body.to_s).not_to match(/PaymentGateway|stacktrace|ruby/i)\n  end\nend"
+    },
+    {
+      "id": "GOUT-004",
+      "priority": "HIGH",
+      "field": "outbound response field: PaymentGateway::ChargeError",
+      "type": "Outbound API",
+      "description": "No test raises PaymentGateway::ChargeError from the mock. Must assert: (1) response 422, (2) error == 'Payment processing failed', (3) db transaction.status != 'completed', (4) no gateway internals leaked.",
+      "stub": "context 'when PaymentGateway.charge raises ChargeError (category=payment)' do\n  let(:params) { base_params.merge(category: 'payment') }\n  before { allow(PaymentGateway).to receive(:charge).and_raise(PaymentGateway::ChargeError.new('upstream declined')) }\n\n  it 'returns 422 with generic error and does not mark completed' do\n    run_test\n    expect(response).to have_http_status(:unprocessable_entity)\n\n    body = JSON.parse(response.body)\n    expect(body['error']).to eq('Payment processing failed')\n    expect(body.to_s).not_to include('upstream declined')\n\n    expect(Transaction.last.status).not_to eq('completed')\n  end\nend"
+    },
+    {
+      "id": "GOUT-005",
+      "priority": "HIGH",
+      "field": "outbound request field: amount",
+      "type": "Outbound API",
+      "description": "No test verifies the amount argument sent to PaymentGateway.charge. Must assert have_received(:charge).with(hash_including(amount: BigDecimal('100.00'))) on payment happy path. Fractional-scale variant also missing.",
+      "stub": "context 'outbound request field: amount' do\n  let(:params) { base_params.merge(category: 'payment', amount: '100.00') }\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: true)) }\n\n  it 'sends amount as BigDecimal matching transaction.amount' do\n    run_test\n    expect(PaymentGateway).to have_received(:charge)\n      .with(hash_including(amount: BigDecimal('100.00')))\n  end\n\n  context 'with fractional scale (8 decimals)' do\n    let(:params) { base_params.merge(category: 'payment', amount: '10.12345678') }\n    it 'preserves full decimal precision' do\n      run_test\n      expect(PaymentGateway).to have_received(:charge)\n        .with(hash_including(amount: BigDecimal('10.12345678')))\n    end\n  end\nend"
+    },
+    {
+      "id": "GOUT-006",
+      "priority": "HIGH",
+      "field": "outbound request field: currency",
+      "type": "Outbound API",
+      "description": "No test verifies the currency argument sent to PaymentGateway.charge.",
+      "stub": "context 'outbound request field: currency' do\n  let(:params) { base_params.merge(category: 'payment', currency: 'USD') }\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: true)) }\n\n  it 'sends currency matching transaction.currency' do\n    run_test\n    expect(PaymentGateway).to have_received(:charge)\n      .with(hash_including(currency: 'USD'))\n  end\nend"
+    },
+    {
+      "id": "GOUT-007",
+      "priority": "HIGH",
+      "field": "outbound request field: user_id",
+      "type": "Outbound API",
+      "description": "No test verifies user_id is taken from current_user.id (authenticated identity), not from params.",
+      "stub": "context 'outbound request field: user_id' do\n  let(:params) { base_params.merge(category: 'payment') }\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: true)) }\n\n  it 'sends user_id from current_user.id (not forgeable via params)' do\n    run_test\n    expect(PaymentGateway).to have_received(:charge)\n      .with(hash_including(user_id: user.id))\n  end\nend"
+    },
+    {
+      "id": "GOUT-008",
+      "priority": "HIGH",
+      "field": "outbound request field: transaction_id",
+      "type": "Outbound API",
+      "description": "No test verifies that the transaction_id sent to the gateway matches the id of the Transaction row just created (non-nil — persisted before call).",
+      "stub": "context 'outbound request field: transaction_id' do\n  let(:params) { base_params.merge(category: 'payment') }\n  before { allow(PaymentGateway).to receive(:charge).and_return(double(success?: true)) }\n\n  it 'sends transaction_id referring to the persisted Transaction row' do\n    run_test\n    created = Transaction.last\n    expect(created.id).not_to be_nil\n    expect(PaymentGateway).to have_received(:charge)\n      .with(hash_including(transaction_id: created.id))\n  end\nend"
+    },
+    {
+      "id": "GOUT-009",
+      "priority": "HIGH",
+      "field": "outbound call-count: zero on non-payment categories",
+      "type": "Outbound API",
+      "description": "No test asserts that category='transfer' | 'deposit' | 'withdrawal' | omitted does NOT invoke PaymentGateway.charge. Without this, a regression that extends the gateway call to all categories would pass silently.",
+      "stub": "%w[transfer deposit withdrawal].each do |non_payment_category|\n  context \"outbound call-count: zero when category=#{non_payment_category}\" do\n    let(:params) { base_params.merge(category: non_payment_category) }\n    before { allow(PaymentGateway).to receive(:charge) }\n\n    it 'does not call PaymentGateway.charge' do\n      run_test\n      expect(PaymentGateway).not_to have_received(:charge)\n    end\n  end\nend"
+    },
+    {
+      "id": "GOUT-010",
+      "priority": "HIGH",
+      "field": "outbound call-count: zero on validation failures",
+      "type": "Outbound API",
+      "description": "No error-scenario test asserts expect(PaymentGateway).not_to have_received(:charge). Every 422/401 path should assert no outbound call.",
+      "stub": "shared_examples 'does not call PaymentGateway' do\n  before { allow(PaymentGateway).to receive(:charge) }\n\n  it 'does not invoke the outbound gateway' do\n    run_test\n    expect(PaymentGateway).not_to have_received(:charge)\n  end\nend\n\ncontext 'when amount is nil (422)' do\n  let(:params) { base_params.merge(category: 'payment', amount: nil) }\n  include_examples 'does not call PaymentGateway'\nend\n\ncontext 'when currency is invalid (422)' do\n  let(:params) { base_params.merge(category: 'payment', currency: 'ZZZ') }\n  include_examples 'does not call PaymentGateway'\nend\n\ncontext 'when wallet.balance is insufficient (422)' do\n  before { db_wallet.update!(balance: 0) }\n  let(:params) { base_params.merge(category: 'payment', amount: '100') }\n  include_examples 'does not call PaymentGateway'\nend\n\ncontext 'when Authorization header is missing (401)' do\n  let(:headers) { {} }\n  let(:params)  { base_params.merge(category: 'payment') }\n  include_examples 'does not call PaymentGateway'\nend"
+    },
+    {
+      "id": "GOUT-011",
+      "priority": "HIGH",
+      "field": "outbound call: idempotency key",
+      "type": "Fintech:Idempotency",
+      "description": "PaymentGateway.charge is called with NO idempotency key. No X-Idempotency-Key header handled by controller; no idempotency_key column on transactions; no unique index. A retried HTTP POST creates duplicate transactions AND duplicate gateway charges. Source-level gap. Merged from GOUT-011 + GFIN-004.",
+      "stub": "context 'with repeated requests carrying the same Idempotency-Key' do\n  it 'creates only one transaction and charges the gateway only once' do\n    allow(PaymentGateway).to receive(:charge).and_return(double(success?: true))\n    headers_with_key = auth_headers.merge('Idempotency-Key' => 'client-req-abc-123')\n\n    2.times do\n      post '/api/v1/transactions',\n        params: { transaction: valid_params.merge(category: 'payment') },\n        headers: headers_with_key\n    end\n\n    expect(Transaction.count).to eq(1)\n    expect(PaymentGateway).to have_received(:charge).once\n  end\nend"
+    },
+    {
+      "id": "GOUT-012",
+      "priority": "HIGH",
+      "field": "outbound response field: timeout / network error",
+      "type": "Outbound API",
+      "description": "Source only rescues PaymentGateway::ChargeError. Timeout::Error, Net::ReadTimeout, Errno::ECONNREFUSED are not rescued — they bubble to a 500 and leak exception class names. Source-level gap; test must either lock current 500 behavior or drive a fix to graceful 422/503.",
+      "stub": "context 'when PaymentGateway.charge raises Timeout::Error' do\n  let(:params) { base_params.merge(category: 'payment') }\n  before { allow(PaymentGateway).to receive(:charge).and_raise(Timeout::Error) }\n\n  it 'returns a controlled error, not a 500 leaking internals' do\n    run_test\n    expect(response.status).to be_in([422, 503])\n    body = JSON.parse(response.body)\n    expect(body.to_s).not_to match(/Timeout::Error|backtrace|\\/gems\\//)\n    expect(Transaction.last.status).not_to eq('completed')\n  end\nend"
+    },
+    {
+      "id": "GFIN-006",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.status",
+      "type": "Fintech:StateMachine",
+      "description": "No guard on invalid transitions (completed → pending, failed → completed, reversed → *). Rails enum alone does not enforce transition validity. Terminal state 'reversed' lacks a guard to prevent replay.",
+      "stub": "context 'state machine integrity' do\n  it 'cannot transition a completed transaction back to pending via direct update' do\n    txn = create(:transaction, user: user, wallet: wallet, status: 'completed')\n    expect { txn.update!(status: 'pending') }.to raise_error(ActiveRecord::RecordInvalid)\n  end\n\n  it 'cannot transition a failed transaction to completed' do\n    txn = create(:transaction, user: user, wallet: wallet, status: 'failed')\n    expect { txn.update!(status: 'completed') }.to raise_error(ActiveRecord::RecordInvalid)\n  end\n\n  it 'cannot transition from reversed terminal state' do\n    txn = create(:transaction, user: user, wallet: wallet, status: 'reversed')\n    %w[pending completed failed].each do |target|\n      expect { txn.update!(status: target) }.to raise_error(ActiveRecord::RecordInvalid)\n    end\n  end\nend"
+    },
+    {
+      "id": "GFIN-007",
+      "priority": "HIGH",
+      "field": "db field (assertion): transaction.status (stuck-pending)",
+      "type": "Fintech:StateMachine",
+      "description": "On exception between withdraw! and update!, the row stays 'pending' with wallet already debited and no reconciliation sweeper. Orphan pending rows with debited balances are a money-safety invariant violation.",
+      "stub": "context 'when gateway call raises an unexpected exception' do\n  it 'does not leave the transaction in pending with wallet debited' do\n    wallet = create(:wallet, user: user, balance: 100, currency: 'USD', status: 'active')\n    allow(PaymentGateway).to receive(:charge).and_raise(Net::ReadTimeout.new)\n\n    post '/api/v1/transactions',\n      params: { transaction: { amount: 30, currency: 'USD', wallet_id: wallet.id, category: 'payment' } },\n      headers: auth_headers\n    rescue StandardError\n      nil\n\n    pending_orphan = Transaction.where(wallet_id: wallet.id, status: 'pending').last\n    if pending_orphan\n      expect(wallet.reload.balance).to eq(100)\n    end\n  end\nend"
+    },
+    {
+      "id": "GFIN-008",
+      "priority": "HIGH",
+      "field": "request header: Authorization",
+      "type": "Fintech:Security",
+      "description": "No Rack::Attack, throttle middleware, or per-user request budget on the money-mutating endpoint. A compromised token can drain a wallet at HTTP speed.",
+      "stub": "context 'rate limiting on money-mutating endpoint' do\n  it 'returns 429 after exceeding the per-user rate threshold' do\n    threshold = 60\n    (threshold + 1).times do\n      post '/api/v1/transactions', params: { transaction: valid_params }, headers: auth_headers\n    end\n    expect(response).to have_http_status(:too_many_requests)\n  end\nend"
+    },
+    {
+      "id": "GFIN-009",
+      "priority": "HIGH",
+      "field": "outbound response field: PaymentGateway.charge.success?",
+      "type": "Fintech:ExternalIntegration",
+      "description": "PaymentGateway.charge response is not parsed for an external reference (gateway_transaction_id/charge_id). Without an external handle, a reconciliation job cannot map local rows to gateway records. Source-level gap.",
+      "stub": "context 'when PaymentGateway.charge succeeds' do\n  it 'persists the external gateway reference for reconciliation' do\n    allow(PaymentGateway).to receive(:charge).and_return(\n      double(success?: true, transaction_id: 'pg_ref_abc123')\n    )\n\n    post '/api/v1/transactions',\n      params: { transaction: valid_params.merge(category: 'payment') },\n      headers: auth_headers\n\n    expect(Transaction.last.gateway_reference).to eq('pg_ref_abc123')\n  end\nend"
+    },
+    {
+      "id": "GFIN-010",
+      "priority": "HIGH",
+      "field": "outbound response field: PaymentGateway::ChargeError",
+      "type": "Fintech:ExternalIntegration",
+      "description": "Every 5xx/timeout becomes immediate 'failed' with wallet debited. No exponential backoff, no retry budget, no dead-letter handling. Couples to GFIN-002 balance rollback gap.",
+      "stub": "context 'transient gateway 5xx' do\n  it 'retries with backoff before marking the transaction failed' do\n    call_count = 0\n    allow(PaymentGateway).to receive(:charge) do\n      call_count += 1\n      call_count < 3 ? raise(PaymentGateway::ChargeError.new('503')) : double(success?: true)\n    end\n\n    post '/api/v1/transactions',\n      params: { transaction: valid_params.merge(category: 'payment') },\n      headers: auth_headers\n\n    expect(response).to have_http_status(:created)\n    expect(call_count).to eq(3)\n    expect(Transaction.last.status).to eq('completed')\n  end\nend"
+    },
+    {
+      "id": "GAPI-021",
+      "priority": "MEDIUM",
+      "field": "request field: transaction.description",
+      "type": "API inbound",
+      "description": "Description is a free-text string persisted to DB. SQL injection, XSS, command injection, NULL-byte payloads should all be stored verbatim (not executed). No tests assert this."
+    },
+    {
+      "id": "GAPI-022",
+      "priority": "MEDIUM",
+      "field": "request field: transaction.currency",
+      "type": "API inbound",
+      "description": "Document contract behavior on 'usd' (lowercase) and ' USD ' (padded). Likely rejected by enum exact-match, but untested."
+    },
+    {
+      "id": "GAPI-023",
+      "priority": "MEDIUM",
+      "field": "request field: transaction.amount",
+      "type": "API inbound",
+      "description": "Sending non-string non-number (array [100], object {}) should 422 gracefully without 500."
+    },
+    {
+      "id": "GAPI-024",
+      "priority": "MEDIUM",
+      "field": "response field: transaction.description",
+      "type": "API inbound",
+      "description": "When description is omitted in request, does the response include \"description\": null or omit the key entirely? Document the contract."
+    },
+    {
+      "id": "GDB-040",
+      "priority": "MEDIUM",
+      "field": "db field (input): wallet.balance",
+      "type": "DB",
+      "description": "amount > balance by 0.00000001 must 422. Specific 8dp boundary test."
+    },
+    {
+      "id": "GDB-041",
+      "priority": "MEDIUM",
+      "field": "db field (input): wallet.balance",
+      "type": "DB",
+      "description": "Any non-zero amount against zero-balance wallet must 422 with balance unchanged."
+    },
+    {
+      "id": "GDB-042",
+      "priority": "MEDIUM",
+      "field": "db field (input): wallet.currency",
+      "type": "DB",
+      "description": "Parameterized happy path over each of USD/EUR/GBP/BTC/ETH (wallet.currency == request.currency) to prove currency is not hardcoded anywhere."
+    },
+    {
+      "id": "GDB-043",
+      "priority": "MEDIUM",
+      "field": "db field (assertion): transaction.created_at",
+      "type": "DB",
+      "description": "Not nil on insert; with frozen time, equal to Time.current."
+    },
+    {
+      "id": "GDB-044",
+      "priority": "MEDIUM",
+      "field": "db field (assertion): transaction.updated_at",
+      "type": "DB",
+      "description": "For transfer category (no status transition), updated_at should equal created_at on creation."
+    },
+    {
+      "id": "GDB-045",
+      "priority": "MEDIUM",
+      "field": "db field (assertion): transaction.updated_at",
+      "type": "DB",
+      "description": "For payment category, after status transition to completed/failed, updated_at > created_at."
+    },
+    {
+      "id": "GDB-046",
+      "priority": "MEDIUM",
+      "field": "db field (assertion): transaction.amount",
+      "type": "DB",
+      "description": "Exactly 1_000_000.00000000 persists unchanged."
+    },
+    {
+      "id": "GDB-047",
+      "priority": "MEDIUM",
+      "field": "db field (input): wallet.status",
+      "type": "DB",
+      "description": "Wallet status flipped to 'suspended' between validation and withdraw! — must not process. Covered partially by locking, but no test."
+    },
+    {
+      "id": "GOUT-013",
+      "priority": "MEDIUM",
+      "field": "outbound response field: PaymentGateway.charge.success?",
+      "type": "Outbound API",
+      "description": "No test for PaymentGateway.charge returning nil or an object without .success?. Current source calls .success? unconditionally — would raise NoMethodError, 500, leak class name."
+    },
+    {
+      "id": "GOUT-014",
+      "priority": "MEDIUM",
+      "field": "outbound response field: PaymentGateway.charge.success?",
+      "type": "Outbound API",
+      "description": "Source does not parse a gateway transaction_id/reference from the response. Reconciliation between internal transaction and upstream charge is impossible."
+    },
+    {
+      "id": "GOUT-015",
+      "priority": "MEDIUM",
+      "field": "outbound response field: PaymentGateway.charge.success?",
+      "type": "Outbound API",
+      "description": "Source does not parse/compare returned amount/currency. A gateway that reports a different amount than requested is silently accepted."
+    },
+    {
+      "id": "GFIN-011",
+      "priority": "MEDIUM",
+      "field": "db field (assertion): transaction.user_id",
+      "type": "Fintech:Compliance",
+      "description": "No audit_log/transaction_events event stream; no created_by_id actor, no client_ip, no request_id captured on the transaction row. Regulators (PCI DSS, PSD2, Reg E, FCA) require demonstrable audit trails."
+    },
+    {
+      "id": "GFIN-012",
+      "priority": "MEDIUM",
+      "field": "outbound call-count: PaymentGateway.charge",
+      "type": "Fintech:Compliance",
+      "description": "No sanctions/risk-score check before PaymentGateway.charge. Exposes platform to sanctions violations."
+    },
+    {
+      "id": "GFIN-013",
+      "priority": "MEDIUM",
+      "field": "request field: transaction.amount",
+      "type": "Fintech:Compliance",
+      "description": "Only <= 1_000_000 enforced in model. No per-user daily/monthly velocity limits, no currency-specific limits, no velocity check across recent transactions."
+    },
+    {
+      "id": "GFIN-014",
+      "priority": "MEDIUM",
+      "field": "request field: transaction.description",
+      "type": "Fintech:Security",
+      "description": "Free-text 500-char description flows into DB and is echoed in response; no HTML sanitization or script stripping. If any downstream surface renders this field without escaping, it is an XSS vector."
+    },
+    {
+      "id": "GAPI-025",
+      "priority": "LOW",
+      "field": "request field: transaction.description",
+      "type": "API inbound",
+      "description": "Emoji/CJK chars within 500-char limit must persist intact."
+    },
+    {
+      "id": "GAPI-026",
+      "priority": "LOW",
+      "field": "request field: transaction.wallet_id",
+      "type": "API inbound",
+      "description": "2^63 integer should 422 cleanly, not raise PG::RangeError 500."
+    },
+    {
+      "id": "GDB-050",
+      "priority": "LOW",
+      "field": "db field (assertion): transaction.user_id",
+      "type": "DB",
+      "description": "Schema-level NOT NULL constraint — implicit, no code path creates without user. Add defensive model/DB constraint test."
+    },
+    {
+      "id": "GDB-051",
+      "priority": "LOW",
+      "field": "db field (assertion): transaction.wallet_id",
+      "type": "DB",
+      "description": "Schema-level NOT NULL constraint on wallet_id. Defensive test."
+    },
+    {
+      "id": "GDB-052",
+      "priority": "LOW",
+      "field": "db field (assertion): transaction.amount",
+      "type": "DB",
+      "description": "Model validation catches this; add defensive schema-level NOT NULL test."
+    },
+    {
+      "id": "GDB-053",
+      "priority": "LOW",
+      "field": "db field (assertion): transaction.currency",
+      "type": "DB",
+      "description": "Schema-level NOT NULL constraint on currency."
+    },
+    {
+      "id": "GDB-054",
+      "priority": "LOW",
+      "field": "db field (assertion): transaction.status",
+      "type": "DB",
+      "description": "Schema-level NOT NULL constraint on status."
+    },
+    {
+      "id": "GDB-055",
+      "priority": "LOW",
+      "field": "db field (assertion): transaction.category",
+      "type": "DB",
+      "description": "Schema-level NOT NULL constraint on category."
+    },
+    {
+      "id": "GDB-056",
+      "priority": "LOW",
+      "field": "db field (assertion): transaction.status",
+      "type": "DB",
+      "description": "Invalid enum value for transaction.status should be rejected by DB/model."
+    },
+    {
+      "id": "GDB-057",
+      "priority": "LOW",
+      "field": "db field (assertion): transaction.category",
+      "type": "DB",
+      "description": "Invalid enum value for transaction.category should be rejected by DB/model."
+    },
+    {
+      "id": "GDB-058",
+      "priority": "LOW",
+      "field": "db field (assertion): transaction.status",
+      "type": "DB",
+      "description": "Assert that POST /api/v1/transactions cannot produce a row with status 'reversed' under any mocked outbound response."
+    },
+    {
+      "id": "GDB-059",
+      "priority": "LOW",
+      "field": "db field (input): wallet.currency",
+      "type": "DB",
+      "description": "Request currency='usd' (lowercase) behavior — reject or normalize? Lock via test."
+    },
+    {
+      "id": "GOUT-016",
+      "priority": "LOW",
+      "field": "outbound response field: PaymentGateway.charge.success?",
+      "type": "Outbound API",
+      "description": "If success? returns 'yes' or 1, Ruby truthiness would accept it as completed. Test should pin expected types."
+    }
+  ]
+}
