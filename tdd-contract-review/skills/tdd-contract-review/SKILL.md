@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.29.0
+version: 0.31.0
 ---
 
 # TDD Contract Review
@@ -21,8 +21,8 @@ tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/
 ├── 03a-gaps-api.md       ← per-type gap sub-report (API inbound)
 ├── 03b-gaps-db.md        ← per-type gap sub-report (DB)
 ├── 03c-gaps-outbound.md  ← per-type gap sub-report (Outbound API)
-├── 03f-gaps-money.md     ← cross-cutting money-correctness sub-report (critical mode only)
-├── 03g-gaps-security.md  ← cross-cutting API-security sub-report (critical mode only)
+├── 03d-gaps-money.md     ← cross-cutting money-correctness sub-report (critical mode only)
+├── 03e-gaps-security.md  ← cross-cutting API-security sub-report (critical mode only)
 ├── 03-gaps.md            ← merged unified gap report
 ├── report.md             ← final scored report
 └── findings.json         ← machine-readable gap list for eval.sh / CI
@@ -34,6 +34,38 @@ The `unit-slug` is lowercase kebab-case of the unit identifier:
 - `POST /api/v1/transactions` → `post-api-v1-transactions`
 - `ProcessPaymentJob` → `process-payment-job`
 - `WithdrawalConsumer` → `withdrawal-consumer`
+
+## Checkpoint Interaction Pattern
+
+At each of the 3 review checkpoints, use the `AskUserQuestion` tool — do NOT ask for free-text confirmation. Apply this pattern verbatim:
+
+- question: `Review checkpoint <N> of 3 — wrote $RUN_DIR/<file>. Proceed to <next step>?`
+- header: `Checkpoint <N>/3`
+- options (exactly these three, in this order):
+  - label `Continue` — description: `Proceed to <next step>.`
+  - label `Revise` — description: `Re-run this step with your feedback.`
+  - label `Stop` — description: `Preserve files and exit.`
+
+Branch on the user's selection:
+
+1. **Continue** → proceed to the next step.
+2. **Stop** → preserve every file in `$RUN_DIR` and exit without proceeding. Print one line: `Stopped at checkpoint <N>. Files preserved in $RUN_DIR`.
+3. **Revise** → print a plain text prompt asking for the feedback (no tool call, since `AskUserQuestion` requires 2–4 options and we want free-form input here): `What should be revised in $RUN_DIR/<file>? (type your feedback)`. Wait for the user's reply. Then re-dispatch the SAME agent that produced the current file, appending this block verbatim to that agent's original prompt:
+
+   ```
+   REVISION REQUEST: The user reviewed $RUN_DIR/<file> and asked for changes. Regenerate the file, addressing this feedback verbatim:
+   <paste the user's feedback here>
+   Overwrite $RUN_DIR/<file>. Return only 'WROTE: $RUN_DIR/<file>' when done.
+   ```
+
+   After the re-dispatch returns, re-run the GATE check for this step. If the GATE fails, surface the failure and stop — do NOT loop on a failing gate. If the GATE passes, present the checkpoint prompt again.
+
+4. **Other** (user typed free text instead of picking) → interpret:
+   - Affirmative words (`go`, `yes`, `ok`, `continue`, `proceed`) → treat as Continue.
+   - Stop intent (`stop`, `quit`, `abort`, `cancel`, `no`) → treat as Stop.
+   - Anything else → treat as Revise feedback directly (skip the follow-up question; use the typed text as the feedback payload).
+
+**Revision cap: 3 per checkpoint.** Track the revision count for this checkpoint in your working state for the run. On the 4th visit to the same checkpoint, drop the `Revise` option — present only `Continue` and `Stop`, and prepend `Revised 3 times already — please Continue or Stop.` to the question text.
 
 ## Review Workflow
 
@@ -49,7 +81,23 @@ Split `$ARGUMENTS` on whitespace. The **first token is the unit identifier** and
 - **`critical`** (optional): force critical mode ON — enables BOTH money-correctness and API-security checklists
 - **`no-critical`** (optional): force critical mode OFF (skip both checklists)
 
-If no unit identifier is provided, print: `ERROR: unit identifier required. Usage: /tdd-contract-review "POST /api/v1/transactions"` and stop.
+If no unit identifier is provided, print the following and stop:
+
+```
+ERROR: unit identifier required.
+
+Usage: /tdd-contract-review <unit> [quick] [critical|no-critical]
+
+Unit examples:
+  "POST /api/v1/transactions"     HTTP verb + path
+  ProcessPaymentJob               class name
+  app/controllers/foo.rb          file path
+
+Flags:
+  quick          abbreviated final report
+  critical       force critical mode (money + API-security checklists)
+  no-critical    disable critical mode even if auto-detected
+```
 
 ### Step 2: Discovery + Unit Guard
 
@@ -65,11 +113,38 @@ If no unit identifier is provided, print: `ERROR: unit identifier required. Usag
 7. **Detect critical mode** unless overridden by `critical`/`no-critical` arg. Money/balance/currency fields, payment gateways, or decimal types → critical mode ON (loads both money-correctness and API-security checklists).
 
 **GATE (one-unit):** Exactly one source file must resolve from the unit identifier.
-- **0 matches**: print `ERROR: unit '<arg>' not found. Searched: <scope>` and stop.
+- **0 matches**: print the following and stop:
+  ```
+  ERROR: unit '<arg>' not found.
+
+  Searched:
+    <one line per glob / grep pattern actually tried>
+
+  Closest matches:
+    <top 3 fuzzy candidates — route definitions, class names, or file paths
+     whose name shares a substring with <arg>, ranked by overlap length>
+  ```
+  If no fuzzy candidates exist, omit the "Closest matches" block entirely rather than printing an empty list.
 - **>1 matches**: print `ERROR: unit '<arg>' ambiguous. Candidates:` followed by a numbered list, then stop.
 - **1 match**: proceed.
 
 **Compute unit-slug** from the identifier. Compute run directory: `tdd-contract-review/$(date +%Y%m%d-%H%M)-{unit-slug}/`. Create the directory. Store path as `$RUN_DIR`.
+
+**Run preview.** Before proceeding to Step 3, print this 1-screen summary so the user can interrupt before the first agent dispatch:
+
+```
+=== TDD Contract Review — Run Preview ===
+Unit:          <unit identifier>
+Source:        <resolved source file:line of handler or class def>
+DB schema:     <N files, or "not found">
+Outbound:      <N clients, or "not found">
+Critical mode: ON (reason: <one-line signal that triggered it, e.g., "decimal column 'amount_cents' in db/migrate/001_create_wallets.rb">)
+               OR OFF
+Pipeline:      <N> agent dispatches, 3 checkpoints
+Run dir:       $RUN_DIR
+```
+
+The first checkpoint fires within ~30s of this preview (after extraction). This preview is informational — it makes auto-detected critical mode visible and lets the user cancel early. It is NOT a hard gate; do not wait for input here.
 
 ### Step 3: Contract Extraction
 
@@ -151,13 +226,11 @@ Prompt:
 
 **GATE (Checkpoint 1 shape):** Grep `$RUN_DIR/01-extraction.md` for exactly 5 Checkpoint 1 rows: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`. Each row must have a three-state status: `Extracted` | `Not detected` | `Not applicable`. If any row is missing, print which one and stop with a specific error (do not silently re-dispatch).
 
-**PAUSE for user confirmation:** Print:
-```
-━━━ Review checkpoint 1 of 3 ━━━
-Wrote: $RUN_DIR/01-extraction.md
-Please review the extraction. Reply "continue" to proceed to the audit step, or anything else to stop.
-```
-Wait for user input. Only proceed if the user confirms. If the user stops, preserve all files and exit.
+**PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
+- `<N>` = `1`
+- `<file>` = `01-extraction.md`
+- `<next step>` = `the test audit step`
+- Revise re-dispatch target = the Step 3 **Contract extraction** agent above (reuse its original prompt verbatim and append the REVISION REQUEST block).
 
 ### Step 4-5: Test Audit
 
@@ -181,13 +254,11 @@ Prompt:
    WRITE the full output to $RUN_DIR/02-audit.md. Return only 'WROTE: $RUN_DIR/02-audit.md' when done."
 ```
 
-**PAUSE for user confirmation:** Print:
-```
-━━━ Review checkpoint 2 of 3 ━━━
-Wrote: $RUN_DIR/02-audit.md
-Please review the audit. Reply "continue" to proceed to gap analysis, or anything else to stop.
-```
-Wait. Proceed on confirmation only.
+**PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
+- `<N>` = `2`
+- `<file>` = `02-audit.md`
+- `<next step>` = `the gap analysis step`
+- Revise re-dispatch target = the Step 4-5 **Test structure audit** agent above (reuse its original prompt verbatim and append the REVISION REQUEST block).
 
 ### Step 6: Gap Analysis (parallel per-type + merge)
 
@@ -207,31 +278,20 @@ If critical mode is yes, ALSO dispatch BOTH cross-cutting agents (regardless of 
 
 Dispatch all per-type agents in a single orchestrator message (parallel tool calls). Each agent writes its own sub-file and returns only `WROTE: <path>`.
 
-**Scenario checklist — embedded in every per-type prompt.** Every field in the Test Structure Tree must enumerate every applicable scenario from the matrix below. Do NOT collapse assertion fields into a "HAPPY PATH assertions" group — each assertion field gets its own branch.
+**Scenario checklist.** Every field in the Test Structure Tree MUST enumerate every applicable scenario from `[skill dir]/scenario-checklist.md`, applied per the field's type + constraints. Do NOT collapse assertion fields into a "HAPPY PATH assertions" group — each assertion field gets its own branch. Per-type prompts reference this file by path; do not inline the matrix.
+
+**Progress output.** Before dispatching, print the plan (list only agents that will actually run — skip types marked `Not detected` / `Not applicable` in Checkpoint 1):
 
 ```
-INPUT FIELDS (request field / request header / db field input / outbound response field / prop):
-  - nullability: null / empty string / missing / whitespace-only
-  - type violation: wrong type (string where int expected, etc.)
-  - boundary values: min, max, just-under-min, just-over-max
-  - format constraints: encoding (UTF-8 vs latin1), case sensitivity, leading/trailing whitespace
-  - enum values: each enum value as its own scenario (NOT grouped)
-  - injection strings (for strings that reach DB/SQL/shell/external): SQL injection, XSS, command injection, NULL byte
-  - concurrency: race condition / TOCTOU (only if field mutates shared state)
-  - precision: decimal precision boundary (for decimal types)
-  - length: over-max, exactly-max boundary (for string types)
-  - cross-field interactions: combinations with other fields (e.g., currency mismatch, amount vs balance)
-
-ASSERTION FIELDS (response field / db field assertion / outbound request field):
-  - presence in response/DB/outbound payload
-  - value correctness: matches input or expected derived state
-  - type correctness: integer stays integer, string stays string
-  - format: ISO8601 for timestamps, decimal-as-string for money, etc.
-  - NOT NULL enforcement (for DB fields with NOT NULL constraint)
-  - DEFAULT behavior (for DB fields with DEFAULT clause)
-  - FK integrity (for FK columns)
-  - nullability in response (field present vs omitted when null)
+=== Step 6b: Gap analysis (<N> parallel agents) ===
+→ API inbound
+→ DB
+→ Outbound API
+→ money-correctness (critical mode)     [if critical mode]
+→ API-security (critical mode)          [if critical mode]
 ```
+
+After all agents return, print one `✓ <sub-file> (<N> gaps)` line per produced sub-file before proceeding to Step 6c.
 
 **Prompt template — per-type agent (used for A/B/C):**
 
@@ -250,8 +310,7 @@ Prompt:
    Read [skill dir]/test-patterns.md for scenario conventions.
    If critical mode: read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md for per-field checks relevant to this contract type (precision, enum values, sensitive-data leak, injection, etc.).
 
-   SCENARIO CHECKLIST — every field in the tree MUST enumerate every applicable scenario from this matrix:
-   <INSERT INPUT/ASSERTION CHECKLIST FROM ABOVE>
+   SCENARIO CHECKLIST — read [skill dir]/scenario-checklist.md. Every field in the tree MUST enumerate every applicable scenario from that matrix, applied to the field's type + constraints.
 
    Rules:
    - Every input field gets its own tree branch with enumerated scenarios.
@@ -316,7 +375,7 @@ Prompt:
    transaction limit enforcement. Do NOT duplicate per-field gaps that the per-type agents will
    find — focus on unit-level integrity that spans multiple contract types.
 
-   OUTPUT FILE SHAPE — $RUN_DIR/03f-gaps-money.md:
+   OUTPUT FILE SHAPE — $RUN_DIR/03d-gaps-money.md:
 
    1) ## Cross-cutting Money-Correctness Gaps
       For each dimension present in the checklist, assess and list gaps. For dimensions without gaps, write 'No gaps detected'.
@@ -333,7 +392,7 @@ Prompt:
    3) ## Test Stubs
       Pseudocode per HIGH/CRITICAL gap.
 
-   WRITE to $RUN_DIR/03f-gaps-money.md. Return only 'WROTE: $RUN_DIR/03f-gaps-money.md' when done."
+   WRITE to $RUN_DIR/03d-gaps-money.md. Return only 'WROTE: $RUN_DIR/03d-gaps-money.md' when done."
 ```
 
 **Prompt template — F2 API-security cross-cutting agent:**
@@ -359,7 +418,7 @@ Prompt:
    tolerance, tampered payload rejection). Do NOT duplicate per-field gaps that the per-type
    agents will find — focus on unit-level security integrity spanning contract types.
 
-   OUTPUT FILE SHAPE — $RUN_DIR/03g-gaps-security.md:
+   OUTPUT FILE SHAPE — $RUN_DIR/03e-gaps-security.md:
 
    1) ## Cross-cutting API-Security Gaps
       For each dimension present in the checklist, assess and list gaps. For dimensions without gaps, write 'No gaps detected'.
@@ -376,7 +435,7 @@ Prompt:
    3) ## Test Stubs
       Pseudocode per HIGH/CRITICAL gap.
 
-   WRITE to $RUN_DIR/03g-gaps-security.md. Return only 'WROTE: $RUN_DIR/03g-gaps-security.md' when done."
+   WRITE to $RUN_DIR/03e-gaps-security.md. Return only 'WROTE: $RUN_DIR/03e-gaps-security.md' when done."
 ```
 
 **GATE (sub-files shape):** After all per-type agents return, verify each expected sub-file exists and contains both `## Test Structure Tree` and `## Contract Map` (or `## Cross-cutting Money-Correctness Gaps` for F1, `## Cross-cutting API-Security Gaps` for F2). If any required sub-file is missing or malformed, print which one and stop.
@@ -394,7 +453,7 @@ Prompt:
    Run directory: $RUN_DIR
 
    Read every sub-file that exists: $RUN_DIR/03a-gaps-api.md, $RUN_DIR/03b-gaps-db.md,
-   $RUN_DIR/03c-gaps-outbound.md, $RUN_DIR/03f-gaps-money.md, $RUN_DIR/03g-gaps-security.md.
+   $RUN_DIR/03c-gaps-outbound.md, $RUN_DIR/03d-gaps-money.md, $RUN_DIR/03e-gaps-security.md.
    Also read $RUN_DIR/02-audit.md for the anti-patterns section.
    Skip any sub-file that does not exist.
 
@@ -438,13 +497,11 @@ Prompt:
 
 **GATE (Checkpoint 2 shape):** Grep `$RUN_DIR/03-gaps.md` for the 5 Checkpoint 2 rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`). Every type that was `Extracted` in Checkpoint 1 must show `Yes` in Gaps Checked. If any `Extracted` type shows `N/A` or is missing, print which one and stop.
 
-**PAUSE for user confirmation:** Print:
-```
-━━━ Review checkpoint 3 of 3 ━━━
-Wrote: $RUN_DIR/03-gaps.md (merged from: <list of sub-files>)
-Please review the gaps. Reply "continue" to generate the final report, or anything else to stop.
-```
-Wait. Proceed on confirmation only.
+**PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
+- `<N>` = `3`
+- `<file>` = `03-gaps.md`
+- `<next step>` = `the final report step (Step 7-8)`
+- Revise re-dispatch target = the Step 6c **Gap merge** agent above (reuse its original prompt verbatim and append the REVISION REQUEST block). If the user's feedback names a specific contract type that needs re-analysis (not just re-merging), you MAY first re-dispatch that single per-type agent from Step 6b, then re-run the merge agent.
 
 ### Step 7-8: Report + findings.json
 
