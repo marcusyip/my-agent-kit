@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.31.0
+version: 0.32.0
 ---
 
 # TDD Contract Review
@@ -37,35 +37,55 @@ The `unit-slug` is lowercase kebab-case of the unit identifier:
 
 ## Checkpoint Interaction Pattern
 
-At each of the 3 review checkpoints, use the `AskUserQuestion` tool — do NOT ask for free-text confirmation. Apply this pattern verbatim:
+At each of the 3 review checkpoints, the orchestrator runs a three-step interaction: echo the agent's Summary so the user has something to review, ask the checkpoint question with `AskUserQuestion`, then branch on the selection.
+
+### Step A — Echo Summary first
+
+Read `$RUN_DIR/<file>` and print its `## Summary` section to the terminal. Grep the file for the literal heading `## Summary` and print every line after it up to (but not including) the next `## ` heading. Format:
+
+```
+=== Checkpoint <N> summary ($RUN_DIR/<file>) ===
+<verbatim Summary section body>
+==============================================
+```
+
+If no `## Summary` section is found (agent deviation), print `(Summary section missing in $RUN_DIR/<file> — open the file to review)` and proceed anyway. The step's GATE check already validates file shape; the Summary echo is a UX affordance, not a gate.
+
+### Step B — Ask the checkpoint question
+
+Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
 
 - question: `Review checkpoint <N> of 3 — wrote $RUN_DIR/<file>. Proceed to <next step>?`
 - header: `Checkpoint <N>/3`
 - options (exactly these three, in this order):
   - label `Continue` — description: `Proceed to <next step>.`
-  - label `Revise` — description: `Re-run this step with your feedback.`
+  - label `Revise` — description: `Re-run this step with a deepen pass (no input needed).`
   - label `Stop` — description: `Preserve files and exit.`
 
-Branch on the user's selection:
+### Step C — Branch on selection
 
 1. **Continue** → proceed to the next step.
 2. **Stop** → preserve every file in `$RUN_DIR` and exit without proceeding. Print one line: `Stopped at checkpoint <N>. Files preserved in $RUN_DIR`.
-3. **Revise** → print a plain text prompt asking for the feedback (no tool call, since `AskUserQuestion` requires 2–4 options and we want free-form input here): `What should be revised in $RUN_DIR/<file>? (type your feedback)`. Wait for the user's reply. Then re-dispatch the SAME agent that produced the current file, appending this block verbatim to that agent's original prompt:
+3. **Revise** → NO follow-up question. Re-dispatch the same agent that produced the current file (the target is specified per checkpoint in that step's PAUSE reference) with the step-specific **DEEPEN REQUEST** block appended verbatim to the agent's original prompt. DEEPEN REQUEST blocks are defined near each PAUSE section below. Do NOT prompt the user for feedback.
 
-   ```
-   REVISION REQUEST: The user reviewed $RUN_DIR/<file> and asked for changes. Regenerate the file, addressing this feedback verbatim:
-   <paste the user's feedback here>
-   Overwrite $RUN_DIR/<file>. Return only 'WROTE: $RUN_DIR/<file>' when done.
-   ```
+   **Checkpoint 3 exception:** A "more complete" gap report usually means per-field gaps the per-type agents missed, not just a better merge. At Checkpoint 3, the Revise path first re-dispatches all `Extracted` per-type agents from Step 6b in parallel (each with its own deepen prompt) plus both critical-mode agents if applicable, then re-runs the merge agent. See the Checkpoint 3 PAUSE section for the per-type deepen prompt.
 
-   After the re-dispatch returns, re-run the GATE check for this step. If the GATE fails, surface the failure and stop — do NOT loop on a failing gate. If the GATE passes, present the checkpoint prompt again.
+   After the re-dispatch(es) return, re-run the GATE check for this step. If the GATE fails, surface the failure and stop — do NOT loop on a failing gate. If the GATE passes, loop back to Step A (re-echo the updated Summary) and Step B (re-ask the checkpoint question).
 
 4. **Other** (user typed free text instead of picking) → interpret:
    - Affirmative words (`go`, `yes`, `ok`, `continue`, `proceed`) → treat as Continue.
    - Stop intent (`stop`, `quit`, `abort`, `cancel`, `no`) → treat as Stop.
-   - Anything else → treat as Revise feedback directly (skip the follow-up question; use the typed text as the feedback payload).
+   - Anything else → treat as **specific-feedback Revise**: re-dispatch the same agent, but append this block instead of the DEEPEN REQUEST block:
 
-**Revision cap: 3 per checkpoint.** Track the revision count for this checkpoint in your working state for the run. On the 4th visit to the same checkpoint, drop the `Revise` option — present only `Continue` and `Stop`, and prepend `Revised 3 times already — please Continue or Stop.` to the question text.
+     ```
+     REVISION REQUEST: The user reviewed $RUN_DIR/<file> and asked for changes. Regenerate the file, addressing this feedback verbatim:
+     <paste the user's typed text here verbatim>
+     Overwrite $RUN_DIR/<file>. Return only 'WROTE: $RUN_DIR/<file>' when done.
+     ```
+
+     Then re-run the GATE and loop back to Step A on pass. The typed text is passed through verbatim — the agent sees the user's own words, not a paraphrase.
+
+**Revision cap: 3 per checkpoint**, counting any mix of Revise (deepen) and specific-feedback free-text paths. Track the count for this checkpoint in your working state for the run. On the 4th visit to the same checkpoint, drop the `Revise` option — present only `Continue` and `Stop`, and prepend `Revised 3 times already — please Continue or Stop.` to the question text.
 
 ## Review Workflow
 
@@ -167,9 +187,22 @@ Prompt:
    Read `contract-extraction.md` at [skill dir]/contract-extraction.md for extraction guidance.
    If critical mode: also read BOTH `money-correctness-checklists.md` and `api-security-checklists.md` at [skill dir].
 
-   OUTPUT FILE SHAPE — $RUN_DIR/01-extraction.md MUST open with two mandatory sections in this order:
+   OUTPUT FILE SHAPE — $RUN_DIR/01-extraction.md MUST open with three mandatory sections in this order:
 
-   1) ## Files Examined
+   1) ## Summary
+
+   Scannable one-screen overview shown at Checkpoint 1 before the user is asked to proceed. Bullets only, 4-8 lines max. No prose.
+
+   ```
+   ## Summary
+
+   - Total fields extracted: <N>
+   - Contract matrix: API: <N> | DB: <N> | Outbound: <N> | Jobs: <N|N/A> | UI Props: <N|N/A>
+   - Critical mode: ON (reason: <one-line signal, e.g., "decimal column `amount_cents` in db/migrate/001_create_wallets.rb">) OR OFF
+   - Files examined: <N> source, <N> DB schema, <N> outbound, <N> other
+   ```
+
+   2) ## Files Examined
 
    Bullet list of every file you read, grouped into four categories. Always include all four headings; write '- (none)' under any empty category. Never omit a category.
 
@@ -191,7 +224,7 @@ Prompt:
    - (list anything else you opened during extraction; '- (none)' if nothing)
    ```
 
-   2) ## Checkpoint 1: Contract Type Coverage
+   3) ## Checkpoint 1: Contract Type Coverage
 
    STRICT table — the orchestrator greps for literal row labels. Do NOT rename, reorder, or embellish labels.
 
@@ -217,7 +250,7 @@ Prompt:
    - `Not detected`: this unit could plausibly use this type but no evidence in source. Investigate before marking.
    - `Not applicable`: this contract type cannot apply to this unit (e.g., a consumer has no inbound API).
 
-   After those two sections: produce the Contract Extraction Summary (typed field prefixes per field) and critical-mode dimensions (if critical mode: separate Money-correctness dimensions + API-security dimensions tables).
+   After those three sections: produce the Contract Extraction Summary (typed field prefixes per field) and critical-mode dimensions (if critical mode: separate Money-correctness dimensions + API-security dimensions tables).
 
    WRITE the full output to $RUN_DIR/01-extraction.md. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.md' when done.
 
@@ -230,7 +263,25 @@ Prompt:
 - `<N>` = `1`
 - `<file>` = `01-extraction.md`
 - `<next step>` = `the test audit step`
-- Revise re-dispatch target = the Step 3 **Contract extraction** agent above (reuse its original prompt verbatim and append the REVISION REQUEST block).
+- Revise re-dispatch target = the Step 3 **Contract extraction** agent above. Reuse its original prompt verbatim. On Revise (auto-iterate), append the DEEPEN REQUEST block below. On specific-feedback free-text fallback, append the REVISION REQUEST block from the Checkpoint Interaction Pattern instead.
+
+**DEEPEN REQUEST block (Checkpoint 1):**
+
+```
+DEEPEN REQUEST: The user reviewed $RUN_DIR/01-extraction.md and asked for a
+more complete pass. Re-examine the source exhaustively:
+- Re-read every file in `Files Examined` and look for fields / headers / params
+  you missed.
+- For every Checkpoint 1 row marked `Not detected`: investigate harder — look
+  for implicit contracts (session keys, cookies, cache entries, audit-log
+  fields, feature flags).
+- For every `Extracted` row: count again. Optional fields, nullable columns,
+  derived/computed fields, fields set via callbacks or hooks.
+- If critical mode is on: re-check money-correctness and API-security
+  dimensions for anything missed.
+Overwrite $RUN_DIR/01-extraction.md. The `## Summary` section MUST reflect
+updated counts. Return only 'WROTE: $RUN_DIR/01-extraction.md' when done.
+```
 
 ### Step 4-5: Test Audit
 
@@ -249,7 +300,18 @@ Prompt:
    Read $RUN_DIR/01-extraction.md for the contract (produced by Step 3).
    Read `test-patterns.md` at [skill dir]/test-patterns.md for sessions pattern, anti-patterns, quality checklists.
 
-   Produce: test structure findings, quality issues, anti-patterns (with file:line), per-field coverage notes.
+   OUTPUT FILE SHAPE — $RUN_DIR/02-audit.md MUST open with a mandatory `## Summary` section BEFORE any test-structure or findings sections:
+
+   ```
+   ## Summary
+
+   - Test framework: <RSpec | Jest | Vitest | Go testing | pytest | ...>
+   - Test files: <N> files, <M> test cases
+   - Anti-patterns found: <N> (see findings sections for file:line)
+   - Per-contract-type coverage: API: <X>% | DB: <Y>% | Outbound: <Z>% (use N/A for types not Extracted in Checkpoint 1)
+   ```
+
+   After Summary: produce test structure findings, quality issues, anti-patterns (with file:line), per-field coverage notes.
 
    WRITE the full output to $RUN_DIR/02-audit.md. Return only 'WROTE: $RUN_DIR/02-audit.md' when done."
 ```
@@ -258,7 +320,24 @@ Prompt:
 - `<N>` = `2`
 - `<file>` = `02-audit.md`
 - `<next step>` = `the gap analysis step`
-- Revise re-dispatch target = the Step 4-5 **Test structure audit** agent above (reuse its original prompt verbatim and append the REVISION REQUEST block).
+- Revise re-dispatch target = the Step 4-5 **Test structure audit** agent above. Reuse its original prompt verbatim. On Revise (auto-iterate), append the DEEPEN REQUEST block below. On specific-feedback free-text fallback, append the REVISION REQUEST block from the Checkpoint Interaction Pattern instead.
+
+**DEEPEN REQUEST block (Checkpoint 2):**
+
+```
+DEEPEN REQUEST: The user reviewed $RUN_DIR/02-audit.md and asked for a more
+complete pass. Re-examine the tests exhaustively:
+- Re-read every test file. Look for cases you skipped: nested describes,
+  shared examples, helpers, setup/teardown blocks, parameterised tests.
+- For every contract field from $RUN_DIR/01-extraction.md: confirm whether a
+  test exists and cite test file:line.
+- Look harder for anti-patterns: mocking internal code, assertion-free tests,
+  over-stubbing, fragile setup, order-dependent tests, time-sensitive tests.
+- Re-check per-field coverage: each assertion, each boundary, each enum
+  value, each error branch.
+Overwrite $RUN_DIR/02-audit.md. The `## Summary` section MUST reflect updated
+findings. Return only 'WROTE: $RUN_DIR/02-audit.md' when done.
+```
 
 ### Step 6: Gap Analysis (parallel per-type + merge)
 
@@ -297,7 +376,7 @@ After all agents return, print one `✓ <sub-file> (<N> gaps)` line per produced
 
 ```
 Agent:       tdd-contract-review:staff-engineer
-Model:       opus
+Model:       sonnet
 Description: Gap analysis — <CONTRACT_TYPE>
 Prompt:
   "TASK: Exhaustive per-field gap analysis for CONTRACT TYPE: <CONTRACT_TYPE>
@@ -459,32 +538,44 @@ Prompt:
 
    Produce $RUN_DIR/03-gaps.md with these sections in order:
 
-   1) ## Test Structure Tree (unified)
+   1) ## Summary
+      Scannable one-screen overview shown at Checkpoint 3 before the user is asked to proceed. Bullets only, 4-8 lines max. No prose.
+
+      ```
+      ## Summary
+
+      - Gaps by priority: CRITICAL: <N>, HIGH: <N>, MEDIUM: <N>, LOW: <N>
+      - Gaps by contract type: API: <N> | DB: <N> | Outbound: <N> | Money: <N> | Security: <N>  (omit lines for types not present)
+      - Test stubs generated: <N> (for CRITICAL + HIGH gaps)
+      - Hygiene/anti-patterns carried from audit: <N>
+      ```
+
+   2) ## Test Structure Tree (unified)
       One root (the unit identifier). Under it, concatenate per-type branches grouped by contract type:
       - ### API inbound  (from 03a)
       - ### DB           (from 03b)
       - ### Outbound API (from 03c)
       Preserve every field branch and every scenario verbatim from the sub-files.
 
-   2) ## Contract Map (unified)
+   3) ## Contract Map (unified)
       Single table with all rows from all sub-reports. Column header:
       | Typed Prefix | Field | Role | Scenarios Required | Scenarios Covered | Gap Count |
 
-   3) ## Gap Analysis by Priority
+   4) ## Gap Analysis by Priority
       Merge gap lists from all sub-reports. DEDUPE by (field + description key phrase).
       When duplicates appear (e.g., F1 money agent + outbound agent both flag amount-mismatch,
       or F2 security agent + API agent both flag missing auth), keep the highest priority,
       combine descriptions, keep the richer stub.
       Group by CRITICAL / HIGH / MEDIUM / LOW in that order.
 
-   4) ## Hygiene (from audit)
+   5) ## Hygiene (from audit)
       Copy the anti-patterns section from $RUN_DIR/02-audit.md verbatim (with file:line references).
       These are test-code hygiene issues, NOT contract gaps. They inform the report but are excluded from findings.json.
 
-   5) ## Test Stubs for CRITICAL / HIGH Gaps
+   6) ## Test Stubs for CRITICAL / HIGH Gaps
       Collected from sub-reports, deduped by gap id. Use the richer stub when duplicates exist.
 
-   6) ## Checkpoint 2: Gap Coverage
+   7) ## Checkpoint 2: Gap Coverage
       STRICT table — orchestrator greps for literal row labels. Column header MUST be:
       | Contract Type | Gaps Checked | Count | Notes |
       Row labels MUST be exactly: API inbound, DB, Outbound API, Jobs, UI Props (same 5 as Checkpoint 1).
@@ -501,7 +592,40 @@ Prompt:
 - `<N>` = `3`
 - `<file>` = `03-gaps.md`
 - `<next step>` = `the final report step (Step 7-8)`
-- Revise re-dispatch target = the Step 6c **Gap merge** agent above (reuse its original prompt verbatim and append the REVISION REQUEST block). If the user's feedback names a specific contract type that needs re-analysis (not just re-merging), you MAY first re-dispatch that single per-type agent from Step 6b, then re-run the merge agent.
+- Revise re-dispatch target — Checkpoint 3 has TWO paths:
+  - **Revise (auto-iterate deepen)** — NOT just a merge re-run. A "more complete" gap report usually means per-field gaps the per-type agents missed, not just a better merge. Execute this sequence:
+    1. Re-dispatch all per-type agents from Step 6b (every agent whose sub-file exists) in parallel, each with the **Per-type DEEPEN REQUEST block** appended to its Step 6b prompt. Include the F1 money-correctness and F2 API-security agents if their sub-files exist. Print the same `=== Step 6b: Gap analysis (<N> parallel agents) ===` plan line and the `✓ <sub-file> (<N> gaps)` breadcrumbs as the original Step 6b run.
+    2. After all per-type agents return and the Step 6b sub-files GATE passes, re-dispatch the Step 6c **Gap merge** agent with the **Merge DEEPEN REQUEST block** appended.
+    3. Re-run the Checkpoint 2 gap-coverage GATE on the updated `$RUN_DIR/03-gaps.md`. If it fails, surface the failure and stop.
+  - **Specific-feedback free-text fallback** (user typed free text that is not affirmative / not stop-intent) — re-dispatch only the Step 6c **Gap merge** agent with the REVISION REQUEST block from the Checkpoint Interaction Pattern. If the typed text clearly names a single contract type that needs re-analysis (not just re-merging), you MAY first re-dispatch that single per-type agent from Step 6b, then re-run the merge agent.
+
+**Per-type DEEPEN REQUEST block (appended to each Step 6b per-type agent):**
+
+```
+DEEPEN REQUEST: Re-examine your previous $RUN_DIR/<sub-file>. For every field
+in your Contract Map:
+- Re-enumerate scenarios from [skill dir]/scenario-checklist.md — are any
+  applicable scenarios missing from the Test Structure Tree?
+- For each ✓ covered status: re-verify the cited test file:line actually
+  asserts what the scenario requires. Weak assertion → downgrade to PARTIAL.
+- For each ✗ missing or PARTIAL: is the priority right given critical mode?
+Overwrite $RUN_DIR/<sub-file>. Return only 'WROTE: $RUN_DIR/<sub-file>' when done.
+```
+
+**Merge DEEPEN REQUEST block (appended to the Step 6c merge agent):**
+
+```
+DEEPEN REQUEST: The per-type sub-files have been re-generated with a deeper
+pass. Re-merge $RUN_DIR/03-gaps.md from the updated sub-files. In addition:
+- Look harder for cross-type interactions (e.g., an API field and a DB column
+  that both map to the same logical entity and share a gap).
+- Re-calibrate priorities: if critical mode is on, missing coverage on money
+  or security dimensions should usually be CRITICAL or HIGH, not MEDIUM.
+- Keep dedupe rules from the original prompt (highest priority wins, combine
+  descriptions, keep richer stub).
+Overwrite $RUN_DIR/03-gaps.md. The `## Summary` section MUST reflect updated
+counts. Return only 'WROTE: $RUN_DIR/03-gaps.md' when done.
+```
 
 ### Step 7-8: Report + findings.json
 
