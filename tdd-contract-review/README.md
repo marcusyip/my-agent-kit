@@ -1,5 +1,16 @@
 # tdd-contract-review
 
+```text
+ ████████╗██████╗ ██████╗
+ ╚══██╔══╝██╔══██╗██╔══██╗    ┌─ contract ─┐   ┌─ tests ──┐
+    ██║   ██║  ██║██║  ██║    │ amount   ✓ │◀─▶│ test_1   │
+    ██║   ██║  ██║██║  ██║    │ user_id  ✗ │gap│ test_2   │
+    ██║   ██████╔╝██████╔╝    │ state    ⚠ │wk │ test_3   │
+    ╚═╝   ╚═════╝ ╚═════╝     │ created  ✓ │   └──────────┘
+                              └────────────┘
+         c o n t r a c t   ·   r e v i e w
+```
+
 A Claude Code plugin that reviews test quality through **contract-based analysis**, identifies gaps, and auto-generates test stubs for the missing coverage.
 
 One run reviews ONE unit -- one HTTP endpoint, one background job, or one queue consumer. The plugin extracts contracts from source (API request/response fields, DB model fields, outbound API call params, UI component props), maps test coverage per field, identifies gaps, and emits a scored report plus a machine-readable `findings.json` for CI grading.
@@ -38,17 +49,41 @@ Or manually copy the plugin directory into your Claude Code plugins location.
 - **`quick`** (optional): abbreviated report, HIGH gaps only
 - **`critical`** / **`no-critical`** (optional): force critical mode on or off. Critical mode loads BOTH the money-correctness and API-security checklists and runs two extra cross-cutting gap agents. It is auto-detected from money/balance/currency fields, payment gateways, and decimal types.
 
-## What It Does
+## Workflow
 
-The skill dispatches a Staff Engineer agent at each step and pauses for user review at three checkpoints:
+The skill is an orchestrator that dispatches a Staff Engineer agent at each step, writes intermediate artifacts to disk, and pauses for user review at three checkpoints. Every run writes to a flat, unit-scoped directory: `tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/`.
 
-1. **Discovery + Unit Guard** -- resolves the unit to exactly one source file, fails fast on 0 or >1 matches
-2. **Contract Extraction** -- extracts API inbound, DB, Outbound API, Jobs, UI Props contracts with typed field prefixes; writes `01-extraction.md` -> **Checkpoint 1**
-3. **Test Audit** -- audits test structure, quality, anti-patterns against the extracted contract; writes `02-audit.md` -> **Checkpoint 2**
-4. **Gap Analysis** -- parallel per-type agents (API, DB, Outbound) plus, in critical mode, two cross-cutting agents (Money-correctness, API-security) each enumerate every scenario per field; a merge agent produces `03-gaps.md` -> **Checkpoint 3**
-5. **Report + findings.json** -- scored `report.md` with test stubs + machine-readable `findings.json` for CI
+| Step | Action | Model | Artifact |
+|---|---|---|---|
+| 1-2 | **Discovery + Unit Guard** -- resolve the unit to exactly one source file, detect critical mode, print run preview | -- | -- |
+| 2.5 | **Previous-extraction reuse** (optional) -- if a prior extraction for this unit exists, offer to reuse instead of re-running Step 3 | -- | copies `01-extraction.md` |
+| 3 | **Contract Extraction** -- extract API inbound / DB / Outbound API / Jobs / UI Props contracts with typed field prefixes | sonnet | `01-extraction.md` |
+|  | **Checkpoint 1** -- user reviews extraction shape, Files Examined, `Not applicable` vs `Not detected` claims |
+| 4-5 | **Test Audit** -- inventory tests, reconcile grep count vs agent count, per-field coverage matrix, assertion depth, anti-patterns | sonnet | `02-audit.md` |
+|  | **Checkpoint 2** -- user reviews reconciliation, WEAK assertions on fields that matter, UNCOVERED fields |
+| 6a | **Type selection** -- for each `Extracted` contract type, dispatch one per-type agent; if critical mode, add F1/F2 | -- | -- |
+| 6b | **Per-type gap analysis (parallel)** -- A: API inbound, B: DB, C: Outbound API; F1: money-correctness, F2: API-security (critical mode only) | A/B/C sonnet, F1/F2 **opus** | `03a-gaps-api.md`, `03b-gaps-db.md`, `03c-gaps-outbound.md`, `03d-gaps-money.md`, `03e-gaps-security.md` |
+| 6c | **Merge** -- dedupe per-type gaps, collapse F1/F2 overlap with A/B/C, calibrate priorities, copy-forward hygiene findings | **opus** | `03-gaps.md` |
+|  | **Checkpoint 3** -- user reviews priority calibration, stub concreteness, dedupe sanity |
+| 7-8 | **Report + findings.json** -- scored `report.md` with test stubs + machine-readable `findings.json` for CI | sonnet | `report.md`, `findings.json` |
+| 9 | **Deterministic gate** -- `jq` checks: valid JSON, CRITICAL+HIGH gaps have stubs, all Extracted types represented | -- | -- |
 
-Every run writes to a flat, unit-scoped directory: `tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/`.
+At each checkpoint the user picks **Continue** / **Revise** / **Stop**. Revise auto-dispatches a DEEPEN pass on the responsible agent; free-text feedback re-dispatches with the user's words verbatim. Cap: 3 revises per checkpoint.
+
+## Design Rationale
+
+The workflow is more structured than a single-agent review would be. The reasons below explain why each piece is load-bearing -- simplifying them tends to trade visible token cost for less-visible quality loss.
+
+- **One unit per run.** Contract extraction depth scales with focus. Batching units means shallower per-unit analysis and tangled gap reports. Run the skill multiple times instead.
+- **Orchestrator + disk intermediates, not one giant agent.** Each sub-agent gets narrow context (one contract type, one task), which is how the per-type agents exhaustively enumerate scenarios per field instead of collapsing them. Disk artifacts also make checkpoints reviewable, the previous-extraction reuse path possible, and the benchmark structural-check gradeable.
+- **Three human checkpoints.** CP1 locks the vocabulary (every missed field here becomes an invisible gap downstream). CP2 reconciles test counts (a skipped test file silently falsifies coverage). CP3 calibrates priorities and stub concreteness (the highest-stakes call in the run). Dropping any of these saves tokens but trusts the model on judgments users are better at.
+- **Parallel per-type gap agents + merge.** One unified gap agent collapses assertion fields into a grouped block and misses per-field scenarios. Splitting by contract type keeps each agent's context small enough that it enumerates every scenario from `scenario-checklist.md` per field. The merge agent then dedupes cross-type interactions.
+- **Model split (sonnet for formatting, opus for synthesis).** Per-type gap agents (A/B/C) do enumeration against a checklist -- sonnet. F1/F2 cross-cutting and 6c merge do dedupe, cross-type reasoning, and priority calibration -- opus. The split keeps opus where reasoning quality pays off and sonnet where it doesn't.
+- **6c (merge) and 7-8 (report) kept separate.** Combining them would save ~50% of tail tokens but collapses CP3 and forces one model to juggle dedupe + scoring + JSON schema emission. The hotspot here is `03-gaps.md`'s verbosity, not the split itself.
+- **Critical mode adds two cross-cutting agents, not more rules in A/B/C.** Money-correctness and API-security are systemic, unit-level concerns (precision, idempotency, state machines; authN/authZ, rate limiting, audit trail). Keeping them in dedicated agents with their own checklists avoids diluting per-type agents with cross-cutting rules.
+- **Deterministic Step 9 gate.** `findings.json` is the CI-facing artifact. A `jq`-based check -- not an LLM -- verifies schema validity, required stubs, and Extracted-type coverage. Deterministic gates on machine-readable output belong in shell, not model prompts.
+
+Token cost per run lands around 160k non-critical / 290k critical (sub-agent contexts, prompt-caching aside). See `benchmark/notes/token-usage.md` for the per-step breakdown.
 
 ## Scoring
 
