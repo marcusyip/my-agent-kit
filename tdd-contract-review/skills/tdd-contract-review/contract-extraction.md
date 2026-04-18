@@ -3,6 +3,79 @@
 
 Detailed guidance for Step 3 of the TDD Contract Review workflow.
 
+## Output File Shape (01-extraction.md)
+
+`$RUN_DIR/01-extraction.md` MUST open with three mandatory sections in this order. Writing these sections verbatim (structure, headings, and row labels) is non-negotiable — the orchestrator greps for literal strings to gate Checkpoint 1. Deviate and the gate fails.
+
+### 1. `## Summary`
+
+Scannable one-screen overview shown at Checkpoint 1 before the user is asked to proceed. Bullets only, 4-8 lines max. No prose.
+
+```
+## Summary
+
+- Total fields extracted: <N>
+- Contract matrix: API: <N> | DB: <N> | Outbound: <N> | Jobs: <N|N/A> | UI Props: <N|N/A>
+- Critical mode: ON (reason: <one-line signal, e.g., "decimal column `amount_cents` in db/migrate/001_create_wallets.rb">) OR OFF
+- Files examined: <N> source, <N> DB schema, <N> outbound, <N> other
+```
+
+### 2. `## Files Examined`
+
+Bullet list of every file read, grouped into four categories. Always include all four headings; write `- (none)` under any empty category. Never omit a category.
+
+```
+## Files Examined
+
+**Source:**
+- `path/to/handler.rb` — primary unit handler
+- `path/to/service.rb` — downstream helper invoked by handler
+
+**DB schema:**
+- `db/migrate/*.rb` or `db/schema.rb`
+- `app/models/*.rb`
+
+**Outbound clients:**
+- `ExternalSDK.method` — referenced at `file:line`, SDK boundary
+
+**Other:**
+- (list anything else opened during extraction; '- (none)' if nothing)
+```
+
+### 3. `## Checkpoint 1: Contract Type Coverage`
+
+STRICT table. Do NOT rename, reorder, or embellish row labels.
+
+- Row labels MUST be exactly these 5 strings, in this order: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`.
+- Do NOT write `API contract (inbound)`, `DB contract`, `Job/message consumer contract`, `UI props contract`, or any variant. Put context in the Notes column only.
+- Column header MUST be: `| Contract Type | Status | Fields | Notes |`
+- Status MUST be one of exactly: `Extracted` | `Not detected` | `Not applicable`.
+
+```
+## Checkpoint 1: Contract Type Coverage
+
+| Contract Type | Status | Fields | Notes |
+|---|---|---|---|
+| API inbound | Extracted | 8 | request params + headers counted |
+| DB | Extracted | 12 | from migrations/schema.rb, not handler code |
+| Outbound API | Extracted | 6 | actual HTTP URL or SDK interface |
+| Jobs | Not applicable | — | no async job triggered by this unit |
+| UI Props | Not applicable | — | server-side API, no UI component |
+```
+
+Status semantics:
+- `Extracted`: this unit interacts with this contract type and fields are listed below.
+- `Not detected`: this unit could plausibly use this type but no evidence in source. Investigate before marking.
+- `Not applicable`: this contract type cannot apply to this unit (e.g., a consumer has no inbound API).
+
+### After the three mandatory sections
+
+Produce the Contract Extraction Summary (typed field prefixes per field — see "Contract Extraction Summary Example" at the bottom of this file). If critical mode is on, follow the Summary with separate Money-correctness dimensions and API-security dimensions tables (per `money-correctness-checklists.md` and `api-security-checklists.md`).
+
+### Failure handling
+
+If a contract type cannot be identified (e.g., no DB schema found), keep the Checkpoint 1 row with status `Not detected` or `Not applicable` (never leave blank) and note the reason in the Notes column.
+
 ## Per-Framework Extraction
 
 ### API Contract (inbound endpoints)

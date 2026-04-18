@@ -3,12 +3,24 @@
 
 Detailed guidance for Step 7-8 of the TDD Contract Review workflow.
 
-## Output Files
+## Output Instructions
 
 The Step 7-8 agent writes TWO files to `$RUN_DIR`:
 
-1. **`report.md`** — human-readable scored report (the template below)
-2. **`findings.json`** — machine-readable gap list for eval.sh + Step 9 deterministic check
+1. **`report.md`** — human-readable scored report. Use the full template below by default. If quick mode is on, use the Quick Mode Template instead.
+2. **`findings.json`** — machine-readable gap list for eval.sh + Step 9 deterministic check.
+
+### report.md requirements
+
+- Include a **Hygiene section** that surfaces the anti-patterns from `$RUN_DIR/03-gaps.md`'s Hygiene section. These are test-code hygiene issues, not contract gaps.
+- Full report follows the template in "report.md Template" below. Quick mode follows "Quick Mode Template".
+
+### findings.json requirements
+
+- Include **EVERY** gap from the `## Gap Analysis by Priority` section of `$RUN_DIR/03-gaps.md` — all four priorities: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. Do NOT drop MEDIUM or LOW.
+- Include contract gaps (from per-type sub-reports) AND critical-mode gaps (Money and Security).
+- Do NOT include hygiene / anti-pattern entries — those stay in `report.md` only.
+- `findings.json` is still written in quick mode; quick mode only affects `report.md` rendering.
 
 One unit per run, so there is no multi-file summary. `summary.md` does not exist in this workflow.
 
@@ -33,13 +45,13 @@ One unit per run, so there is no multi-file summary. `summary.md` does not exist
 
 **Field rules:**
 - `id`: sequential `G001`, `G002`, ... unique per run
-- `priority`: `HIGH` | `MEDIUM` | `LOW`
-- `field`: typed prefix + field name (e.g., `db field: wallets.status`, `outbound response field: Stripe.Charge.status`)
+- `priority`: `CRITICAL` | `HIGH` | `MEDIUM` | `LOW`
+- `field`: typed prefix + field name (e.g., `db field: wallets.status`, `outbound response field: Stripe.Charge.status`, or `unit-level` for systemic Money/Security dimensions)
 - `type`: one of `API inbound` | `DB` | `Outbound API` | `Jobs` | `UI Props` | `Money:<dimension>` | `Security:<dimension>`
 - `description`: what's missing, plain English
-- `stub`: test stub code. **REQUIRED for HIGH gaps.** Optional for MEDIUM/LOW. Use `\n` for newlines in JSON.
+- `stub`: test stub code. **REQUIRED for CRITICAL and HIGH gaps.** Optional for MEDIUM/LOW. Use `\n` for newlines in JSON.
 
-Step 9 validates this file; invalid JSON or HIGH gaps without stubs = FAIL.
+Step 9 validates this file; invalid JSON or CRITICAL/HIGH gaps without stubs = FAIL.
 
 ## Scoring
 
@@ -149,13 +161,16 @@ Every contract field from the extraction summary MUST appear in this table — e
 
 ### Gap Analysis by Priority
 
-**HIGH** (core contract fields with no tests — MUST have stubs in findings.json)
+**CRITICAL** (data loss, security breach, or money off — MUST have stubs in findings.json)
 - [ ] `[typed prefix]: [field]` — [gap description]
 
   Suggested test:
   ```
   [auto-generated test stub]
   ```
+
+**HIGH** (core contract fields with no tests — MUST have stubs in findings.json)
+- [ ] ...
 
 **MEDIUM** (tested but missing scenarios)
 - [ ] ...

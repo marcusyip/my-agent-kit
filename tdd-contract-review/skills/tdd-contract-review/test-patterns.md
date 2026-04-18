@@ -3,6 +3,90 @@
 
 Detailed guidance for Steps 4-5 of the TDD Contract Review workflow.
 
+## Read Protocol (Test Audit)
+
+Non-negotiable. Skip any step and the audit will be rejected.
+
+**Step 1 — Count.** For each test file, count test functions using the framework's grep pattern (use `-n` for line numbers):
+
+| Framework   | Grep pattern                                |
+|-------------|---------------------------------------------|
+| Go testing  | `^func Test`                                |
+| RSpec       | `^\s*(it\|describe\|context)\s+['\"]`       |
+| Jest/Vitest | `^\s*(it\|test\|describe)\(`                |
+| pytest      | `^def test_`                                |
+| Minitest    | `^\s*(def test_\|test\s+['\"])`             |
+
+Record per file: file path, grep count (N), line numbers of every match.
+
+**Step 2 — Read to EOF.** Read every test file completely using chunked Reads with explicit offsets:
+
+```
+Read(file, offset=0, limit=500)
+Read(file, offset=500, limit=500)
+Read(file, offset=1000, limit=500)
+...continue until returned lines < 500.
+```
+
+Do NOT stop early. Do NOT skim. Partial reads produce incomplete audits.
+
+**Step 3 — Reconcile before writing.** Before writing `$RUN_DIR/02-audit.md`, verify:
+
+- Test Inventory count EQUALS the grep count from Step 1 for every file.
+- Every grep-matched line number appears in the Test Inventory.
+
+If mismatch, re-read the short file at the correct offsets and extend the inventory. Do NOT write the file until counts reconcile.
+
+## Output File Shape (02-audit.md)
+
+`$RUN_DIR/02-audit.md` MUST open with `## Summary` first, then the 5 sections below in this exact order. Do NOT add a `## Gaps` section (that belongs to Step 6) or a `## Scorecard` section (that belongs to Step 7-8).
+
+### Opening: `## Summary`
+
+```
+## Summary
+
+- Test framework: <RSpec | Jest | Vitest | Go testing | pytest | Minitest | ...>
+- Test files (grep count): <N> files, <M> test functions matching pattern `<pattern>`
+- Test Inventory (agent count): <M> functions  ← MUST match grep count above
+- Assertion depth: <S> strong, <P> partial (WEAK assertions flagged in Assertion Depth)
+- Anti-patterns found: <N>
+- Per-contract-type coverage: API: <X>% | DB: <Y>% | Outbound: <Z>% (N/A for types not Extracted in Checkpoint 1)
+```
+
+### 1. `## Test Inventory`
+
+Per test file. For each file, start with a one-line header:
+`### <file path> — <grep count> test functions`
+Then one row per test function: `- L<line>: <function name>`.
+The count in the header MUST equal the grep count from Read Protocol Step 1.
+
+### 2. `## Scenario Inventory`
+
+Per test function, keyed by `<file>:L<line>:<function_name>`, enumerate the scenarios it covers (happy path, error branch, edge case, concurrency, boundary, enum value, etc.). Line-cited within the function body. This is the test-centric view.
+
+### 3. `## Per-Field Coverage Matrix`
+
+For every contract field from `$RUN_DIR/01-extraction.md`, list the tests that cover it (`<file>:L<line>`), or mark UNCOVERED.
+
+Column header: `| Field | Role | Tests Covering (file:line) | Status |`
+Status: `COVERED` | `PARTIAL` | `UNCOVERED`.
+
+This is the field-centric inverse of Scenario Inventory.
+
+### 4. `## Assertion Depth`
+
+For each COVERED or PARTIAL field in the Per-Field Coverage Matrix, classify the assertion as:
+
+- `STRONG`: verifies value, type, and format
+- `WEAK`: presence-only, smoke-check, or assertion-free
+
+WEAK assertions downgrade the field in the Coverage Matrix to PARTIAL. Cite the assertion line: `<file>:L<line>: <one-line excerpt>`.
+
+### 5. `## Anti-Patterns`
+
+All with `<file>:L<line>`: mocking internal code, assertion-free tests, over-stubbing, fragile setup, order-dependent tests, time-sensitive tests, shared mutable state across tests, brittle selectors.
+
 ## Input/Assertion Model
 
 Every field is either an **input** (you set it in the test) or an **assertion** (you verify it after the request), or both:

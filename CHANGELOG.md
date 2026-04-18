@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.0] - 2026-04-18
+
+### tdd-contract-review
+
+#### Changed
+- **SKILL.md slimmed from 832 → 562 lines (~42% smaller, 6,585 → 4,927 words).** Every step-6 through step-8 agent-dispatch prompt used to inline its full output-file-shape spec (section order, row labels, table headers, schema) even though the prompt already told the agent to read the companion ref file. Those specs now live once in the ref files. Dispatch prompts now point to the ref section by name and carry a single-line reminder that the orchestrator grep-gates on literal row labels / column headers so the gate still passes. Affected: Step 3, Step 4-5, Step 6b (×3 per-type agents), Step 6c merge, Step 7-8 report.
+
+#### Added
+- **`gap-analysis.md` ref file (new).** Houses the full output-file-shape spec for Step 6: per-type sub-reports (`03a-gaps-api.md` / `03b-gaps-db.md` / `03c-gaps-outbound.md`), F1 money-correctness (`03d-gaps-money.md`), F2 API-security (`03e-gaps-security.md`), and the merged `03-gaps.md` (7 sections including the grep-gated Checkpoint 2 table). Also carries the Scenario Enumeration Rules (input field → own branch, assertion field → own branch, enum value → own scenario) that previously were split between SKILL.md and `scenario-checklist.md`.
+- **`## Output File Shape (01-extraction.md)` in `contract-extraction.md`.** The three mandatory opening sections (Summary, Files Examined, Checkpoint 1 Contract Type Coverage table) with row labels and column headers the orchestrator grep-gates on.
+- **`## Read Protocol (Test Audit)` and `## Output File Shape (02-audit.md)` in `test-patterns.md`.** The three-step read protocol (grep-count, chunked read-to-EOF, reconcile) and the five-section audit file spec (Test Inventory, Scenario Inventory, Per-Field Coverage Matrix, Assertion Depth, Anti-Patterns).
+- **`## Output Instructions` in `report-template.md`.** What goes into `report.md` (full-or-quick rendering + Hygiene section) vs. `findings.json` (all four priorities, hygiene excluded, still written in quick mode).
+- **Checkpoint Review Hint blocks (×3).** Each checkpoint now prints a `--- What to look for at Checkpoint <N> ---` block after the Summary echo and before the AskUserQuestion Continue/Revise/Stop ask. Each block teaches the principle behind the checkpoint and names the concrete thing to verify before accepting. Aimed at junior engineers who would otherwise rubber-stamp the three stop points. Example (CP1): "Files Examined drives everything. If the handler delegates to a service class that isn't listed, the extraction missed a branch. CP2 and CP3 will inherit that gap. Fixing it here is cheaper than three Revises later."
+
+#### Fixed
+- **`report-template.md` priority schema drift.** The ref file still encoded the old three-priority model (`HIGH|MEDIUM|LOW`) and said stubs were REQUIRED for HIGH only. The orchestrator, Step 9 gate, and v0.34.1 findings.json rule had already moved to four priorities (`CRITICAL|HIGH|MEDIUM|LOW`) with stubs REQUIRED for CRITICAL and HIGH. The schema example, field-rules prose, and the `## Gap Analysis by Priority` block in the `report.md` template are now aligned with the four-priority authoritative model.
+
 ## [0.34.1] - 2026-04-18
 
 ### tdd-contract-review

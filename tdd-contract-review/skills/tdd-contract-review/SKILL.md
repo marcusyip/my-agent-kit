@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.34.1
+version: 0.35.0
 ---
 
 # TDD Contract Review
@@ -50,6 +50,16 @@ Read `$RUN_DIR/<file>` and print its `## Summary` section to the terminal. Grep 
 ```
 
 If no `## Summary` section is found (agent deviation), print `(Summary section missing in $RUN_DIR/<file> — open the file to review)` and proceed anyway. The step's GATE check already validates file shape; the Summary echo is a UX affordance, not a gate.
+
+After the Summary block, print the checkpoint-specific **Review Hint** defined in that checkpoint's PAUSE section below. Format:
+
+```
+--- What to look for at Checkpoint <N> ---
+<verbatim hint bullets>
+-------------------------------------------
+```
+
+The hint names the two or three things most likely to matter at this checkpoint. Its job is to turn a rubber-stamp Continue into a one-minute review — especially for reviewers who don't yet have the vocabulary to spot a weak extraction or a miscalibrated gap. Print verbatim; do not paraphrase.
 
 ### Step B — Ask the checkpoint question
 
@@ -205,7 +215,7 @@ Free-text fallback (user typed something instead of picking): treat affirmative-
 
 ### Step 3: Contract Extraction
 
-Determine the skill directory and plugin root. Dispatch the Staff Engineer agent with the full `01-extraction.md` shape spelled out in the prompt so the gate below parses reliably:
+Determine the skill directory and plugin root. Dispatch the Staff Engineer agent. The file-shape spec for `01-extraction.md` lives in `contract-extraction.md` under "Output File Shape" — the orchestrator gate below greps for the literal row labels that spec mandates, so the agent must follow it verbatim.
 
 ```
 Agent:       tdd-contract-review:staff-engineer
@@ -221,77 +231,14 @@ Prompt:
    Outbound client files: [list]
    Critical mode: [yes/no]
 
-   Read `contract-extraction.md` at [skill dir]/contract-extraction.md for extraction guidance.
-   If critical mode: also read BOTH `money-correctness-checklists.md` and `api-security-checklists.md` at [skill dir].
+   Read [skill dir]/contract-extraction.md in full. It contains:
+   - 'Output File Shape (01-extraction.md)' — the mandatory three opening sections (Summary, Files Examined, Checkpoint 1 table). Follow row labels and column headers verbatim; the orchestrator grep-gates on them.
+   - Per-framework extraction guidance for API / DB / Jobs / Outbound / UI Props.
+   - 'Contract Extraction Summary Example' — the typed-prefix format for fields following the three mandatory sections.
 
-   OUTPUT FILE SHAPE — $RUN_DIR/01-extraction.md MUST open with three mandatory sections in this order:
+   If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md, and append the Money-correctness + API-security dimension tables after the Contract Extraction Summary.
 
-   1) ## Summary
-
-   Scannable one-screen overview shown at Checkpoint 1 before the user is asked to proceed. Bullets only, 4-8 lines max. No prose.
-
-   ```
-   ## Summary
-
-   - Total fields extracted: <N>
-   - Contract matrix: API: <N> | DB: <N> | Outbound: <N> | Jobs: <N|N/A> | UI Props: <N|N/A>
-   - Critical mode: ON (reason: <one-line signal, e.g., "decimal column `amount_cents` in db/migrate/001_create_wallets.rb">) OR OFF
-   - Files examined: <N> source, <N> DB schema, <N> outbound, <N> other
-   ```
-
-   2) ## Files Examined
-
-   Bullet list of every file you read, grouped into four categories. Always include all four headings; write '- (none)' under any empty category. Never omit a category.
-
-   ```
-   ## Files Examined
-
-   **Source:**
-   - `path/to/handler.rb` — primary unit handler
-   - `path/to/service.rb` — downstream helper invoked by handler
-
-   **DB schema:**
-   - `db/migrate/*.rb` or `db/schema.rb`
-   - `app/models/*.rb`
-
-   **Outbound clients:**
-   - `ExternalSDK.method` — referenced at `file:line`, SDK boundary
-
-   **Other:**
-   - (list anything else you opened during extraction; '- (none)' if nothing)
-   ```
-
-   3) ## Checkpoint 1: Contract Type Coverage
-
-   STRICT table — the orchestrator greps for literal row labels. Do NOT rename, reorder, or embellish labels.
-
-   - Row labels MUST be exactly these 5 strings, in this order: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`.
-   - Do NOT write `API contract (inbound)`, `DB contract`, `Job/message consumer contract`, `UI props contract` or any variant. Put context in the Notes column only.
-   - Column header MUST be: `| Contract Type | Status | Fields | Notes |`
-   - Status MUST be one of exactly: `Extracted` | `Not detected` | `Not applicable`.
-
-   ```
-   ## Checkpoint 1: Contract Type Coverage
-
-   | Contract Type | Status | Fields | Notes |
-   |---|---|---|---|
-   | API inbound | Extracted | 8 | request params + headers counted |
-   | DB | Extracted | 12 | from migrations/schema.rb, not handler code |
-   | Outbound API | Extracted | 6 | actual HTTP URL or SDK interface |
-   | Jobs | Not applicable | — | no async job triggered by this unit |
-   | UI Props | Not applicable | — | server-side API, no UI component |
-   ```
-
-   Status semantics:
-   - `Extracted`: this unit interacts with this contract type and fields are listed below.
-   - `Not detected`: this unit could plausibly use this type but no evidence in source. Investigate before marking.
-   - `Not applicable`: this contract type cannot apply to this unit (e.g., a consumer has no inbound API).
-
-   After those three sections: produce the Contract Extraction Summary (typed field prefixes per field) and critical-mode dimensions (if critical mode: separate Money-correctness dimensions + API-security dimensions tables).
-
-   WRITE the full output to $RUN_DIR/01-extraction.md. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.md' when done.
-
-   FAILURE: if you cannot identify a contract type (e.g., no DB schema found), keep the Checkpoint 1 row with status 'Not detected' or 'Not applicable' (never leave blank) and note the reason in the Notes column."
+   WRITE the full output to $RUN_DIR/01-extraction.md. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.md' when done."
 ```
 
 **GATE (Checkpoint 1 shape):** Grep `$RUN_DIR/01-extraction.md` for exactly 5 Checkpoint 1 rows: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`. Each row must have a three-state status: `Extracted` | `Not detected` | `Not applicable`. If any row is missing, print which one and stop with a specific error (do not silently re-dispatch).
@@ -301,6 +248,14 @@ Prompt:
 - `<file>` = `01-extraction.md`
 - `<next step>` = `the test audit step`
 - Revise re-dispatch target = the Step 3 **Contract extraction** agent above. Reuse its original prompt verbatim. On Revise (auto-iterate), append the DEEPEN REQUEST block below. On specific-feedback free-text fallback, append the REVISION REQUEST block from the Checkpoint Interaction Pattern instead.
+
+**Review Hint (Checkpoint 1):**
+
+```
+- Files Examined drives everything. If the handler delegates to a service class that isn't listed, the extraction missed a branch — CP2 and CP3 will inherit that gap. Fixing it here is cheaper than three Revises later.
+- `Not applicable` is a claim, not a gap. It asserts this contract type cannot apply to this unit. If `Outbound API: Not applicable` on a handler you think calls an external service, pick Revise — the agent may have missed the call site.
+- Contract fields are the vocabulary for CP2 and CP3. A field that isn't extracted here can never be audited or gap-checked downstream. When in doubt, Revise now.
+```
 
 **DEEPEN REQUEST block (Checkpoint 1):**
 
@@ -322,7 +277,7 @@ updated counts. Return only 'WROTE: $RUN_DIR/01-extraction.md' when done.
 
 ### Step 4-5: Test Audit
 
-Dispatch the Staff Engineer agent:
+Dispatch the Staff Engineer agent. The read protocol and `02-audit.md` file-shape spec live in `test-patterns.md`.
 
 ```
 Agent:       tdd-contract-review:staff-engineer
@@ -335,82 +290,10 @@ Prompt:
    Test files for this unit: [list]
 
    Read $RUN_DIR/01-extraction.md for the contract (produced by Step 3).
-   Read `test-patterns.md` at [skill dir]/test-patterns.md for sessions pattern, anti-patterns, quality checklists.
-
-   READ PROTOCOL — non-negotiable. Skip any step and your audit will be rejected.
-
-   Step 1. For each test file, count test functions using the framework's pattern.
-   Use the Grep tool with the pattern below (and -n to get line numbers):
-
-     Framework   | Grep pattern
-     ------------|----------------------------------------------
-     Go testing  | ^func Test
-     RSpec       | ^\s*(it|describe|context)\s+['\"]
-     Jest/Vitest | ^\s*(it|test|describe)\(
-     pytest      | ^def test_
-     Minitest    | ^\s*(def test_|test\s+['\"])
-
-   Record per file: file path, grep count (N), line numbers of every match.
-
-   Step 2. Read every test file to EOF. Use chunked Reads with explicit offsets:
-     Read(file, offset=0, limit=500)
-     Read(file, offset=500, limit=500)
-     Read(file, offset=1000, limit=500)
-     ...continue until returned lines < 500.
-   DO NOT stop early. DO NOT skim. Partial reads produce incomplete audits.
-
-   Step 3. Before writing $RUN_DIR/02-audit.md, verify:
-   - Test Inventory count EQUALS the grep count from Step 1 for every file.
-   - Every grep-matched line number appears in your Test Inventory.
-   If mismatch, re-read the short file at the correct offsets and extend the
-   inventory. Do NOT write the file until counts reconcile.
-
-   OUTPUT FILE SHAPE — $RUN_DIR/02-audit.md MUST open with `## Summary` first,
-   then these 5 sections in this exact order. Do NOT add a `## Gaps` section
-   (that belongs to Step 6) or a `## Scorecard` section (that belongs to Step 7-8).
-
-   ```
-   ## Summary
-
-   - Test framework: <RSpec | Jest | Vitest | Go testing | pytest | Minitest | ...>
-   - Test files (grep count): <N> files, <M> test functions matching pattern `<pattern>`
-   - Test Inventory (agent count): <M> functions  ← MUST match grep count above
-   - Assertion depth: <S> strong, <P> partial (WEAK assertions flagged in Assertion Depth)
-   - Anti-patterns found: <N>
-   - Per-contract-type coverage: API: <X>% | DB: <Y>% | Outbound: <Z>% (N/A for types not Extracted in Checkpoint 1)
-   ```
-
-   1) ## Test Inventory
-      Per test file. For each file, start with a one-line header:
-      `### <file path> — <grep count> test functions`
-      Then one row per test function: `- L<line>: <function name>`.
-      The count in the header MUST equal the grep count from READ PROTOCOL Step 1.
-
-   2) ## Scenario Inventory
-      Per test function, keyed by `<file>:L<line>:<function_name>`, enumerate the
-      scenarios it covers (happy path, error branch, edge case, concurrency,
-      boundary, enum value, etc.). Line-cited within the function body.
-      This is the test-centric view.
-
-   3) ## Per-Field Coverage Matrix
-      For every contract field from $RUN_DIR/01-extraction.md, list the tests
-      that cover it (`<file>:L<line>`), or mark UNCOVERED.
-      Column header: | Field | Role | Tests Covering (file:line) | Status |
-      Status: COVERED | PARTIAL | UNCOVERED.
-      This is the field-centric inverse of Scenario Inventory.
-
-   4) ## Assertion Depth
-      For each COVERED or PARTIAL field in the Per-Field Coverage Matrix,
-      classify the assertion as:
-      - STRONG: verifies value, type, and format
-      - WEAK: presence-only, smoke-check, or assertion-free
-      WEAK assertions downgrade the field in the Coverage Matrix to PARTIAL.
-      Cite the assertion line: `<file>:L<line>: <one-line excerpt>`.
-
-   5) ## Anti-Patterns
-      All with `<file>:L<line>`: mocking internal code, assertion-free tests,
-      over-stubbing, fragile setup, order-dependent tests, time-sensitive tests,
-      shared mutable state across tests, brittle selectors.
+   Read [skill dir]/test-patterns.md in full. It contains:
+   - 'Read Protocol (Test Audit)' — non-negotiable 3-step protocol: (1) framework-pattern grep count, (2) chunked read-to-EOF, (3) reconcile grep count against Test Inventory before writing. Skip any step and the audit is rejected.
+   - 'Output File Shape (02-audit.md)' — mandatory `## Summary` preamble plus 5 sections in order: Test Inventory, Scenario Inventory, Per-Field Coverage Matrix, Assertion Depth, Anti-Patterns. Follow headings verbatim.
+   - Input/Assertion Model, sessions pattern, anti-patterns to flag, quality checklists.
 
    WRITE the full output to $RUN_DIR/02-audit.md. Return only 'WROTE: $RUN_DIR/02-audit.md' when done."
 ```
@@ -420,6 +303,14 @@ Prompt:
 - `<file>` = `02-audit.md`
 - `<next step>` = `the gap analysis step`
 - Revise re-dispatch target = the Step 4-5 **Test structure audit** agent above. Reuse its original prompt verbatim. On Revise (auto-iterate), append the DEEPEN REQUEST block below. On specific-feedback free-text fallback, append the REVISION REQUEST block from the Checkpoint Interaction Pattern instead.
+
+**Review Hint (Checkpoint 2):**
+
+```
+- Reconciliation first. `Test files (grep count)` MUST equal `Test Inventory (agent count)` in the Summary. Mismatch means the agent skipped reads; Revise before judging anything else — the coverage matrix is only trustworthy once counts reconcile.
+- A test that runs is not a test that verifies. WEAK assertions (presence-only checks like `expect(x).not_to be_nil`, smoke checks with no value comparison) don't catch silent corruption. Scan Assertion Depth for WEAK entries on fields that matter — money amounts, auth headers, state transitions.
+- UNCOVERED fields preview CP3 gaps. Any UNCOVERED field you're surprised by (a required request param, an enum value, a computed column) is a gap you already care about. Note it before advancing; if several look wrong, Revise.
+```
 
 **DEEPEN REQUEST block (Checkpoint 2):**
 
@@ -495,39 +386,12 @@ Prompt:
 
    Read $RUN_DIR/01-extraction.md — focus ONLY on the <CONTRACT_TYPE> section. Ignore other contract types.
    Read $RUN_DIR/02-audit.md — identify existing test coverage for <CONTRACT_TYPE> fields.
+   Read [skill dir]/scenario-checklist.md — every field in the tree MUST enumerate every applicable scenario from that matrix, applied to the field's type + constraints.
+   Read [skill dir]/gap-analysis.md — follow 'Scenario Enumeration Rules (per-type agents A/B/C)' and 'Output File Shape — Per-type Sub-report (A/B/C)'. Section headings, order, and the (<CONTRACT_TYPE>) qualifier on Test Structure Tree / Contract Map are non-negotiable.
    Read [skill dir]/test-patterns.md for scenario conventions.
-   If critical mode: read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md for per-field checks relevant to this contract type (precision, enum values, sensitive-data leak, injection, etc.).
+   If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md for per-field checks relevant to this contract type (precision, enum values, sensitive-data leak, injection).
 
-   SCENARIO CHECKLIST — read [skill dir]/scenario-checklist.md. Every field in the tree MUST enumerate every applicable scenario from that matrix, applied to the field's type + constraints.
-
-   Rules:
-   - Every input field gets its own tree branch with enumerated scenarios.
-   - Every assertion field gets its OWN branch (NO grouped 'HAPPY PATH assertions' block).
-   - Every enum value is its own scenario (e.g., status enum with 4 values = 4 scenarios).
-   - Status per scenario: ✓ covered (cite test file:line) | ✗ missing | PARTIAL (weak assertion, explain).
-
-   OUTPUT FILE SHAPE — $RUN_DIR/<OUTPUT_FILE>:
-
-   Section headers MUST be exactly these literal H2 strings, in this order. Do NOT number them (no `## 1. Test Structure Tree`). Do NOT add prefixes or suffixes beyond the `(<CONTRACT_TYPE>)` qualifier shown.
-
-   1) ## Test Structure Tree (<CONTRACT_TYPE>)
-      Root: <unit identifier>. Branches per field with scenarios enumerated from the checklist.
-
-   2) ## Contract Map (<CONTRACT_TYPE>)
-      | Typed Prefix | Field | Role | Scenarios Required | Scenarios Covered | Gap Count |
-      One row per field. Scenarios Required = comma-separated list of scenario names derived from the checklist for this field's type + constraints.
-
-   3) ## Gap List
-      For each gap:
-      - id: G<TYPE_PREFIX>-<NNN> (e.g., GAPI-001, GDB-001, GOUT-001)
-      - priority: CRITICAL | HIGH | MEDIUM | LOW
-      - field: typed prefix + field name
-      - type: <CONTRACT_TYPE>
-      - description: what is missing
-      - stub: REQUIRED for CRITICAL and HIGH
-
-   4) ## Test Stubs
-      Pseudocode in detected test framework's style, one stub per HIGH/CRITICAL gap.
+   Use <TYPE_PREFIX> in gap ids (GAPI-NNN for API, GDB-NNN for DB, GOUT-NNN for Outbound — per the substitution table below this prompt).
 
    WRITE the full output to $RUN_DIR/<OUTPUT_FILE>. Return only 'WROTE: $RUN_DIR/<OUTPUT_FILE>' when done."
 ```
@@ -553,32 +417,7 @@ Prompt:
 
    Read $RUN_DIR/01-extraction.md (full file) and $RUN_DIR/02-audit.md (full file).
    Read [skill dir]/money-correctness-checklists.md for the dimensions and scenario checklists.
-
-   Focus on SYSTEMIC cross-contract-type money-correctness gaps: money precision anti-patterns,
-   idempotency, transaction state machine integrity (transitions + terminal states),
-   balance/ledger integrity, position/inventory integrity, concurrency (TOCTOU, lock placement,
-   atomic balance updates), multi-step DB transaction atomicity, compensating actions on failures,
-   external payment integration correctness (retry, reconciliation), refunds/reversals lifecycle,
-   fees/tax calculation, holds/authorizations lifecycle, time/settlement/cutoffs, FX/conversion,
-   transaction limit enforcement. Do NOT duplicate per-field gaps that the per-type agents will
-   find — focus on unit-level integrity that spans multiple contract types.
-
-   OUTPUT FILE SHAPE — $RUN_DIR/03d-gaps-money.md:
-
-   1) ## Cross-cutting Money-Correctness Gaps
-      For each dimension present in the checklist, assess and list gaps. For dimensions without gaps, write 'No gaps detected'.
-
-   2) ## Gap List
-      For each gap:
-      - id: GMONEY-<NNN>
-      - priority: CRITICAL | HIGH | MEDIUM | LOW
-      - field: use `unit-level` for systemic dimensions (Idempotency, StateMachine integrity, Concurrency, multi-step atomicity, Reconciliation, Settlement). Only use a specific field when the gap is genuinely scoped to one field (e.g., Money/Precision on a specific amount field, FX rate on a specific quote field). Do NOT attach a systemic concern to a loosely-related field.
-      - type: Money:<dimension> (e.g., Money:Precision, Money:Idempotency, Money:StateMachine, Money:BalanceLedger, Money:PositionInventory, Money:Concurrency, Money:ExternalIntegration, Money:Refunds, Money:FeesTax, Money:Holds, Money:Settlement, Money:FX, Money:Limits)
-      - description: what integrity property is missing
-      - stub: REQUIRED for CRITICAL and HIGH
-
-   3) ## Test Stubs
-      Pseudocode per HIGH/CRITICAL gap.
+   Read [skill dir]/gap-analysis.md — follow 'Output File Shape — F1 Money-Correctness (03d-gaps-money.md)'. The systemic focus areas (precision, idempotency, state machine, balance/ledger, concurrency, multi-step atomicity, external integration, refunds, fees/tax, holds, settlement, FX, limits) and the Money:<dimension> type format are described there. Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level integrity only.
 
    WRITE to $RUN_DIR/03d-gaps-money.md. Return only 'WROTE: $RUN_DIR/03d-gaps-money.md' when done."
 ```
@@ -596,32 +435,7 @@ Prompt:
 
    Read $RUN_DIR/01-extraction.md (full file) and $RUN_DIR/02-audit.md (full file).
    Read [skill dir]/api-security-checklists.md for the dimensions and scenario checklists.
-
-   Focus on SYSTEMIC cross-contract-type security gaps: authentication coverage, authorization
-   (IDOR on any resource-ID-accepting endpoint), privilege escalation, resource enumeration,
-   rate limiting (per-user, not just per-IP), sensitive-data leaks in error/list responses,
-   injection surfaces on string fields reaching DB/logs/HTML, audit trail absence and
-   immutability, KYC/AML/sanctions gating, PCI scope, high-value operation MFA/approval,
-   API key scoping, webhook trust (signature verification, replay protection, timestamp
-   tolerance, tampered payload rejection). Do NOT duplicate per-field gaps that the per-type
-   agents will find — focus on unit-level security integrity spanning contract types.
-
-   OUTPUT FILE SHAPE — $RUN_DIR/03e-gaps-security.md:
-
-   1) ## Cross-cutting API-Security Gaps
-      For each dimension present in the checklist, assess and list gaps. For dimensions without gaps, write 'No gaps detected'.
-
-   2) ## Gap List
-      For each gap:
-      - id: GSEC-<NNN>
-      - priority: CRITICAL | HIGH | MEDIUM | LOW
-      - field: use `unit-level` for systemic dimensions (Auth, AuthZ/IDOR, RateLimit, AuditLog, KYC, Webhook). Only use a specific field when the gap is genuinely scoped to one field (e.g., injection on `request field: description`). Do NOT attach a systemic concern to a loosely-related field (e.g., rate limiting is NOT `request header: Authorization`).
-      - type: Security:<dimension> (e.g., Security:Auth, Security:AuthZ, Security:RateLimit, Security:AuditTrail, Security:KYC, Security:Webhook, Security:DataLeak, Security:Injection, Security:PCI, Security:MFA)
-      - description: what integrity property is missing
-      - stub: REQUIRED for CRITICAL and HIGH
-
-   3) ## Test Stubs
-      Pseudocode per HIGH/CRITICAL gap.
+   Read [skill dir]/gap-analysis.md — follow 'Output File Shape — F2 API-Security (03e-gaps-security.md)'. The systemic focus areas (authN, authZ/IDOR, rate limiting, data leaks, injection, audit trail, KYC/AML, PCI, MFA, webhook trust) and the Security:<dimension> type format are described there. Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level security integrity only.
 
    WRITE to $RUN_DIR/03e-gaps-security.md. Return only 'WROTE: $RUN_DIR/03e-gaps-security.md' when done."
 ```
@@ -638,59 +452,14 @@ Model:       opus
 Description: Gap merge
 Prompt:
   "TASK: Merge per-type gap reports into unified $RUN_DIR/03-gaps.md.
+   Skill directory: [skill dir]
    Run directory: $RUN_DIR
 
-   Read every sub-file that exists: $RUN_DIR/03a-gaps-api.md, $RUN_DIR/03b-gaps-db.md,
-   $RUN_DIR/03c-gaps-outbound.md, $RUN_DIR/03d-gaps-money.md, $RUN_DIR/03e-gaps-security.md.
+   Read every sub-file that exists: $RUN_DIR/03a-gaps-api.md, $RUN_DIR/03b-gaps-db.md, $RUN_DIR/03c-gaps-outbound.md, $RUN_DIR/03d-gaps-money.md, $RUN_DIR/03e-gaps-security.md.
    Also read $RUN_DIR/02-audit.md for the anti-patterns section.
    Skip any sub-file that does not exist.
 
-   Produce $RUN_DIR/03-gaps.md with these sections in order:
-
-   1) ## Summary
-      Scannable one-screen overview shown at Checkpoint 3 before the user is asked to proceed. Bullets only, 4-8 lines max. No prose.
-
-      ```
-      ## Summary
-
-      - Gaps by priority: CRITICAL: <N>, HIGH: <N>, MEDIUM: <N>, LOW: <N>
-      - Gaps by contract type: API: <N> | DB: <N> | Outbound: <N> | Money: <N> | Security: <N>  (omit lines for types not present)
-      - Test stubs generated: <N> (for CRITICAL + HIGH gaps)
-      - Hygiene/anti-patterns carried from audit: <N>
-      ```
-
-   2) ## Test Structure Tree (unified)
-      One root (the unit identifier). Under it, concatenate per-type branches grouped by contract type:
-      - ### API inbound  (from 03a)
-      - ### DB           (from 03b)
-      - ### Outbound API (from 03c)
-      Preserve every field branch and every scenario verbatim from the sub-files.
-
-   3) ## Contract Map (unified)
-      Single table with all rows from all sub-reports. Column header:
-      | Typed Prefix | Field | Role | Scenarios Required | Scenarios Covered | Gap Count |
-
-   4) ## Gap Analysis by Priority
-      Merge gap lists from all sub-reports. DEDUPE by (field + description key phrase).
-      When duplicates appear (e.g., F1 money agent + outbound agent both flag amount-mismatch,
-      or F2 security agent + API agent both flag missing auth), keep the highest priority,
-      combine descriptions, keep the richer stub.
-      Group by CRITICAL / HIGH / MEDIUM / LOW in that order.
-
-   5) ## Hygiene (from audit)
-      Copy the anti-patterns section from $RUN_DIR/02-audit.md verbatim (with file:line references).
-      These are test-code hygiene issues, NOT contract gaps. They inform the report but are excluded from findings.json.
-
-   6) ## Test Stubs for CRITICAL / HIGH Gaps
-      Collected from sub-reports, deduped by gap id. Use the richer stub when duplicates exist.
-
-   7) ## Checkpoint 2: Gap Coverage
-      STRICT table — orchestrator greps for literal row labels. Column header MUST be:
-      | Contract Type | Gaps Checked | Count | Notes |
-      Row labels MUST be exactly: API inbound, DB, Outbound API, Jobs, UI Props (same 5 as Checkpoint 1).
-      Gaps Checked MUST be one of: Yes | N/A.
-      For each type that had a sub-file: Yes, with Count = number of gaps from that sub-report.
-      For types marked Not applicable or Not detected in Checkpoint 1: N/A with explanation in Notes.
+   Read [skill dir]/gap-analysis.md — follow 'Output File Shape — Merged Report (03-gaps.md)'. The 7-section structure, Checkpoint 2 row labels, dedupe rules, and hygiene-section copy-forward are non-negotiable. The orchestrator grep-gates on the Checkpoint 2 row labels (API inbound, DB, Outbound API, Jobs, UI Props).
 
    WRITE $RUN_DIR/03-gaps.md. Return only 'WROTE: $RUN_DIR/03-gaps.md' when done."
 ```
@@ -707,6 +476,14 @@ Prompt:
     2. After all per-type agents return and the Step 6b sub-files GATE passes, re-dispatch the Step 6c **Gap merge** agent with the **Merge DEEPEN REQUEST block** appended.
     3. Re-run the Checkpoint 2 gap-coverage GATE on the updated `$RUN_DIR/03-gaps.md`. If it fails, surface the failure and stop.
   - **Specific-feedback free-text fallback** (user typed free text that is not affirmative / not stop-intent) — re-dispatch only the Step 6c **Gap merge** agent with the REVISION REQUEST block from the Checkpoint Interaction Pattern. If the typed text clearly names a single contract type that needs re-analysis (not just re-merging), you MAY first re-dispatch that single per-type agent from Step 6b, then re-run the merge agent.
+
+**Review Hint (Checkpoint 3):**
+
+```
+- Priority calibration is the main risk. CRITICAL = data loss, security breach, or money off by a cent. If a CRITICAL gap reads "academic" or a MEDIUM describes a real outage path, use the free-text Revise path with specific re-calibration feedback — the agent will honor typed requests verbatim.
+- Test stubs are executable specs. Read one CRITICAL stub end-to-end — if you can't tell what it asserts, the gap description isn't concrete enough to act on. That's a Revise signal, not a Continue signal.
+- Dedupe sanity check. The cross-cutting money (F1) and security (F2) agents overlap with the per-type agents by design. The merge step is supposed to collapse duplicates (same field + same failure mode). Two gaps describing the same failure mean the merge missed — Revise.
+```
 
 **Per-type DEEPEN REQUEST block (appended to each Step 6b per-type agent):**
 
@@ -738,7 +515,7 @@ counts. Return only 'WROTE: $RUN_DIR/03-gaps.md' when done.
 
 ### Step 7-8: Report + findings.json
 
-Dispatch the Staff Engineer agent:
+Dispatch the Staff Engineer agent. The report template, findings.json schema, scoring rubric, and output rules all live in `report-template.md`.
 
 ```
 Agent:       tdd-contract-review:staff-engineer
@@ -752,25 +529,12 @@ Prompt:
    Quick mode: [yes/no]
 
    Read $RUN_DIR/01-extraction.md, $RUN_DIR/02-audit.md, $RUN_DIR/03-gaps.md.
-   Read `report-template.md` at [skill dir]/report-template.md for template, scoring rubric, and format.
-
-   Write TWO files:
-   1. $RUN_DIR/report.md — full scored report (or summary only if quick mode). Include a Hygiene section surfacing the anti-patterns from $RUN_DIR/03-gaps.md's Hygiene section.
-   2. $RUN_DIR/findings.json — machine-readable gap list. IMPORTANT: include EVERY gap from the Gap Analysis by Priority section of 03-gaps.md — all four priorities (CRITICAL, HIGH, MEDIUM, LOW). Do NOT drop MEDIUM or LOW. Include contract gaps and critical-mode gaps (money + security). DO NOT include hygiene/anti-pattern entries — those stay in report.md only. Schema:
-      {
-        \"unit\": \"<unit identifier>\",
-        \"critical\": <bool>,
-        \"gaps\": [
-          {
-            \"id\": \"G001\",
-            \"priority\": \"CRITICAL|HIGH|MEDIUM|LOW\",
-            \"field\": \"<typed prefix + field name>\",
-            \"type\": \"API inbound|DB|Outbound API|Jobs|UI Props|Money:<dimension>|Security:<dimension>\",
-            \"description\": \"<what is missing>\",
-            \"stub\": \"<test stub code, required for CRITICAL and HIGH>\"
-          }
-        ]
-      }
+   Read [skill dir]/report-template.md in full. It contains:
+   - 'Output Instructions' — what to write to report.md vs findings.json, Hygiene section requirement, and the rule that findings.json must include all four priorities (CRITICAL, HIGH, MEDIUM, LOW) and must NOT include hygiene entries.
+   - 'findings.json Schema' — exact JSON schema and field rules. CRITICAL+HIGH gaps MUST have a stub; Step 9 gate-checks this.
+   - 'Scoring' — 6-category rubric, weights, verdict bands, and calibration anchors.
+   - 'report.md Template' — full report structure (default mode).
+   - 'Quick Mode Template' — abbreviated form when quick mode is on.
 
    Return only 'WROTE: report.md, findings.json' when done."
 ```
