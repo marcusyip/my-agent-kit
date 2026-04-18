@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.34.1] - 2026-04-18
+
+### tdd-contract-review
+
+#### Fixed
+- **Step 7-8 report agent was silently dropping MEDIUM and LOW gaps from `findings.json`.** The schema example showed only `"HIGH|MEDIUM|LOW"` and the instruction text said "include ONLY contract gaps and critical-mode gaps" — the agent reasonably read this as "HIGH is the floor" and emitted 0 MEDIUM, 0 LOW. Schema now lists all four priorities (`CRITICAL|HIGH|MEDIUM|LOW`) and the instruction explicitly says "include EVERY gap ... all four priorities. Do NOT drop MEDIUM or LOW." Benchmark score on `post-api-v1-transactions` rose from 16/24 → 19/24 with no other changes.
+- **Step 9 check 2 only validated HIGH gaps had stubs, missing CRITICAL.** The SKILL spec has always said "stub: REQUIRED for CRITICAL and HIGH" but the jq filter was `priority == "HIGH"`. Now `(.priority == "CRITICAL" or .priority == "HIGH")`. Label renamed to `CRITICAL+HIGH gaps have stubs`.
+
 ## [0.34.0] - 2026-04-17
 
 ### tdd-contract-review

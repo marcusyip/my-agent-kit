@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.34.0
+version: 0.34.1
 ---
 
 # TDD Contract Review
@@ -756,18 +756,18 @@ Prompt:
 
    Write TWO files:
    1. $RUN_DIR/report.md — full scored report (or summary only if quick mode). Include a Hygiene section surfacing the anti-patterns from $RUN_DIR/03-gaps.md's Hygiene section.
-   2. $RUN_DIR/findings.json — machine-readable gap list. IMPORTANT: include ONLY contract gaps and critical-mode gaps (money + security) from the Gap Analysis by Priority section of 03-gaps.md. DO NOT include hygiene/anti-pattern entries — those stay in report.md only. Schema:
+   2. $RUN_DIR/findings.json — machine-readable gap list. IMPORTANT: include EVERY gap from the Gap Analysis by Priority section of 03-gaps.md — all four priorities (CRITICAL, HIGH, MEDIUM, LOW). Do NOT drop MEDIUM or LOW. Include contract gaps and critical-mode gaps (money + security). DO NOT include hygiene/anti-pattern entries — those stay in report.md only. Schema:
       {
         \"unit\": \"<unit identifier>\",
         \"critical\": <bool>,
         \"gaps\": [
           {
             \"id\": \"G001\",
-            \"priority\": \"HIGH|MEDIUM|LOW\",
+            \"priority\": \"CRITICAL|HIGH|MEDIUM|LOW\",
             \"field\": \"<typed prefix + field name>\",
             \"type\": \"API inbound|DB|Outbound API|Jobs|UI Props|Money:<dimension>|Security:<dimension>\",
             \"description\": \"<what is missing>\",
-            \"stub\": \"<test stub code, required for HIGH>\"
+            \"stub\": \"<test stub code, required for CRITICAL and HIGH>\"
           }
         ]
       }
@@ -780,7 +780,7 @@ Prompt:
 No agent dispatch. Run shell checks on `$RUN_DIR/findings.json`:
 
 1. **Valid JSON:** `jq empty $RUN_DIR/findings.json` (or fallback python3 json parse)
-2. **HIGH gaps have stubs:** `jq -e '.gaps | map(select(.priority == "HIGH" and (.stub == null or .stub == ""))) | length == 0' $RUN_DIR/findings.json`
+2. **CRITICAL+HIGH gaps have stubs:** `jq -e '.gaps | map(select((.priority == "CRITICAL" or .priority == "HIGH") and (.stub == null or .stub == ""))) | length == 0' $RUN_DIR/findings.json`
 3. **All Extracted types represented:** for each Checkpoint 1 type with status `Extracted` in `01-extraction.md`, `jq` must find at least one gap OR the report must explicitly note coverage is complete. (Skip this check if the type is `Not detected` or `Not applicable`.)
 
 Print:
