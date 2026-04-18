@@ -7,9 +7,16 @@
 # the findings.json entries' field + description. If any gap row has a matching entry
 # at the expected priority, it counts as FOUND. Otherwise MISSING.
 #
-# Starter coverage: POST /api/v1/transactions (the richest unit in the sample app).
-# Other units (GET /transactions, GET /transactions/:id, wallets endpoints) to be
-# added as the benchmark grows.
+# Coverage: 5 units across the sample app exercising create/read/update patterns
+# and critical-mode auto-detection:
+#   post-api-v1-transactions   — richest unit, full pipeline, known 17+21 gaps
+#   post-api-v1-wallets        — critical-lite, exercises Wallet model validation gaps
+#   patch-api-v1-wallets       — no tests at all; headline data-leak + mass-assignment
+#   get-api-v1-transactions    — list read; pagination / filter / ordering gaps
+#   get-api-v1-transactions-id — single read; IDOR on non-create endpoint
+#
+# See test-plan.md for the full eval design (Category A is graded by this file,
+# Category B by structural_check.sh).
 
 units:
   post-api-v1-transactions:
@@ -116,3 +123,191 @@ units:
         priority: MEDIUM
         match: ["audit trail", "audit log"]
         description: No audit trail fields
+
+  post-api-v1-wallets:
+    source_file: app/controllers/api/v1/wallets_controller.rb
+    method: create
+    critical: true
+    gaps:
+      - id: W1
+        priority: HIGH
+        match: ["duplicate currency", "uniqueness", "already exists"]
+        description: No duplicate-currency-per-user test (unique index scope)
+      - id: W2
+        priority: MEDIUM
+        match: ["name too long", "length", "maximum: 100", "101", "name > 100"]
+        description: No name length boundary test (> 100 chars → 422)
+      - id: W3
+        priority: HIGH
+        match: ["mass assignment", "status", "suspended", "status=suspended", "permits :status"]
+        description: wallet_params permits :status — clients can create suspended/closed wallets
+      - id: W4
+        priority: HIGH
+        match: ["missing token", "no auth", "401", "Authorization"]
+        description: No auth test (missing token → 401)
+      - id: W5
+        priority: MEDIUM
+        match: ["response field", "balance", "status", "happy path"]
+        description: Happy path response-body assertions incomplete or thin
+      - id: W6
+        priority: MEDIUM
+        match: ["default balance", "balance: 0", "default: 0", "set_default_balance"]
+        description: No test that created wallet has balance=0 default
+      - id: W7
+        priority: MEDIUM
+        match: ["currency enum", "GBP", "BTC", "ETH", "inclusion"]
+        description: Only one invalid currency tested; enum exhaustion missing
+      - id: W8
+        priority: MEDIUM
+        match: ["audit trail", "audit log"]
+        description: No audit trail fields
+      - id: W9
+        priority: MEDIUM
+        match: ["rate limit", "throttle"]
+        description: No rate limiting
+
+  patch-api-v1-wallets:
+    source_file: app/controllers/api/v1/wallets_controller.rb
+    method: update
+    critical: true
+    gaps:
+      - id: P1
+        priority: HIGH
+        match: ["no tests", "no coverage", "entire endpoint", "PATCH", "happy path"]
+        description: Endpoint has zero tests — no happy path, no error branches
+      - id: P2
+        priority: HIGH
+        match: ["data leak", "balance", "user_id", "leaks"]
+        description: 422 response leaks balance, user_id, wallet_id (error body)
+      - id: P3
+        priority: HIGH
+        match: ["IDOR", "another user", "other user", "cross-tenant"]
+        description: IDOR — no test that other-user's wallet id returns 404 (current_user.wallets.find)
+      - id: P4
+        priority: HIGH
+        match: ["mass assignment", "status", "permits :status", "transition"]
+        description: Update permits :status — clients can transition wallets to suspended/closed
+      - id: P5
+        priority: HIGH
+        match: ["missing token", "no auth", "401"]
+        description: No auth test (missing token → 401)
+      - id: P6
+        priority: MEDIUM
+        match: ["duplicate currency", "uniqueness", "currency change"]
+        description: No test for changing currency to one the user already owns (uniqueness conflict)
+      - id: P7
+        priority: MEDIUM
+        match: ["404", "not found", "missing wallet"]
+        description: No test for wallet-not-found 404 response
+      - id: P8
+        priority: MEDIUM
+        match: ["name too long", "length", "maximum: 100"]
+        description: No test for updating name beyond 100-char max
+      - id: P9
+        priority: MEDIUM
+        match: ["audit trail", "audit log"]
+        description: No audit log on wallet status transitions
+      - id: P10
+        priority: HIGH
+        match: ["concurrent", "race condition", "TOCTOU"]
+        description: No concurrent-update test (balance can drift while update in flight)
+      - id: P11
+        priority: MEDIUM
+        match: ["response field", "balance", "status", "name"]
+        description: Success response body fields not asserted (no test exists yet)
+      - id: P12
+        priority: MEDIUM
+        match: ["idempotency", "idempotent"]
+        description: No idempotency on PATCH retries (network-level)
+
+  get-api-v1-transactions:
+    source_file: app/controllers/api/v1/transactions_controller.rb
+    method: index
+    critical: false
+    gaps:
+      - id: L1
+        priority: HIGH
+        match: ["response field", "response body", "shape", "transactions array"]
+        description: Response body shape not asserted (array items, field set)
+      - id: L2
+        priority: HIGH
+        match: ["IDOR", "another user", "other user", "current_user", "cross-tenant"]
+        description: IDOR — no test that other-user's transactions are excluded from the list
+      - id: L3
+        priority: HIGH
+        match: ["pagination", "page", "per_page", "meta"]
+        description: Pagination (page, per_page, meta.total) not tested
+      - id: L4
+        priority: MEDIUM
+        match: ["pagination", "page=0", "page=-1", "negative page", "per_page=0"]
+        description: Pagination boundary inputs (page=0, page=-1, per_page too large) untested
+      - id: L5
+        priority: MEDIUM
+        match: ["ordering", "created_at", "desc", "order"]
+        description: Ordering (created_at DESC) not asserted
+      - id: L6
+        priority: HIGH
+        match: ["start_date", "end_date", "date filter", "date range"]
+        description: Date range filters not tested (start_date, end_date)
+      - id: L7
+        priority: MEDIUM
+        match: ["invalid date", "malformed date", "Time.zone.parse", "date format"]
+        description: Invalid date format for start_date/end_date not tested
+      - id: L8
+        priority: MEDIUM
+        match: ["status filter", "status=pending", "filter by status"]
+        description: Status filter not tested
+      - id: L9
+        priority: MEDIUM
+        match: ["empty", "no transactions", "empty list"]
+        description: Empty result set not tested
+      - id: L10
+        priority: HIGH
+        match: ["missing token", "no auth", "401"]
+        description: No auth test (missing token → 401)
+      - id: L11
+        priority: MEDIUM
+        match: ["N+1", "includes", "wallet", "eager loading"]
+        description: N+1 guard on includes(:wallet) not tested
+      - id: L12
+        priority: MEDIUM
+        match: ["rate limit", "throttle"]
+        description: No rate limiting
+
+  get-api-v1-transactions-id:
+    source_file: app/controllers/api/v1/transactions_controller.rb
+    method: show
+    critical: false
+    gaps:
+      - id: S1
+        priority: HIGH
+        match: ["response field", "response body", "shape", "assertion"]
+        description: Response body shape not asserted (existing test only checks status)
+      - id: S2
+        priority: HIGH
+        match: ["IDOR", "another user", "other user", "cross-tenant"]
+        description: IDOR — no test for transaction belonging to another user (should 404)
+      - id: S3
+        priority: HIGH
+        match: ["missing token", "no auth", "401"]
+        description: No auth test (missing token → 401)
+      - id: S4
+        priority: MEDIUM
+        match: ["amount", "currency", "status", "description", "category", "wallet_id", "created_at", "updated_at"]
+        description: Individual response fields (amount, currency, status, description, category, wallet_id, timestamps) not asserted
+      - id: S5
+        priority: MEDIUM
+        match: ["invalid id", "non-numeric", "malformed id"]
+        description: Invalid / non-numeric id handling not tested
+      - id: S6
+        priority: MEDIUM
+        match: ["data leak", "leak", "sensitive"]
+        description: 404 response shape not asserted — error body could leak details
+      - id: S7
+        priority: MEDIUM
+        match: ["iso8601", "timestamp format", "datetime"]
+        description: Timestamp serialisation format (iso8601) not asserted
+      - id: S8
+        priority: MEDIUM
+        match: ["audit trail", "audit log", "access log"]
+        description: No audit log on transaction reads
