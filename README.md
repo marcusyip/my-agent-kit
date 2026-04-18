@@ -1,5 +1,16 @@
 # my-agent-kit
 
+```text
+ ████████╗██████╗ ██████╗
+ ╚══██╔══╝██╔══██╗██╔══██╗    ┌─ contract ─┐   ┌─ tests ──┐
+    ██║   ██║  ██║██║  ██║    │ amount   ✓ │◀─▶│ test_1   │
+    ██║   ██║  ██║██║  ██║    │ user_id  ✗ │gap│ test_2   │
+    ██║   ██████╔╝██████╔╝    │ state    ⚠ │wk │ test_3   │
+    ╚═╝   ╚═════╝ ╚═════╝     │ created  ✓ │   └──────────┘
+                              └────────────┘
+         c o n t r a c t   ·   r e v i e w
+```
+
 A curated collection of [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugins for development workflow automation.
 
 ## Plugins
@@ -15,10 +26,10 @@ Contract-based test quality reviewer. Extracts contracts from source code (API r
 - Auto-generated test stubs that follow your project's existing patterns
 
 ```
-/tdd-contract-review                         # PR-scoped (on branch) or entire project
-/tdd-contract-review src/auth/               # Review tests for a specific module
-/tdd-contract-review src/services/payment.ts # Review tests for a source file
-/tdd-contract-review quick                   # Quick mode: score + HIGH gaps only
+/tdd-contract-review "POST /api/v1/transactions"               # HTTP endpoint
+/tdd-contract-review ProcessPaymentJob                         # background job class
+/tdd-contract-review app/controllers/payments_controller.rb    # source file path
+/tdd-contract-review "POST /api/v1/transactions" quick         # quick mode: score + HIGH gaps only
 ```
 
 See the full documentation in [tdd-contract-review/README.md](./tdd-contract-review/README.md).
