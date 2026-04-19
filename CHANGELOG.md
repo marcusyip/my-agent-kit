@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.36.0] - 2026-04-19
+
+### tdd-contract-review
+
+#### Fixed
+- **DB contract extraction was reading migrations as a first-class source.** The staff-engineer agent and `contract-extraction.md` told extraction to read migrations alongside models, which can produce a false contract (a column added then later removed across migrations still appears). Flipped the priority: snapshot files (`db/schema.rb`, `db/structure.sql`, `schema.prisma`, Drizzle schema, Django `models.py`) are the authoritative current state; migrations are fallback only when no snapshot exists. Rewrote the DB Extraction Rules in `agents/staff-engineer.md`, the DB Data Contract section + Files Examined template + HIGH confidence example in `contract-extraction.md`, Step 2 discovery DB-file line + critical-mode example in `SKILL.md`. Added canonical `benchmark/sample-app/db/schema.rb` so the sample-app benchmark exercises the snapshot path (previously only migrations were committed).
+
+#### Changed
+- **Checkpoints now surface the full report path on its own 'Open to review:' line** after the Review Hint block and before the AskUserQuestion ask. Terminal-selectable text lets reviewers copy the path and open the file to review before picking Continue/Revise/Stop. The Summary echo and embedded question text still mention the path too — the dedicated line exists purely as a copy target.
+- **Revise option copy points users at the CLI's free-text option by its actual label.** `Re-run this step with a deeper pass. For specific feedback, pick 'Type something else' and type it.` The Step C #4 branch header is renamed from `Other` to `Type something else` to match. The AskUserQuestion tool auto-adds this option; prior copy referenced it as `Other`, which does not match what users see in the Claude Code CLI.
+
 ## [0.35.0] - 2026-04-18
 
 ### tdd-contract-review
