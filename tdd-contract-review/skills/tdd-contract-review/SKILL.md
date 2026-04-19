@@ -61,6 +61,14 @@ After the Summary block, print the checkpoint-specific **Review Hint** defined i
 
 The hint names the two or three things most likely to matter at this checkpoint. Its job is to turn a rubber-stamp Continue into a one-minute review — especially for reviewers who don't yet have the vocabulary to spot a weak extraction or a miscalibrated gap. Print verbatim; do not paraphrase.
 
+Then print the full report path on its own line so the user can copy it and open the file before deciding:
+
+```
+Open to review: $RUN_DIR/<file>
+```
+
+Use the absolute path (resolve `$RUN_DIR` to the filesystem path). Keep it on its own line with nothing trailing — terminal-selectable text is the UX goal.
+
 ### Step B — Ask the checkpoint question
 
 Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
@@ -69,7 +77,7 @@ Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
 - header: `Checkpoint <N>/3`
 - options (exactly these three, in this order):
   - label `Continue` — description: `Proceed to <next step>.`
-  - label `Revise` — description: `Re-run this step with a deepen pass (no input needed).`
+  - label `Revise` — description: `Re-run this step with a deeper pass. For specific feedback, pick 'Type something else' and type it.`
   - label `Stop` — description: `Preserve files and exit.`
 
 ### Step C — Branch on selection
@@ -82,7 +90,7 @@ Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
 
    After the re-dispatch(es) return, re-run the GATE check for this step. If the GATE fails, surface the failure and stop — do NOT loop on a failing gate. If the GATE passes, loop back to Step A (re-echo the updated Summary) and Step B (re-ask the checkpoint question).
 
-4. **Other** (user typed free text instead of picking) → interpret:
+4. **Type something else** (user picked the auto-provided free-text option — rendered as `Type something else` in the CLI) → interpret the typed text:
    - Affirmative words (`go`, `yes`, `ok`, `continue`, `proceed`) → treat as Continue.
    - Stop intent (`stop`, `quit`, `abort`, `cancel`, `no`) → treat as Stop.
    - Anything else → treat as **specific-feedback Revise**: re-dispatch the same agent, but append this block instead of the DEEPEN REQUEST block:
@@ -137,7 +145,7 @@ Flags:
    - If unit is `VERB /path`: grep for route definitions, find the handler.
    - If unit is a class name: glob + grep for `class ClassName`.
    - If unit is a file path: use it directly.
-4. **Find DB schema files** traced from the unit's source (migrations, models, ORM schemas).
+4. **Find DB schema files** traced from the unit's source: schema snapshot (`db/schema.rb`, `structure.sql`, `schema.prisma`) and model/entity files. Migrations are fallback only — do not include them when a snapshot exists.
 5. **Find outbound API client files** traced from the unit's source.
 6. **Check project conventions.** Read CLAUDE.md, config files.
 7. **Detect critical mode** unless overridden by `critical`/`no-critical` arg. Money/balance/currency fields, payment gateways, or decimal types → critical mode ON (loads both money-correctness and API-security checklists).
@@ -170,7 +178,7 @@ Unit:                <unit identifier>
 Source:              <resolved source file:line of handler or class def>
 DB schema:           <N files, or "not found">
 Outbound:            <N clients, or "not found">
-Critical mode:       ON (reason: <one-line signal that triggered it, e.g., "decimal column 'amount_cents' in db/migrate/001_create_wallets.rb">)
+Critical mode:       ON (reason: <one-line signal that triggered it, e.g., "decimal column 'balance' in db/schema.rb">)
                      OR OFF
 Previous extraction: found at <$PREV_EXTRACTION> (<YYYY-MM-DD HH:MM from dir prefix>)
                      OR "none found (skip reuse ask)"

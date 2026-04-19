@@ -16,7 +16,7 @@ Scannable one-screen overview shown at Checkpoint 1 before the user is asked to 
 
 - Total fields extracted: <N>
 - Contract matrix: API: <N> | DB: <N> | Outbound: <N> | Jobs: <N|N/A> | UI Props: <N|N/A>
-- Critical mode: ON (reason: <one-line signal, e.g., "decimal column `amount_cents` in db/migrate/001_create_wallets.rb">) OR OFF
+- Critical mode: ON (reason: <one-line signal, e.g., "decimal column `balance` in db/schema.rb">) OR OFF
 - Files examined: <N> source, <N> DB schema, <N> outbound, <N> other
 ```
 
@@ -32,8 +32,9 @@ Bullet list of every file read, grouped into four categories. Always include all
 - `path/to/service.rb` — downstream helper invoked by handler
 
 **DB schema:**
-- `db/migrate/*.rb` or `db/schema.rb`
-- `app/models/*.rb`
+- `db/schema.rb` (or `db/structure.sql`) — consolidated current state
+- `app/models/*.rb` — logical contract (enums, validations, defaults in code)
+- `db/migrate/*.rb` — list ONLY if no schema snapshot exists (fallback)
 
 **Outbound clients:**
 - `ExternalSDK.method` — referenced at `file:line`, SDK boundary
@@ -57,7 +58,7 @@ STRICT table. Do NOT rename, reorder, or embellish row labels.
 | Contract Type | Status | Fields | Notes |
 |---|---|---|---|
 | API inbound | Extracted | 8 | request params + headers counted |
-| DB | Extracted | 12 | from migrations/schema.rb, not handler code |
+| DB | Extracted | 12 | from schema.rb + model files, not handler code |
 | Outbound API | Extracted | 6 | actual HTTP URL or SDK interface |
 | Jobs | Not applicable | — | no async job triggered by this unit |
 | UI Props | Not applicable | — | server-side API, no UI component |
@@ -96,11 +97,15 @@ How to extract per framework:
 - Data states: possible values for enum/status fields. **Exhaustively list every enum value** -- if a model defines `enum :status, { pending, completed, failed, reversed }`, all four values must appear in the extraction. Missing enum values are the most common source of missed gaps.
 - Relationships: foreign keys, associations
 
+**Source priority — read the schema snapshot + model files, NOT migrations.** Migrations are a changelog, not a source of truth: a column added then removed across migrations produces a false contract. The snapshot file (`db/schema.rb`, `db/structure.sql`, `schema.prisma`, Drizzle `schema.ts`) is the consolidated current state; it is the authoritative physical contract. The model/entity file carries the logical contract (enum declarations, validations, defaults declared in app code, associations). Read migrations ONLY when no snapshot exists.
+
 How to extract per framework:
-- Rails: read migration files + model files for columns, validations, associations, enum definitions
-- Go: read struct tags (`db:`, `gorm:`), migration files, SQL schema files
-- TypeScript: read Prisma schema, TypeORM entities, Drizzle schema
-- Python: read SQLAlchemy models, Django models, Alembic migrations
+- **Rails:** `db/schema.rb` (preferred) or `db/structure.sql` for columns/types/constraints/indexes; `app/models/*.rb` for enums, validations, associations, defaults. Migrations are fallback only.
+- **Go:** current-schema SQL dump if the repo has one, plus struct tags (`db:`, `gorm:`). Migration files only if no snapshot exists.
+- **TypeScript (Prisma):** `schema.prisma` — single source of truth (both logical and physical in one file).
+- **TypeScript (Drizzle / TypeORM):** schema / entity files carry the current shape; no migration read needed.
+- **Python (Django):** `models.py` is both snapshot and model — Django has no separate snapshot. Do NOT read Django migrations.
+- **Python (SQLAlchemy + Alembic):** SQLAlchemy model files. Alembic migrations only as fallback when models are incomplete.
 
 ### Job & Message Consumer Contract (async entry points)
 
@@ -185,7 +190,7 @@ How to extract: read React/Vue component prop types/interfaces, conditional rend
 ## Confidence Indicators
 
 For each extracted contract field, assign a confidence level:
-- **HIGH**: Explicitly declared in code (e.g. `params.require(:currency)`, struct field with `json:"currency"` tag, TypeScript prop type definition, DB column in migration)
+- **HIGH**: Explicitly declared in code (e.g. `params.require(:currency)`, struct field with `json:"currency"` tag, TypeScript prop type definition, DB column in schema snapshot or model file)
 - **MEDIUM**: Inferred from usage patterns (e.g. response body shape from `render json:`, DB query patterns)
 - **LOW**: Guessed from naming conventions or indirect references
 
