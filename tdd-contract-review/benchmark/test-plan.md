@@ -78,7 +78,7 @@ misses — e.g. the schema rename or a dropped section. Every case is a grep / j
 | B6    | No gap description mentions "hygiene" / "anti-pattern" (those live in report.md only)     | findings.json   |
 | B7    | `01-extraction.md` contains `## Summary`, `## Files Examined`, `## Checkpoint 1`          | 01-extraction   |
 | B8    | Checkpoint 1 table has 5 required rows, exact labels, 3-state status                      | 01-extraction   |
-| B9    | `Files Examined` has all 4 category headings (Source, DB schema, Outbound clients, Other) | 01-extraction   |
+| B9    | `Files Examined` has `### Call trees` and `### Root set` subsections                       | 01-extraction   |
 | B10   | `02-audit.md` contains `## Summary`, `## Test Inventory`, `## Per-Field Coverage Matrix`  | 02-audit        |
 | B11   | `02-audit.md` grep-count equals Test-Inventory-count (reconciliation line)                | 02-audit        |
 | B12   | `02-audit.md` does NOT contain `## Gaps` or `## Scorecard` (belong to later steps)        | 02-audit        |

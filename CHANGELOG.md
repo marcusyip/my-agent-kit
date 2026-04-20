@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.0] - 2026-04-20
+
+### tdd-contract-review
+
+#### Changed
+- **`01-extraction.md` now uses a parseable call-tree shape (`schema_version: 2`).** The retired v1 shape (`## Files Examined` with flat `**Source:** / **DB schema:** / **Outbound clients:** / **Other:**` category headings) under-represented how the unit actually reaches its dependencies: a controller that dispatches to three services looked the same as one that called a single model, and downstream reviewers could not tell whether the extraction had missed a branch. The new shape replaces the flat list with an ordered file: YAML front-matter (`schema_version: 2`, `unit:`), `## Summary` (count-reconciled bullets), `## Entry points` (declared ROOT#n bullets), `## Files Examined` with three subsections (`### Call trees` fenced `tree` block + `### Root set` tagged bullets + optional `### Not examined`), `## Checkpoint 1: Contract Type Coverage`, and `## Checkpoint 2: File closure` closure paragraph. The call-tree block uses five line forms (ROOT, own-node with `Symbol @ path:start-end`, `[dup -> Symbol]`, `[external -> slug]`, `[unresolved]` with a reason) so a reviewer can walk the unit's actual control flow instead of inferring it. The root set carries a 12-tag vocabulary (`migration-authoritative`, `migration-snapshot-fallback`, `route-definition`, `annotation-config`, `factory`, `seed`, `middleware`, `di-config`, `dispatched-at-runtime`, `implicitly-invoked`, `generated-from <source>`, `test-fixture-shared`) so framework-convention files (before_action chains, rescue_from handlers, DI wiring) are accounted for instead of silently dropped. Hard cutover with no back-compat.
+- **Checkpoint 1 table reshaped from 4 columns to 3.** Old header `| Contract Type | Status | Fields | Notes |` became `| Type | Status | Evidence |`. The `Fields` count was a loose proxy for coverage that encouraged padding; `Evidence` asks for the concrete class/table/SDK name that justifies the `Extracted` claim. `structural_check.sh` B8 already greps each row by exact label so the column rename was gate-safe.
+- **SKILL.md Step 3 agent prompt, Checkpoint 1 Review Hint, and DEEPEN REQUEST block rewritten for v2.** The Step 3 prompt now points at the new `## Output File Shape (01-extraction.md)` section in `contract-extraction.md` and at `benchmark/fixtures/v2-example/01-extraction.md` as the worked example (80-word inline spec duplication removed). The Review Hint tells reviewers to scan the `### Call trees` block for missing own-nodes instead of the v1 `Files Examined` flat list. The DEEPEN REQUEST block tells the re-dispatched agent to re-walk every own-node + every root-set entry and to resolve or acknowledge every `[unresolved]` dispatch.
+- **`structural_check.sh` B9 rewritten to grep v2 subheadings.** Was `^\*\*Source:\*\*` / `^\*\*DB schema:\*\*` / `^\*\*Outbound clients:\*\*` / `^\*\*Other:\*\*`; now `^### Call trees[[:space:]]*$` and `^### Root set[[:space:]]*$`. B7 anchor tightened too (`^## Summary[[:space:]]*$`) to prevent `## Summary (draft)`-style false-positives.
+
+#### Added
+- **`benchmark/fixtures/v2-example/01-extraction.md` — canonical v2 extraction.** POST /api/v1/transactions (Rails), critical mode OFF, 13 own-nodes, 8 files in root set, 1 unresolved `rescue_from` dispatch, 1 external `payment-gateway` call. Dual role: the Step 3 agent reads it as the authoritative worked example, and the benchmark harness uses it as a sanity fixture to verify B7/B8/B9 still pass against a known-good v2 file.
+
+### Deferred
+
+- **Auto-detect `generated-from` via glob heuristic.** v0.37.0 ships `generated-from` as a voluntary tag; agents have to remember to apply it on Prisma/gRPC/OpenAPI-generated files. The eng review flagged this as a quiet gameability surface (any agent that just never tags silently over-trusts line ranges on regenerated code). Implementation waits until at least one benchmark unit actually exercises codegen. See `TODOS.md` "Deferred from plan-eng-review (2026-04-20)".
+
 ## [0.36.1] - 2026-04-20
 
 ### tdd-contract-review

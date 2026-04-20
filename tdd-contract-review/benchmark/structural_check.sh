@@ -109,7 +109,7 @@ if [[ ! -f "$EXTRACTION" ]]; then
   done
 else
   check B7 "contains ## Summary, ## Files Examined, ## Checkpoint 1" \
-    "grep -qE '^## Summary' '$EXTRACTION' && grep -qE '^## Files Examined' '$EXTRACTION' && grep -qE '^## Checkpoint 1' '$EXTRACTION'"
+    "grep -qE '^## Summary[[:space:]]*$' '$EXTRACTION' && grep -qE '^## Files Examined[[:space:]]*$' '$EXTRACTION' && grep -qE '^## Checkpoint 1:' '$EXTRACTION'"
 
   # Checkpoint 1 table: 5 exact row labels with a 3-state status.
   check B8 "Checkpoint 1 table has 5 rows with exact labels + 3-state status" \
@@ -119,11 +119,9 @@ else
      grep -qE '^\\| Jobs \\| (Extracted|Not detected|Not applicable) \\|' '$EXTRACTION' && \
      grep -qE '^\\| UI Props \\| (Extracted|Not detected|Not applicable) \\|' '$EXTRACTION'"
 
-  check B9 "Files Examined has all 4 category headings" \
-    "grep -qE '^\\*\\*Source:\\*\\*' '$EXTRACTION' && \
-     grep -qE '^\\*\\*DB schema:\\*\\*' '$EXTRACTION' && \
-     grep -qE '^\\*\\*Outbound clients:\\*\\*' '$EXTRACTION' && \
-     grep -qE '^\\*\\*Other:\\*\\*' '$EXTRACTION'"
+  check B9 "Files Examined has ### Call trees and ### Root set subsections" \
+    "grep -qE '^### Call trees[[:space:]]*$' '$EXTRACTION' && \
+     grep -qE '^### Root set[[:space:]]*$' '$EXTRACTION'"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

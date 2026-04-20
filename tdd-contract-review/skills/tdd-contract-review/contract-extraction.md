@@ -1,81 +1,180 @@
-<!-- version: 0.28.0 -->
+<!-- version: 0.37.0 -->
 # Contract Extraction Reference
 
 Detailed guidance for Step 3 of the TDD Contract Review workflow.
 
 ## Output File Shape (01-extraction.md)
 
-`$RUN_DIR/01-extraction.md` MUST open with three mandatory sections in this order. Writing these sections verbatim (structure, headings, and row labels) is non-negotiable — the orchestrator greps for literal strings to gate Checkpoint 1. Deviate and the gate fails.
+`$RUN_DIR/01-extraction.md` MUST open with YAML front-matter followed by the mandatory sections in this order:
+
+1. `## Summary`
+2. `## Entry points`
+3. `## Files Examined` (with `### Call trees`, `### Root set`, optional `### Not examined`)
+4. `## Checkpoint 1: Contract Type Coverage`
+5. `## Checkpoint 2: File closure`
+
+Writing these verbatim (headings, front-matter keys, row labels) is non-negotiable. The orchestrator greps for literal strings to gate Checkpoint 1 and Checkpoint 2. Deviate and the gate fails.
+
+See `benchmark/fixtures/v2-example/01-extraction.md` in the plugin repo for a complete worked example of a critical-mode-off Rails endpoint.
+
+### 0. Front-matter
+
+Every extraction MUST open with YAML front-matter containing `schema_version: 2` and `unit:`.
+
+```
+---
+schema_version: 2
+unit: POST /api/v1/transactions
+---
+```
+
+- `schema_version: 2` fixes the extraction to the call-tree grammar documented below.
+- `unit:` is the unit identifier passed to the orchestrator. Free-form string; must match the verb+path, class name, or file path used to invoke the skill.
 
 ### 1. `## Summary`
 
-Scannable one-screen overview shown at Checkpoint 1 before the user is asked to proceed. Bullets only, 4-8 lines max. No prose.
+Scannable one-screen overview shown at Checkpoint 1. Bullets only, no prose. Counts MUST reconcile with the body — every number here must match what the reader can count in the corresponding section.
 
 ```
 ## Summary
 
-- Total fields extracted: <N>
-- Contract matrix: API: <N> | DB: <N> | Outbound: <N> | Jobs: <N|N/A> | UI Props: <N|N/A>
-- Critical mode: ON (reason: <one-line signal, e.g., "decimal column `balance` in db/schema.rb">) OR OFF
-- Files examined: <N> source, <N> DB schema, <N> outbound, <N> other
+- Symbols in call trees: <N>     # count of own-nodes across all ROOT#n trees
+- Files in root set: <N>         # count of bullets under ### Root set
+- Unresolved dispatches: <N>     # count of [unresolved] lines inside the tree
+- External calls: <N>            # count of unique [external -> slug] entries
+- Entry points declared: <N>     # count of bullets under ## Entry points
+- Critical mode: ON (reason: <one-line signal>) OR OFF
 ```
 
-### 2. `## Files Examined`
+### 2. `## Entry points`
 
-Bullet list of every file read, grouped into four categories. Always include all four headings; write `- (none)` under any empty category. Never omit a category.
+One bullet per declared entry point. Each `ROOT#n` referenced in the call trees below MUST appear here.
 
 ```
-## Files Examined
-
-**Source:**
-- `path/to/handler.rb` — primary unit handler
-- `path/to/service.rb` — downstream helper invoked by handler
-
-**DB schema:**
-- `db/schema.rb` (or `db/structure.sql`) — consolidated current state
-- `app/models/*.rb` — logical contract (enums, validations, defaults in code)
-- `db/migrate/*.rb` — list ONLY if no schema snapshot exists (fallback)
-
-**Outbound clients:**
-- `ExternalSDK.method` — referenced at `file:line`, SDK boundary
-
-**Other:**
-- (list anything else opened during extraction; '- (none)' if nothing)
+## Entry points
+- ROOT#1 -- POST /api/v1/transactions -> Api::V1::TransactionsController#create
 ```
 
-### 3. `## Checkpoint 1: Contract Type Coverage`
+Format by unit type:
+- HTTP: `ROOT#<n> -- <VERB> <path> -> <Class>#<method>`
+- Job/consumer: `ROOT#<n> -- <JobClass> -> <Class>#<method>`
+- CLI/script: `ROOT#<n> -- <command> -> <Class>#<method>` or `<file>:<line>`
+
+Multiple entry points are allowed when the unit is a class with several public methods reached from the same route tree, but most HTTP endpoints and jobs have exactly one ROOT.
+
+### 3. `## Files Examined`
+
+The body of the extraction. Three subsections, in order.
+
+#### 3a. `### Call trees`
+
+Indent-based hierarchy inside a fenced ` ```tree ` block. One sub-tree per entry point. The ROOT line is the header; children indent by 2 spaces per level.
+
+Five line forms are allowed inside the tree:
+
+| Form | Example | Meaning |
+|---|---|---|
+| ROOT | `ROOT#1 -- POST /api/v1/transactions` | Entry point header. Must match a bullet in `## Entry points`. |
+| own-node | `TransactionService#call @ app/services/transaction_service.rb:12-38` | A method/class you read. `path:start-end` is the file and line range. |
+| dup | `[dup -> TransactionService#charge_payment_gateway]` | Reference to an own-node already listed earlier in the tree. Use when the same symbol is reached via two paths — do not list its body twice. |
+| external | `[external -> payment-gateway] PaymentGateway.charge` | Call that crosses a process/network boundary. Slug is lowercase-kebab-case and MUST match an `annotation-config` root-set entry. |
+| unresolved | `[unresolved] rescue_from error handler dispatch at app/controllers/application_controller.rb:50 -- error renderer resolved at runtime` | Runtime-dispatched call (rescue_from, `send`, `method_missing`, DI lookup). Include a brief reason for why static resolution failed. |
+
+Grammar demo (one line per form; see `benchmark/fixtures/v2-example/01-extraction.md` for a full worked tree):
+
+````
+```tree
+ROOT#1 -- POST /api/v1/transactions
+  Api::V1::TransactionsController#create @ app/controllers/api/v1/transactions_controller.rb:37-53
+    TransactionService#charge_payment_gateway @ app/services/transaction_service.rb:77-90
+      [external -> payment-gateway] PaymentGateway.charge
+    Transaction#notify_payment_gateway @ app/models/transaction.rb:27-34
+      [dup -> TransactionService#charge_payment_gateway]
+    [unresolved] rescue_from dispatch at app/controllers/api/v1/transactions_controller.rb:50 -- error renderer resolved at runtime
+```
+````
+
+Rules:
+- Every own-node appears exactly once. A second reach uses `[dup -> Symbol]`.
+- Indent with spaces only (2 per level). No tabs.
+- Line ranges must be inside the file's actual bounds.
+- Files that aren't reached via a call (config, fixtures, migrations) do NOT go in the tree — they go in Root set below.
+
+#### 3b. `### Root set`
+
+Bullet list of every file examined that is NOT a call-tree own-node. These are files read for contract context but not directly called by the unit. Each entry gets a tag from the vocabulary below, annotated with `-- <tag>` and optionally a parenthetical detail. See `benchmark/fixtures/v2-example/01-extraction.md` for a full worked root set.
+
+Tag vocabulary:
+
+| Tag | When to use |
+|---|---|
+| `migration-authoritative` | Migration file is the current source of truth (no schema snapshot exists) |
+| `migration-snapshot-fallback` | Migration file read alongside a schema snapshot for historical context |
+| `route-definition` | Routes file where the unit's route is declared. Use `path:line` format. |
+| `annotation-config` | Config file declaring an external boundary (payment gateway initializer, HTTP client config, API base URL). The slug declared here MUST match the `[external -> slug]` in the tree. |
+| `factory` | Test factory / fixture definition for a model this unit touches |
+| `seed` | Seed data file referenced by this unit |
+| `middleware` | Middleware in the request chain (Rack, Express, Django middleware) |
+| `di-config` | DI container wiring (Spring, NestJS module, Guice binding) |
+| `dispatched-at-runtime` | File invoked via runtime dispatch (`rescue_from`, `send`, `method_missing`). Annotate with the dispatch mechanism. |
+| `implicitly-invoked` | File invoked by framework convention, not direct call (before_action, lifecycle hooks, route concerns). Annotate with the hook name — keep the detail ≥ 10 chars so reviewers can spot what's actually hooked. |
+| `generated-from <source>` | Generated code — annotate the source schema/definition (e.g., `generated-from schema.proto`, `generated-from openapi.yaml`). Tagging exempts own-nodes that point at this file from line-range sanity checks. |
+| `test-fixture-shared` | Test fixture shared across multiple specs, relevant for this unit's setup |
+
+#### 3c. `### Not examined` (optional)
+
+Bullets for files in the same package/module that a reasonable reviewer might expect to see listed, with a one-line justification for skipping. Prevents false "you forgot to read X" failures at Checkpoint 2.
+
+```
+### Not examined
+- app/controllers/api/v1/wallets_controller.rb -- different resource; out of unit scope for POST /api/v1/transactions
+```
+
+Omit the subsection entirely if there are no candidates worth calling out.
+
+### 4. `## Checkpoint 1: Contract Type Coverage`
 
 STRICT table. Do NOT rename, reorder, or embellish row labels.
 
 - Row labels MUST be exactly these 5 strings, in this order: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`.
-- Do NOT write `API contract (inbound)`, `DB contract`, `Job/message consumer contract`, `UI props contract`, or any variant. Put context in the Notes column only.
-- Column header MUST be: `| Contract Type | Status | Fields | Notes |`
+- Do NOT write `API contract (inbound)`, `DB contract`, `Job/message consumer contract`, `UI props contract`, or any variant. Put context in the Evidence column only.
+- Column header MUST be: `| Type | Status | Evidence |` (3 columns).
 - Status MUST be one of exactly: `Extracted` | `Not detected` | `Not applicable`.
 
 ```
 ## Checkpoint 1: Contract Type Coverage
 
-| Contract Type | Status | Fields | Notes |
-|---|---|---|---|
-| API inbound | Extracted | 8 | request params + headers counted |
-| DB | Extracted | 12 | from schema.rb + model files, not handler code |
-| Outbound API | Extracted | 6 | actual HTTP URL or SDK interface |
-| Jobs | Not applicable | — | no async job triggered by this unit |
-| UI Props | Not applicable | — | server-side API, no UI component |
+| Type | Status | Evidence |
+|---|---|---|
+| API inbound | Extracted | Api::V1::TransactionsController#create |
+| DB | Extracted | transactions table; db/schema.rb |
+| Outbound API | Extracted | PaymentGateway.charge |
+| Jobs | Not detected | no ActiveJob/Sidekiq references |
+| UI Props | Not applicable | API-only endpoint |
 ```
 
 Status semantics:
-- `Extracted`: this unit interacts with this contract type and fields are listed below.
+- `Extracted`: this unit interacts with this contract type and fields are listed in the Contract Extraction Summary below.
 - `Not detected`: this unit could plausibly use this type but no evidence in source. Investigate before marking.
-- `Not applicable`: this contract type cannot apply to this unit (e.g., a consumer has no inbound API).
+- `Not applicable`: this contract type cannot apply to this unit (e.g., a background consumer has no inbound API).
 
-### After the three mandatory sections
+### 5. `## Checkpoint 2: File closure`
+
+Short prose paragraph (~3 sentences) asserting that the extraction is closed over the unit's dependencies:
+
+- Every own-node in the call trees descends from a declared entry point.
+- Every `[unresolved]` dispatch is either resolved elsewhere in the tree or acknowledged with its responsible file present in the Root set.
+- Root set covers the contract-relevant environment (routes, schema, external-boundary config, middleware, fixtures).
+
+See `benchmark/fixtures/v2-example/01-extraction.md` for a worked closure paragraph.
+
+### After the mandatory sections
 
 Produce the Contract Extraction Summary (typed field prefixes per field — see "Contract Extraction Summary Example" at the bottom of this file). If critical mode is on, follow the Summary with separate Money-correctness dimensions and API-security dimensions tables (per `money-correctness-checklists.md` and `api-security-checklists.md`).
 
 ### Failure handling
 
-If a contract type cannot be identified (e.g., no DB schema found), keep the Checkpoint 1 row with status `Not detected` or `Not applicable` (never leave blank) and note the reason in the Notes column.
+If a contract type cannot be identified (e.g., no DB schema found), keep the Checkpoint 1 row with status `Not detected` or `Not applicable` (never leave blank) and note the reason in the Evidence column.
 
 ## Per-Framework Extraction
 

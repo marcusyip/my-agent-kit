@@ -247,9 +247,9 @@ Prompt:
    Critical mode: [yes/no]
 
    Read [skill dir]/contract-extraction.md in full. It contains:
-   - 'Output File Shape (01-extraction.md)' — the mandatory three opening sections (Summary, Files Examined, Checkpoint 1 table). Follow row labels and column headers verbatim; the orchestrator grep-gates on them.
+   - 'Output File Shape (01-extraction.md)' — follow the ordered sections, row labels, tree grammar, and root-set tag vocabulary verbatim; the orchestrator grep-gates on them. See benchmark/fixtures/v2-example/01-extraction.md for a worked example.
    - Per-framework extraction guidance for API / DB / Jobs / Outbound / UI Props.
-   - 'Contract Extraction Summary Example' — the typed-prefix format for fields following the three mandatory sections.
+   - 'Contract Extraction Summary Example' — the typed-prefix format for fields following the mandatory sections.
 
    If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md, and append the Money-correctness + API-security dimension tables after the Contract Extraction Summary.
 
@@ -267,8 +267,8 @@ Prompt:
 **Review Hint (Checkpoint 1):**
 
 ```
-- Files Examined drives everything. If the handler delegates to a service class that isn't listed, the extraction missed a branch — CP2 and CP3 will inherit that gap. Fixing it here is cheaper than three Revises later.
-- `Not applicable` is a claim, not a gap. It asserts this contract type cannot apply to this unit. If `Outbound API: Not applicable` on a handler you think calls an external service, pick Revise — the agent may have missed the call site.
+- Call trees drive everything. Scan the ### Call trees fenced block: if the handler delegates to a service class that isn't an own-node (Symbol @ path:range), the extraction missed a branch — CP2 and CP3 will inherit that gap. Fixing it here is cheaper than three Revises later.
+- `Not applicable` is a claim, not a gap. It asserts this contract type cannot apply to this unit. If `Outbound API: Not applicable` on a handler you think calls an external service, check for `[external -> slug]` in the tree; if none, pick Revise — the agent may have missed the call site.
 - Contract fields are the vocabulary for CP2 and CP3. A field that isn't extracted here can never be audited or gap-checked downstream. When in doubt, Revise now.
 ```
 
@@ -277,8 +277,12 @@ Prompt:
 ```
 DEEPEN REQUEST: The user reviewed $RUN_DIR/01-extraction.md and asked for a
 more complete pass. Re-examine the source exhaustively:
-- Re-read every file in `Files Examined` and look for fields / headers / params
-  you missed.
+- Re-walk every own-node in the ### Call trees block and every file in the
+  ### Root set. Look for fields / headers / params you missed, and for
+  downstream methods that should be own-nodes but got skipped.
+- For every [unresolved] dispatch in the tree: try harder to resolve it, OR
+  confirm its responsible file is in the Root set with a
+  dispatched-at-runtime / implicitly-invoked tag.
 - For every Checkpoint 1 row marked `Not detected`: investigate harder — look
   for implicit contracts (session keys, cookies, cache entries, audit-log
   fields, feature flags).

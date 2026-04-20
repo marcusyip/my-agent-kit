@@ -9,6 +9,46 @@ Why: At 50+ files, full runs cost $5-15. Incremental reduces CI cost by 80-90% f
 Depends on: disk-based intermediate writes landing first.
 Blocked by: cache invalidation is tricky (model version change, reference file update not caught by mtime).
 
+## Deferred from plan-eng-review (2026-04-20)
+
+### Auto-detect `generated-from` via glob heuristic
+**Surfaced during v0.37.0 eng review (parseable call-tree extraction).**
+What: when the extraction agent lists a code-generated file as an own-node
+leaf (e.g., `prisma/client/index.d.ts`, `api/grpc/transaction.pb.go`), the
+parser auto-suggests the `generated-from <source>` root-set tag via a glob
+match against a known pattern library (`*.pb.{go,py,rb}`, `prisma/client/*`,
+`**/__generated__/**`, `*_pb.js`, `*.gen.ts`, `schema.gen.go`).
+
+Why: B25 (file-existence + line-range sanity) will false-fail on regenerated
+files whose line numbers drift every build. v0.37.0 relies on the agent
+manually tagging them, which they'll forget in fintech audits using gRPC
+stubs or Prisma-generated types. The heuristic prevents silent quality
+regressions without expanding scope at v0.37.0 ship time.
+
+Pros: catches the class of error without manual tagging; compounds across
+benchmark units that use codegen; framework-adjacent (per-language globs,
+not per-framework routing), so stays within the plugin's framework-agnostic
+constraint if the glob library is kept minimal.
+
+Cons: glob library becomes maintenance surface (Prisma renames `client/` to
+`generated/` in future versions; gRPC's Python stubs differ from Ruby's).
+Per-language patterns fight the framework-agnostic ethos. A false positive
+(tagging a hand-written `pb.go` file) suppresses B25 for code that should
+be checked.
+
+Context: v0.37.0 ships with `generated-from` as a voluntary tag. Agents
+must remember to apply it; B25 exempts tagged files. The eng review flagged
+this as a quiet gameability surface: any agent that simply never uses the
+tag silently over-trusts line ranges in regenerated code. Implementation
+should wait until we have at least one real benchmark unit using gRPC or
+Prisma so the glob patterns are calibrated against actual codegen output,
+not guessed.
+
+Depends on: v0.37.0 shipped; at least one benchmark unit exercising codegen.
+
+Blocked by: deciding where the glob list lives (per-user extensible config
+vs. a static file shipped with the plugin).
+
 ## Deferred from plan-ceo-review (2026-04-17)
 
 ### Stateful resumption and gate-failure retry (Approach B)
