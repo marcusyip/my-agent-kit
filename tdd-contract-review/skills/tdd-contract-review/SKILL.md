@@ -61,19 +61,19 @@ After the Summary block, print the checkpoint-specific **Review Hint** defined i
 
 The hint names the two or three things most likely to matter at this checkpoint. Its job is to turn a rubber-stamp Continue into a one-minute review — especially for reviewers who don't yet have the vocabulary to spot a weak extraction or a miscalibrated gap. Print verbatim; do not paraphrase.
 
-Then print the full report path on its own line so the user can copy it and open the file before deciding:
+Then print the full report path on its own line as a **clickable markdown link** so the user can open the file before deciding:
 
 ```
-Open to review: $RUN_DIR/<file>
+Open to review: [<ABS_PATH>](<ABS_PATH>)
 ```
 
-Use the absolute path (resolve `$RUN_DIR` to the filesystem path). Keep it on its own line with nothing trailing — terminal-selectable text is the UX goal.
+Resolve `$RUN_DIR/<file>` to an absolute filesystem path first, then substitute that same absolute path into BOTH the link label and the link target — Claude Code renders `[label](target)` as a clickable link in the terminal, and plain text (or an unresolved `$RUN_DIR`) is not clickable. Keep the line on its own with nothing trailing.
 
 ### Step B — Ask the checkpoint question
 
 Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
 
-- question: `Review checkpoint <N> of 3 — wrote $RUN_DIR/<file>. Proceed to <next step>?`
+- question: `Review checkpoint <N> of 3 — proceed to <next step>?` (the clickable path is already printed in Step A; do NOT repeat `$RUN_DIR/<file>` here — `AskUserQuestion` does not render markdown, so an inline path would show as unclickable duplicate noise)
 - header: `Checkpoint <N>/3`
 - options (exactly these three, in this order):
   - label `Continue` — description: `Proceed to <next step>.`
@@ -194,15 +194,22 @@ If `$PREV_EXTRACTION` is empty, skip this step entirely — do not print anythin
 
 If `$PREV_EXTRACTION` is set, offer the user the choice to reuse it or run a fresh extraction. This saves the cost of re-extracting when iterating on the same unit with unchanged source.
 
-**Critical-mode mismatch check (do this BEFORE the ask):** Read the `Critical mode:` line from `$PREV_EXTRACTION` (it appears in the file's `## Summary` section) and compare to the current run's critical-mode. If they differ, include a one-line warning at the top of the AskUserQuestion prompt text: `Previous extraction was Critical mode: <X>, current run is Critical mode: <Y>. Fresh extraction recommended.`
+**Critical-mode mismatch check (do this BEFORE the ask):** Read the `Critical mode:` line from `$PREV_EXTRACTION` (it appears in the file's `## Summary` section) and compare to the current run's critical-mode. If they differ, print a one-line warning with the path preview below: `Previous extraction was Critical mode: <X>, current run is Critical mode: <Y>. Fresh extraction recommended.`
+
+**Path preview (print BEFORE calling AskUserQuestion):** Resolve `$PREV_EXTRACTION` to an absolute filesystem path, then print the clickable markdown link on its own line so the user can open the prior file before choosing:
+
+```
+Previous extraction: [<ABS_PATH>](<ABS_PATH>) (<timestamp from dir prefix>)
+```
+
+Same rules as the Checkpoint Interaction Pattern: substitute the same absolute path into BOTH the link label and the target — `AskUserQuestion` does not render markdown, so the clickable link must live in the preview line, not in the question text.
 
 **AskUserQuestion** with two options (no Revise/Stop — nothing has been written in this run yet to revise):
 
 ```
 Question:
-  "A previous extraction for this unit exists at <$PREV_EXTRACTION>
-   (<timestamp from dir prefix>). Reuse it as this run's 01-extraction.md,
-   or run a fresh extraction?
+  "A previous extraction for this unit exists (see path above).
+   Reuse it as this run's 01-extraction.md, or run a fresh extraction?
    <critical-mode mismatch warning line if applicable>"
 Options:
   A) Reuse       — copy into $RUN_DIR and go straight to Checkpoint 1
@@ -556,7 +563,7 @@ No agent dispatch. Run shell checks on `$RUN_DIR/findings.json`:
 3. **All Extracted types represented:** for each Checkpoint 1 type with status `Extracted` in `01-extraction.md`, `jq` must find at least one gap OR the report must explicitly note coverage is complete. (Skip this check if the type is `Not detected` or `Not applicable`.)
 
 Print:
-- **PASS:** `✓ Step 9 checks passed. Report: $RUN_DIR/report.md`
+- **PASS:** `✓ Step 9 checks passed. Report: [<ABS_PATH>](<ABS_PATH>)` — resolve `$RUN_DIR/report.md` to an absolute filesystem path and substitute it into BOTH the link label and target so Claude Code renders a clickable link.
 - **FAIL:** `✗ Step 9 check failed: <which check, what's wrong>`. Do not re-dispatch. Surface the failure so a human can inspect.
 
 ## Review Principles
