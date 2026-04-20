@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.36.1] - 2026-04-20
+
+### tdd-contract-review
+
+#### Fixed
+- **Checkpoint file paths are now clickable markdown links, not plain text.** The v0.36.0 "Open to review:" line relied on the terminal auto-linking a raw absolute path — in practice Claude Code rendered it as unclickable text, and `AskUserQuestion` (which never renders markdown) inlined the same path a second time, doubling the noise. The Checkpoint Interaction Pattern, Step 2.5 previous-extraction reuse prompt, and the Step 9 PASS message all now emit the resolved absolute path as a `[abs-path](abs-path)` markdown link on its own line BEFORE any `AskUserQuestion` call, and the question text references "see path above" instead of re-inlining `$RUN_DIR/<file>` / `$PREV_EXTRACTION`. One clickable path per prompt, zero duplicates.
+
 ## [0.36.0] - 2026-04-19
 
 ### tdd-contract-review
