@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.1] - 2026-04-20
+
+### tdd-contract-review
+
+#### Changed
+- **Benchmark graders renamed for clarity.** `eval.sh` → `grade-content.sh` (Category A: per-unit content grader against `expected_gaps.yaml`). `structural_check.sh` → `grade-shape.sh` (Category B: per-unit shape invariants). `run-eval.sh` → `run-matrix.sh` (wraps both across every declared unit, writes `last-eval.json`). The old names obscured that `run-eval` was a wrapper and that `eval` / `structural_check` were peers. Banners also renamed (`━━━ grade-content: …`, `━━━ shape: …`, `━━━ run-matrix: …`).
+- **Shared YAML parser extracted to `parse_expected.py`** with `units` / `gaps` subcommands. Removes two drift-prone inline Python parsers that were duplicated between the per-unit grader and the matrix runner.
+- **`results.md` trimmed 385 → 74 lines.** Kept the three historical matrices (Version Comparison, Gap Detection, Fintech Gap Detection); dropped v0.9–v0.18 per-version analysis prose that duplicated `CHANGELOG.md` and had stopped being updated at v0.18 while the plugin was on v0.37. Added a header pointing current eval state at `last-eval.json` + `CHANGELOG.md`.
+
+#### Removed
+- **Pre-v0.8 report snapshots** at `benchmark/sample-app-report-v0.3.0.md`, `-v0.5.0.md`, `-v0.6.0-test-file.md`, `-v0.7.0.md` (~2,800 lines). Preserved in git history; `results.md:5` already claimed they had been removed.
+
+#### Fixed
+- **`grade-shape.sh` B11 audit-template coupling documented.** B11 (grep-count vs. Test Inventory reconciliation) is grep-pinned to specific wording in `SKILL.md` + `test-patterns.md`. Added an inline comment flagging the coupling so future template edits don't silently break the gate.
+- **`run-matrix.sh` intentional `set -e` omission documented.** Added a NOTE comment explaining that the matrix must not abort on per-unit failures (per-command exit codes are checked explicitly), so the divergence from `grade-content.sh` / `grade-shape.sh` isn't "fixed" by accident.
+
 ## [0.37.0] - 2026-04-20
 
 ### tdd-contract-review
