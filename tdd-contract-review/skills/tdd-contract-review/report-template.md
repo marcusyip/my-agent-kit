@@ -8,7 +8,7 @@ Detailed guidance for Step 7-8 of the TDD Contract Review workflow.
 The Step 7-8 agent writes TWO files to `$RUN_DIR`:
 
 1. **`report.md`** — human-readable scored report. Use the full template below by default. If quick mode is on, use the Quick Mode Template instead.
-2. **`findings.json`** — machine-readable gap list for eval.sh + Step 9 deterministic check.
+2. **`findings.json`** — machine-readable gap list for grade-content.sh + Step 9 deterministic check.
 
 ### report.md requirements
 

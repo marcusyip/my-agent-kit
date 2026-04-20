@@ -107,8 +107,10 @@ tdd-contract-review/
 |       +-- report-template.md
 +-- benchmark/
 |   +-- sample-app/               # ground-truth Rails app
-|   +-- eval.sh                   # substring-match grader
 |   +-- expected_gaps.yaml        # expected findings per unit
+|   +-- grade-content.sh          # Category A: per-unit content grader
+|   +-- grade-shape.sh            # Category B: per-unit shape invariants
+|   +-- run-matrix.sh             # wraps both across every declared unit
 +-- README.md
 +-- LICENSE
 ```

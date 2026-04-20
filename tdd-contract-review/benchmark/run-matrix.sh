@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# run-eval.sh — matrix runner for tdd-contract-review benchmark
+# run-matrix.sh — matrix runner for tdd-contract-review benchmark
 #
 # Loops every unit declared in expected_gaps.yaml, finds the latest run dir for
 # each under sample-app/tdd-contract-review/*-<slug>/, then grades each via
-# both eval.sh (Category A — content) and structural_check.sh (Category B — shape).
+# both grade-content.sh (Category A — content) and grade-shape.sh (Category B — shape).
 #
 # Usage:
-#   ./run-eval.sh                           # grade every unit that has a run dir
-#   ./run-eval.sh --strict                  # also fail if a unit has no run dir
-#   ./run-eval.sh --unit <slug>             # grade one unit only
+#   ./run-matrix.sh                         # grade every unit that has a run dir
+#   ./run-matrix.sh --strict                # also fail if a unit has no run dir
+#   ./run-matrix.sh --unit <slug>           # grade one unit only
 #
 # Outputs:
 #   - console pass/fail matrix (one row per unit × category)
@@ -17,6 +17,10 @@
 #
 # Requires: jq, python3. Fails loud if missing.
 
+# NOTE: intentionally NOT using `set -e`. This script runs grade-content.sh +
+# grade-shape.sh across every unit and records each result — a single case
+# failure must not abort the matrix. Per-command errors are checked explicitly
+# via exit codes below.
 set -uo pipefail
 
 die() { echo "✗ $*" >&2; exit 1; }
@@ -27,13 +31,15 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required but not installed
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPECTED_FILE="$SCRIPT_DIR/expected_gaps.yaml"
 RUNS_DIR="$SCRIPT_DIR/sample-app/tdd-contract-review"
-EVAL_SCRIPT="$SCRIPT_DIR/eval.sh"
-STRUCT_SCRIPT="$SCRIPT_DIR/structural_check.sh"
+CONTENT_SCRIPT="$SCRIPT_DIR/grade-content.sh"
+SHAPE_SCRIPT="$SCRIPT_DIR/grade-shape.sh"
+PARSER="$SCRIPT_DIR/parse_expected.py"
 SUMMARY_FILE="$SCRIPT_DIR/last-eval.json"
 
-[[ -f "$EXPECTED_FILE" ]] || die "expected_gaps.yaml not found at $EXPECTED_FILE"
-[[ -x "$EVAL_SCRIPT" ]]   || die "eval.sh not found or not executable at $EVAL_SCRIPT"
-[[ -x "$STRUCT_SCRIPT" ]] || die "structural_check.sh not found or not executable at $STRUCT_SCRIPT"
+[[ -f "$EXPECTED_FILE" ]]   || die "expected_gaps.yaml not found at $EXPECTED_FILE"
+[[ -x "$CONTENT_SCRIPT" ]]  || die "grade-content.sh not found or not executable at $CONTENT_SCRIPT"
+[[ -x "$SHAPE_SCRIPT" ]]    || die "grade-shape.sh not found or not executable at $SHAPE_SCRIPT"
+[[ -x "$PARSER" ]]          || die "parse_expected.py not found or not executable at $PARSER"
 
 STRICT=0
 ONLY_UNIT=""
@@ -50,19 +56,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# --- extract unit slugs from expected_gaps.yaml ---
-ALL_UNITS=$(python3 - "$EXPECTED_FILE" <<'PY'
-import sys, re
-with open(sys.argv[1]) as f:
-    txt = f.read()
-m = re.search(r'^units:\s*$', txt, re.MULTILINE)
-if not m:
-    sys.exit("no 'units:' section in yaml")
-body = txt[m.end():]
-for sm in re.finditer(r'^  ([a-zA-Z0-9_\-]+):\s*$', body, re.MULTILINE):
-    print(sm.group(1))
-PY
-)
+# --- extract unit slugs from expected_gaps.yaml (via shared parser) ---
+ALL_UNITS=$("$SCRIPT_DIR/parse_expected.py" units "$EXPECTED_FILE")
 
 [[ -n "$ALL_UNITS" ]] || die "no units declared in expected_gaps.yaml"
 
@@ -114,7 +109,7 @@ EOF
 )")
 }
 
-echo "━━━ run-eval.sh: tdd-contract-review matrix ━━━"
+echo "━━━ run-matrix: tdd-contract-review benchmark ━━━"
 echo "Expected units: $(echo "$UNITS" | wc -l | tr -d ' ')"
 echo "Runs dir: $RUNS_DIR"
 [[ $STRICT -eq 1 ]] && echo "Strict mode: ON (missing run dirs count as failures)"
@@ -137,10 +132,10 @@ while IFS= read -r slug; do
     continue
   fi
 
-  # Category A — eval.sh (content)
-  A_LOG=$("$EVAL_SCRIPT" "$slug" "$RUN_DIR" 2>&1) && A_EXIT=0 || A_EXIT=$?
+  # Category A — grade-content.sh
+  A_LOG=$("$CONTENT_SCRIPT" "$slug" "$RUN_DIR" 2>&1) && A_EXIT=0 || A_EXIT=$?
   A_SUMMARY=$(grep -E '^━━━ Score:' <<< "$A_LOG" | tail -n 1 | sed 's/━//g; s/^ *//; s/ *$//')
-  [[ -z "$A_SUMMARY" ]] && A_SUMMARY="eval.sh failed to produce a score"
+  [[ -z "$A_SUMMARY" ]] && A_SUMMARY="grade-content.sh failed to produce a score"
 
   if [[ $A_EXIT -eq 0 ]]; then
     PASS_CASES=$((PASS_CASES + 1))
@@ -150,10 +145,10 @@ while IFS= read -r slug; do
     A_STATUS="FAIL"
   fi
 
-  # Category B — structural_check.sh (shape)
-  B_LOG=$("$STRUCT_SCRIPT" "$RUN_DIR" 2>&1) && B_EXIT=0 || B_EXIT=$?
-  B_SUMMARY=$(grep -iE '^━━━ structural:' <<< "$B_LOG" | tail -n 1 | sed 's/━//g; s/^ *//; s/ *$//')
-  [[ -z "$B_SUMMARY" ]] && B_SUMMARY="structural_check.sh failed to produce a score"
+  # Category B — grade-shape.sh
+  B_LOG=$("$SHAPE_SCRIPT" "$RUN_DIR" 2>&1) && B_EXIT=0 || B_EXIT=$?
+  B_SUMMARY=$(grep -iE '^━━━ shape:' <<< "$B_LOG" | tail -n 1 | sed 's/━//g; s/^ *//; s/ *$//')
+  [[ -z "$B_SUMMARY" ]] && B_SUMMARY="grade-shape.sh failed to produce a score"
 
   if [[ $B_EXIT -eq 0 ]]; then
     PASS_CASES=$((PASS_CASES + 1))

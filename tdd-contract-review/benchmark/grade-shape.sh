@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# structural_check.sh — validate shape invariants of a tdd-contract-review run
+# grade-shape.sh — grade Category B (shape) of ONE unit's run via structural invariants.
+# Paired with grade-content.sh (Category A). Both are invoked per unit by run-matrix.sh.
 #
 # Usage:
-#   ./structural_check.sh <run-dir>
+#   ./grade-shape.sh <run-dir>
 #
 # Runs ~20 cheap bash/jq assertions against the files a run produces. Catches
-# regressions that content grading (eval.sh) misses — dropped sections, renamed
-# schema keys, missing sub-files, unreconciled counts.
+# regressions that content grading (grade-content.sh) misses — dropped sections,
+# renamed schema keys, missing sub-files, unreconciled counts.
 #
 # See test-plan.md (Category B) for the full assertion catalogue.
 #
@@ -60,7 +61,7 @@ skip() {
   SKIPPED=$((SKIPPED + 1))
 }
 
-echo "━━━ structural_check.sh: $RUN_DIR ━━━"
+echo "━━━ grade-shape: $RUN_DIR ━━━"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -141,6 +142,9 @@ else
     "grep -qE '^## Summary' '$AUDIT' && grep -qE '^## Test Inventory' '$AUDIT' && grep -qE '^## Per-Field Coverage Matrix' '$AUDIT'"
 
   # Reconciliation: grep count MUST equal Test Inventory count in Summary. Extract both numbers.
+  # COUPLED to the audit-template wording "Test files (grep count): ..., N test" / "Test Inventory (agent count): N".
+  # Source of truth for that wording: skills/tdd-contract-review/SKILL.md and skills/tdd-contract-review/test-patterns.md.
+  # If the template is reworded, update both the regex below and the template in lockstep.
   check B11 "Test files (grep count) == Test Inventory (agent count) in Summary" \
     "grep_count=\$(grep -oE 'Test files \\(grep count\\):[^,]*, ([0-9]+) test' '$AUDIT' | grep -oE '[0-9]+ test' | head -1 | grep -oE '[0-9]+'); \
      inv_count=\$(grep -oE 'Test Inventory \\(agent count\\): ([0-9]+)' '$AUDIT' | head -1 | grep -oE '[0-9]+'); \
@@ -301,7 +305,7 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "━━━ structural: $PASSED passed, $FAILED failed, $SKIPPED skipped ━━━"
+echo "━━━ shape: $PASSED passed, $FAILED failed, $SKIPPED skipped ━━━"
 if [[ "$FAILED" -gt 0 ]]; then
   echo "FAILED: ${FAILURES[*]}"
   exit 1

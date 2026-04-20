@@ -1,10 +1,10 @@
 # Expected gaps for tdd-contract-review benchmark
 #
-# Keyed by unit-slug. When you run /tdd-contract-review on a unit, eval.sh compares
-# the produced findings.json against the list here.
+# Keyed by unit-slug. When you run /tdd-contract-review on a unit, grade-content.sh
+# compares the produced findings.json against the list here.
 #
-# Matching: eval.sh looks for each `match` pattern (substring, case-insensitive) in
-# the findings.json entries' field + description. If any gap row has a matching entry
+# Matching: grade-content.sh looks for each `match` pattern (substring, case-insensitive)
+# in the findings.json entries' field + description. If any gap row has a matching entry
 # at the expected priority, it counts as FOUND. Otherwise MISSING.
 #
 # Coverage: 5 units across the sample app exercising create/read/update patterns
@@ -16,7 +16,7 @@
 #   get-api-v1-transactions-id — single read; IDOR on non-create endpoint
 #
 # See test-plan.md for the full eval design (Category A is graded by this file,
-# Category B by structural_check.sh).
+# Category B by grade-shape.sh).
 
 units:
   post-api-v1-transactions:

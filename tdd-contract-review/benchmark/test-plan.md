@@ -3,7 +3,7 @@
 Test case catalogue for evaluating the `tdd-contract-review` skill. The harness grades
 the artifacts a run produces; it does not re-run the interactive skill itself (the skill
 has 3 checkpoints that block on `AskUserQuestion`). Run the skill version under test
-manually, then run `./run-eval.sh` to score the artifacts across all declared cases.
+manually, then run `./run-matrix.sh` to score the artifacts across all declared cases.
 
 ## Why this doc exists
 
@@ -21,21 +21,21 @@ manually, then run `./run-eval.sh` to score the artifacts across all declared ca
 Manual (one unit):
 
 ```bash
-./eval.sh post-api-v1-transactions \
+./grade-content.sh post-api-v1-transactions \
   sample-app/tdd-contract-review/20260417-1408-post-api-v1-transactions/
-./structural_check.sh \
+./grade-shape.sh \
   sample-app/tdd-contract-review/20260417-1408-post-api-v1-transactions/
 ```
 
 Matrix (all declared units, latest run of each):
 
 ```bash
-./run-eval.sh            # grades every unit that has both expected_gaps + a run dir
-./run-eval.sh --strict   # fail if any unit has no run dir to grade
-./run-eval.sh --unit post-api-v1-transactions   # single-unit
+./run-matrix.sh            # grades every unit that has both expected_gaps + a run dir
+./run-matrix.sh --strict   # fail if any unit has no run dir to grade
+./run-matrix.sh --unit post-api-v1-transactions   # single-unit
 ```
 
-`run-eval.sh` writes a JSON summary to `benchmark/last-eval.json` (git-ignored) and prints
+`run-matrix.sh` writes a JSON summary to `benchmark/last-eval.json` (git-ignored) and prints
 a pass/fail matrix. Exit code is 0 iff every case passes.
 
 ## Test Case Categories
@@ -46,7 +46,7 @@ way to drive the skill non-interactively.
 
 ### A. Gap Detection (content)
 
-Does the skill find the seeded gaps in each unit? This is the existing `eval.sh` style —
+Does the skill find the seeded gaps in each unit? This is the existing `grade-content.sh` style —
 substring match against `expected_gaps.yaml`. Expanded from one unit to five to cover
 contract-type variety (create vs read vs update), critical-mode sensitivity, and the
 headline "no tests at all" case (`PATCH /wallets/:id`).
@@ -143,7 +143,7 @@ become expensive.
 
 ## Test Case Registry
 
-Declarative source of truth. `run-eval.sh` loops this list.
+Declarative source of truth. `run-matrix.sh` loops this list.
 
 | ID   | Category | Unit slug                  | Automated | Needs                                     |
 |------|----------|----------------------------|-----------|-------------------------------------------|
@@ -152,7 +152,7 @@ Declarative source of truth. `run-eval.sh` loops this list.
 | A3   | A        | patch-api-v1-wallets       | yes       | expected_gaps entry (added in this PR)     |
 | A4   | A        | get-api-v1-transactions    | yes       | expected_gaps entry (added in this PR)     |
 | A5   | A        | get-api-v1-transactions-id | yes       | expected_gaps entry (added in this PR)     |
-| B*   | B        | (applies to every A-run)   | yes       | structural_check.sh (added in this PR)     |
+| B*   | B        | (applies to every A-run)   | yes       | grade-shape.sh (added in this PR)          |
 | C*   | C        | —                          | no        | gate-capture harness or recorded invocations |
 | D*   | D        | —                          | partial   | non-money fixture + skill-run capture      |
 | E*   | E        | —                          | no        | tool-call interception                     |
@@ -184,7 +184,7 @@ regression actually bites.
 When a new plugin version ships:
 
 1. Run the skill manually against each A-case unit (5 runs).
-2. Run `./run-eval.sh` — grades all runs in one pass.
+2. Run `./run-matrix.sh` — grades all runs in one pass.
 3. Append a row to `results.md` with the version, matrix pass/fail counts, and any
    new-version-only notes. Keep the historical matrix — regressions are best diagnosed
    against prior passes.

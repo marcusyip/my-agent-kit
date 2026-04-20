@@ -36,9 +36,9 @@ in this repo.
   **`tdd-contract-review:staff-engineer`**. The harness error list sometimes shows a
   triple-namespaced `tdd-contract-review:tdd-contract-review:staff-engineer` form — do
   not use it.
-- **Benchmark**: `tdd-contract-review/benchmark/`. `run-eval.sh` grades every unit with
-  both `expected_gaps.yaml` and a run dir; `structural_check.sh` validates artifact
-  shape. See `benchmark/test-plan.md` for the matrix contract. Run artifacts land in
+- **Benchmark**: `tdd-contract-review/benchmark/`. `run-matrix.sh` grades every unit
+  (via `grade-content.sh` for Category A content + `grade-shape.sh` for Category B
+  shape). See `benchmark/test-plan.md` for the matrix contract. Run artifacts land in
   `benchmark/sample-app/tdd-contract-review/YYYYMMDD-HHMM-<unit-slug>/` — the directory
   name is load-bearing (Step 2 previous-extraction discovery globs on it).
 - **Deferred work**: see [TODOS.md](./TODOS.md) before proposing new scope.

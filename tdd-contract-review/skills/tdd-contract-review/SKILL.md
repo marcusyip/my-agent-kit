@@ -25,7 +25,7 @@ tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/
 ├── 03e-gaps-security.md  ← cross-cutting API-security sub-report (critical mode only)
 ├── 03-gaps.md            ← merged unified gap report
 ├── report.md             ← final scored report
-└── findings.json         ← machine-readable gap list for eval.sh / CI
+└── findings.json         ← machine-readable gap list for grade-content.sh / CI
 ```
 
 Per-type sub-files are kept on disk for traceability. The merged `03-gaps.md` is what Step 7-8 consumes. Sub-reports for contract types marked `Not applicable` or `Not detected` are skipped entirely.
