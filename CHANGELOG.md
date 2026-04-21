@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.2] - 2026-04-21
+
+### tdd-contract-review
+
+#### Changed
+- **Every actionable item in `report.md` is now a `- [ ]` checkbox in exactly one place.** Anti-Patterns Detected was a 4-column Markdown table; Top 5 Priority Actions was a numbered list. Neither was checkable, so a developer working through a review had to stitch together the checkboxes in Gap Analysis, the untickable table, and the untickable top-5. Both sections now render as flat checkbox lists (anti-pattern rows become `- [ ] **AP# — name** (Severity) — Location: … Fix: …`; the top-5 stays `1.`–`5.`-labelled but each item is a checkbox). No consolidated end-of-report checklist was added — Gap Analysis was already a checklist, and duplicating items into a second list was the original failure mode we were trying to fix. `report-template.md` requirements now explicitly state this rule so future template edits don't regress it.
+
 ## [0.37.1] - 2026-04-20
 
 ### tdd-contract-review

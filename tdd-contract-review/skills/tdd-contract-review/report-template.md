@@ -13,6 +13,7 @@ The Step 7-8 agent writes TWO files to `$RUN_DIR`:
 ### report.md requirements
 
 - Include a **Hygiene section** that surfaces the anti-patterns from `$RUN_DIR/03-gaps.md`'s Hygiene section. These are test-code hygiene issues, not contract gaps.
+- Every actionable item in the report must be a `- [ ]` checkbox so the reader can work through the report as one checklist. This applies to Gap Analysis (already), Anti-Patterns Detected, and Top 5 Priority Actions. No duplicate consolidated checklist at the end.
 - Full report follows the template in "report.md Template" below. Quick mode follows "Quick Mode Template".
 
 ### findings.json requirements
@@ -180,16 +181,21 @@ Every contract field from the extraction summary MUST appear in this table — e
 
 ### Anti-Patterns Detected
 
-| Anti-Pattern | Location | Severity | Fix |
-|---|---|---|---|
+Each anti-pattern is a `- [ ]` checkbox so the reader works the report as one checklist. Hygiene fixes land before filling contract gaps — structural issues block clean coverage.
+
+- [ ] **AP1 — [anti-pattern name]** (Severity: [CRITICAL/HIGH/MEDIUM/LOW]) — Location: `[path:line]`. Fix: [one-line fix].
+- [ ] **AP2 — ...**
+- ...
 
 ### Top 5 Priority Actions
 
-1. [Most impactful test to add, with the contract it protects]
-2. [Second]
-3. [Third]
-4. [Fourth]
-5. [Fifth]
+Highest-leverage work first. Check items off as you land them.
+
+- [ ] **1.** [Most impactful test to add, with the contract it protects]
+- [ ] **2.** [Second]
+- [ ] **3.** [Third]
+- [ ] **4.** [Fourth]
+- [ ] **5.** [Fifth]
 ```
 
 ## Quick Mode Template
