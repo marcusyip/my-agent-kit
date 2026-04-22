@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.0] - 2026-04-22
+
+### tdd-contract-review
+
+#### Changed
+- **LSP-first call-tree construction is now enforced, not just recommended.** A verification run found a sub-agent ran `document_symbols` once on the entry file and built the rest of the 9-file, 12-symbol tree via Grep — `$RUN_DIR/lsp/` had a single JSON artifact. The markdown-shape gate passed; the call tree was incomplete. Three changes harden the path:
+  - `contract-extraction.md`: the "LSP-assisted call-tree construction" section is rewritten as a step-by-step algorithm (seed → walk every call site → recurse → closure). It states explicitly that **Read+Grep is NOT an acceptable substitute for `definition`** when `definition` returns a result; permitted Read+Grep uses are restricted to (a) contract field semantics, (b) marked `[unresolved]` nodes after `definition` returned empty, (c) runtime dispatch.
+  - `SKILL.md` Step 3: a new **GATE (LSP utilization)** runs after the existing shape gate. It requires `lsp_artifacts >= root_set_files` AND at least one `definition__*.json`. On fail it auto-Revises with the deepen block — does not pass the checkpoint silently. Step 3 agent prompt and Checkpoint 1 DEEPEN REQUEST both gain explicit "LSP re-walk mandatory; Grep is not a substitute" language.
+  - `## Summary` template now requires an `LSP calls: <D> document_symbols, <F> definitions, <R> references` line that must reconcile with file counts in `$RUN_DIR/lsp/`.
+
 ## [0.39.0] - 2026-04-22
 
 ### tdd-contract-review
