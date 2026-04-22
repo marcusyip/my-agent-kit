@@ -43,6 +43,7 @@ Scannable one-screen overview shown at Checkpoint 1. Bullets only, no prose. Cou
 - Unresolved dispatches: <N>     # count of [unresolved] lines inside the tree
 - External calls: <N>            # count of unique [external -> slug] entries
 - Entry points declared: <N>     # count of bullets under ## Entry points
+- LSP calls: <D> document_symbols, <F> definitions, <R> references   # MUST equal counts in $RUN_DIR/lsp/
 - Critical mode: ON (reason: <one-line signal>) OR OFF
 ```
 
@@ -176,16 +177,36 @@ Produce the Contract Extraction Summary (typed field prefixes per field — see 
 
 If a contract type cannot be identified (e.g., no DB schema found), keep the Checkpoint 1 row with status `Not detected` or `Not applicable` (never leave blank) and note the reason in the Evidence column.
 
-## LSP-assisted call-tree construction (primary tool)
+## LSP-assisted call-tree construction (mandatory algorithm)
 
-For building the `### Call trees` block, **LSP is the first-priority tool, not a fallback.** Read and Grep are reserved for what LSP cannot give you (contract field semantics, runtime dispatch). Reach for LSP first; only drop back to Read+Grep when LSP returns nothing useful.
+For building the `### Call trees` block, **LSP is mandatory, not optional.** This section is an algorithm, not guidance — sub-agents that skip steps to save time produce shallow trees that pass the markdown-shape gate but miss real branches. The Step 3 LSP-utilization GATE in SKILL.md will fail the run if it detects under-utilization.
 
-`<plugin-root>/tdd-contract-review/scripts/lsp_query.py` wraps a real language server (via the `multilspy` library) and exposes three operations: `definition`, `document_symbols`, `references`.
+`<plugin-root>/tdd-contract-review/scripts/lsp_query.py` wraps a real language server (via `multilspy`) and exposes three operations: `definition`, `document_symbols`, `references`.
 
-Default workflow for the call tree:
-1. **Start from the entry point.** `document_symbols` on the unit's source file lists every method with start/end lines — these become the own-node line ranges. No more guessing.
-2. **Walk outwards.** For each call site inside an own-node body, run `definition` to find the target file and symbol. If LSP resolves it, promote it to an own-node and recurse. If it doesn't, fall back to Read+Grep, then to `[unresolved]`.
-3. **Confirm reach.** `references` on a method tells you who calls it — useful at Checkpoint 2 (file closure) to verify nothing in the unit's blast radius was missed.
+**Algorithm — execute every step, in order, for every applicable target:**
+
+1. **Seed.** Run `document_symbols` on the unit's entry source file. The returned ranges are the own-node line ranges for every method/class in that file. Do not estimate ranges from a Read; use the LSP output verbatim.
+2. **Walk every call site.** For EVERY call site inside EVERY own-node body, run `definition` on the call site's file:line:col. Treat every method invocation, function call, constant reference, and module access as a call site — do not pre-filter by guessing which ones "look interesting".
+   - If `definition` returns a target file inside the project: promote the target to an own-node and go to step 3 for that file.
+   - If `definition` returns an empty array (`[]`): mark the line `[unresolved]` in the tree with a one-line reason (`-- definition returned empty, runtime dispatch suspected` is a fine default). Do NOT silently substitute Read+Grep here — the empty result is the contract.
+   - If `definition` returns a target outside the project (gem, stdlib, external SDK): emit `[external -> slug]` per the tree grammar.
+3. **Recurse.** For each newly-promoted own-node file, run `document_symbols` (once per file — the wrapper auto-overwrites, so a repeat is cheap but adds no information). Then loop back to step 2 for every call site inside its own-nodes.
+4. **Closure.** Before declaring the tree complete, run `references` on the entry-point symbol. The returned callers reveal whether anything in the unit's blast radius was missed (relevant for Checkpoint 2 file closure).
+
+**Read+Grep is NOT an acceptable substitute for `definition`.** It is permitted ONLY for:
+- **Contract field semantics** — validation rules, enum values, response shapes, request param keys, default values. LSP returns symbol locations, not what those symbols mean.
+- **`definition` returned empty** — and only after you've marked the node `[unresolved]`. Using Grep to "fill in" what `definition` couldn't resolve is non-compliant: the contract is that the node was unresolvable, not that you grepped harder.
+- **Runtime dispatch** — `before_action`, `rescue_from`, `send`, `method_missing`, DI container lookups. Mark `[unresolved]` and put the responsible file in the Root set with `dispatched-at-runtime` / `implicitly-invoked`.
+
+A sub-agent that skips `definition` because it could "tell from the code" what the call resolves to is producing an unaudited tree. Run the LSP call.
+
+**Mandatory `## Summary` line.** The Summary block in the extraction MUST report LSP call counts in this exact form:
+
+```
+- LSP calls: <D> document_symbols, <F> definitions, <R> references
+```
+
+These three counts equal the count of `document_symbols__*.json`, `definition__*.json`, and `references__*.json` files in `$RUN_DIR/lsp/`. The orchestrator's LSP-utilization GATE compares them against the Root set / Call tree counts; under-reporting fails the gate.
 
 CLI:
 

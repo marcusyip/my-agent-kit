@@ -248,16 +248,42 @@ Prompt:
 
    Read [skill dir]/contract-extraction.md in full. It contains:
    - 'Output File Shape (01-extraction.md)' — follow the ordered sections, row labels, tree grammar, and root-set tag vocabulary verbatim; the orchestrator grep-gates on them. See benchmark/fixtures/v2-example/01-extraction.md for a worked example.
-   - 'LSP-assisted call-tree construction' — first-priority tool ([plugin root]/tdd-contract-review/scripts/lsp_query.py) for building the call tree. Use `document_symbols` for own-node line ranges and `definition` to resolve call sites; only fall back to Read+Grep when LSP returns nothing. Read+Grep remain primary for contract field semantics. Pass `--run-dir $RUN_DIR` to every invocation so each query's JSON is persisted under `$RUN_DIR/lsp/` for audit and re-use within this run.
+   - 'LSP-assisted call-tree construction (mandatory algorithm)' — execute the algorithm step by step using [plugin root]/tdd-contract-review/scripts/lsp_query.py. Pass `--run-dir $RUN_DIR` to every invocation so each query's JSON is persisted under `$RUN_DIR/lsp/`.
    - Per-framework extraction guidance for API / DB / Jobs / Outbound / UI Props.
    - 'Contract Extraction Summary Example' — the typed-prefix format for fields following the mandatory sections.
 
    If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md, and append the Money-correctness + API-security dimension tables after the Contract Extraction Summary.
 
+   LSP IS MANDATORY, NOT OPTIONAL. For EVERY call site in EVERY own-node, you MUST run `lsp_query.py definition --run-dir $RUN_DIR <file> <line> <col>`. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. The orchestrator's LSP-utilization GATE counts JSON artifacts in $RUN_DIR/lsp/ after you finish; an under-utilized run will fail the gate and trigger an automatic Revise. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
+
    WRITE the full output to $RUN_DIR/01-extraction.md. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.md' when done."
 ```
 
 **GATE (Checkpoint 1 shape):** Grep `$RUN_DIR/01-extraction.md` for exactly 5 Checkpoint 1 rows: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`. Each row must have a three-state status: `Extracted` | `Not detected` | `Not applicable`. If any row is missing, print which one and stop with a specific error (do not silently re-dispatch).
+
+**GATE (LSP utilization):** A shallow LSP run produces a markdown-shape-valid extraction whose call tree is incomplete. This gate rejects under-utilized runs:
+
+```
+LSP_COUNT=$(ls "$RUN_DIR/lsp/" 2>/dev/null | wc -l | tr -d ' ')
+DEF_COUNT=$(ls "$RUN_DIR/lsp/" 2>/dev/null | grep -c '^definition__')
+ROOT_SET_COUNT=$(awk '/^### Root set/{f=1; next} f && /^### /{exit} f && /^- /{n++} END{print n+0}' "$RUN_DIR/01-extraction.md")
+```
+
+Require BOTH:
+- `LSP_COUNT >= ROOT_SET_COUNT` — at minimum, the agent has touched LSP roughly once per file it considered worth listing in the Root set. This is a coarse proxy; it catches the failure mode where the agent ran a single `document_symbols` on the entry file then built the rest of the tree via Grep.
+- `DEF_COUNT >= 1` — the agent ran at least one `definition` query, proving they walked beyond the entry file.
+
+On fail, print:
+
+```
+✗ GATE FAILED: LSP under-utilized.
+  $RUN_DIR/lsp/ contains <LSP_COUNT> JSON artifacts (<DEF_COUNT> definitions).
+  Root set lists <ROOT_SET_COUNT> files. Expected lsp_artifacts >= root_set_files
+  AND >=1 definition query. Call tree is likely incomplete (Read+Grep was used
+  where `definition` should have been).
+```
+
+Then automatically re-dispatch the Step 3 agent with the **DEEPEN REQUEST block (Checkpoint 1)** below appended — do NOT pass the checkpoint silently. After the re-dispatch returns, re-run BOTH gates (shape + LSP-utilization). If LSP-utilization fails again, surface the second failure to the user and stop.
 
 **PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
 - `<N>` = `1`
@@ -278,12 +304,21 @@ Prompt:
 ```
 DEEPEN REQUEST: The user reviewed $RUN_DIR/01-extraction.md and asked for a
 more complete pass. Re-examine the source exhaustively:
+- LSP re-walk (mandatory). For every call site in every own-node that you
+  previously resolved via Read or Grep, run `lsp_query.py definition --run-dir
+  $RUN_DIR <file> <line> <col>` now and persist the result to $RUN_DIR/lsp/.
+  After this pass, $RUN_DIR/lsp/ MUST contain at least one JSON file per file
+  in the Root set, and at least one `definition__*.json`. The orchestrator's
+  LSP-utilization GATE will re-run after you finish; another shallow result
+  will fail the run.
 - Re-walk every own-node in the ### Call trees block and every file in the
   ### Root set. Look for fields / headers / params you missed, and for
   downstream methods that should be own-nodes but got skipped.
-- For every [unresolved] dispatch in the tree: try harder to resolve it, OR
-  confirm its responsible file is in the Root set with a
-  dispatched-at-runtime / implicitly-invoked tag.
+- For every [unresolved] dispatch in the tree: try harder to resolve it via
+  `definition`, OR confirm its responsible file is in the Root set with a
+  dispatched-at-runtime / implicitly-invoked tag. Grep is NOT a substitute
+  for `definition` here — `[unresolved]` is the correct outcome when
+  `definition` returns empty.
 - For every Checkpoint 1 row marked `Not detected`: investigate harder — look
   for implicit contracts (session keys, cookies, cache entries, audit-log
   fields, feature flags).
