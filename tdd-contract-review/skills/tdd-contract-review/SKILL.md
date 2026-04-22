@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.40.2
+version: 0.41.0
 ---
 
 # TDD Contract Review

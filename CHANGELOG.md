@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.0] - 2026-04-23
+
+### tdd-contract-review
+
+#### Added
+- **`scripts/lsp_tree.py` — standalone LSP-driven call-tree builder.** Given a seed symbol, walks outgoing calls via `definition` and emits a nested markdown or JSON tree. Replaces the agent-driven per-call `lsp_query.py` loop for Go and Ruby targets: one invocation pays the language-server cold-start once instead of once per call site.
+  - **Go call-sites** extracted via `go/parser` AST (`scripts/callsites.go`, built once into `.bin/callsites` on first use). Symbol grammar: `(*Type).Method`, `(Type).Method`, `Name`.
+  - **Ruby call-sites** extracted via Prism AST (`scripts/callsites.rb`, shells out to brewed Ruby). Solargraph symbol grammar: `A::B::Foo#bar`, `A::B::Foo.bar`, `A::B::Foo`. Ruby helper has both extract mode and an `@LINE` resolve mode so downstream targets can be named from their declaration line without a second AST walk.
+  - **`--scope local`** drops calls whose definitions resolve outside `--project` (stdlib, gems). LSP queries still run, so the Step 3 LSP-utilization GATE artifact count is unaffected — only the rendered tree is trimmed.
+  - **`--run-dir DIR`** persists every LSP response under `DIR/lsp/<op>__<slug>__L<line>C<col>.json` (same naming as `lsp_query.py`) and writes the final tree to `DIR/tree__<file-slug>__<symbol-slug>.<md|json>`. Printed as `WROTE: <path>` on stdout instead of the tree body.
+- **`benchmark/sample-app-go/`** — new Go fixture (wallets / transactions endpoints, mirroring the Ruby sample-app) for exercising the Go path of `lsp_tree.py` end-to-end.
+- **`benchmark/notes/lsp-taxonomy.md`** — reference note on when to use LSP vs. Read vs. Grep for call-tree construction, derived from the dogfooding session that produced `lsp_tree.py`.
+
+#### Changed
+- **`benchmark/sample-app` `WalletsController#create` and `#update` now delegate to `WalletCreateService` / `WalletUpdateService`.** Mirrors the existing `TransactionService` pattern. External HTTP behavior is preserved — including the intentional data-leak bug in the update error path that the benchmark expects to find — but internal structure now has an explicit service layer. `lsp_tree.py --lang ruby` walks across the controller → service boundary instead of bottoming out at ActiveRecord magic.
+
 ## [0.40.2] - 2026-04-22
 
 ### tdd-contract-review
