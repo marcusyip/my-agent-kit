@@ -130,15 +130,32 @@ def main():
     logger = MultilspyLogger()
     lsp = SyncLanguageServer.create(config, logger, str(project))
 
-    with lsp.start_server():
-        if args.op == "definition":
-            result = lsp.request_definition(args.file, args.line, args.col)
-        elif args.op == "document_symbols":
-            result = lsp.request_document_symbols(args.file)
-        elif args.op == "references":
-            result = lsp.request_references(args.file, args.line, args.col)
-        else:
-            sys.exit(f"unknown op: {args.op}")
+    ctx = lsp.start_server()
+    ctx.__enter__()
+    try:
+        file_ctx = lsp.open_file(args.file)
+        file_ctx.__enter__()
+        try:
+            if args.op == "definition":
+                result = lsp.request_definition(args.file, args.line, args.col)
+            elif args.op == "document_symbols":
+                result = lsp.request_document_symbols(args.file)
+            elif args.op == "references":
+                result = lsp.request_references(args.file, args.line, args.col)
+            else:
+                sys.exit(f"unknown op: {args.op}")
+        finally:
+            try:
+                file_ctx.__exit__(None, None, None)
+            except Exception as exc:
+                print(f"[lsp_query] file close warning (ignored): {exc}", file=sys.stderr)
+    finally:
+        try:
+            ctx.__exit__(None, None, None)
+        except Exception as exc:
+            # gopls may exit cleanly before multilspy signals its children;
+            # psutil.NoSuchProcess is benign — the query already completed.
+            print(f"[lsp_query] server cleanup warning (ignored): {exc}", file=sys.stderr)
 
     if args.run_dir:
         out_dir = Path(args.run_dir).resolve() / "lsp"

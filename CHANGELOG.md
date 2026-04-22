@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.2] - 2026-04-22
+
+### tdd-contract-review
+
+#### Fixed
+- **`lsp_query.py` now opens the target file via `lsp.open_file()` before issuing requests.** Some language servers require the file to be in the LSP session's open-buffer set before `definition` / `document_symbols` / `references` can resolve positions; without this, queries against untouched files silently returned empty.
+- **Server-shutdown cleanup exceptions are caught and logged to stderr.** gopls can exit before `multilspy` signals its psutil-tracked children, producing a benign `psutil.NoSuchProcess` on context exit *after* the query has already completed. Previously this propagated and failed the invocation. The `with lsp.start_server()` block was unrolled into manual `__enter__`/`__exit__` so the cleanup path can catch its own exception without discarding the already-computed result.
+
 ## [0.40.1] - 2026-04-22
 
 ### tdd-contract-review
