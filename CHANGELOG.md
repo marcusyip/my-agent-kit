@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.39.0] - 2026-04-22
+
+### tdd-contract-review
+
+#### Added
+- **LSP query results persisted to `$RUN_DIR/lsp/`.** `lsp_query.py` now accepts `--run-dir DIR`. With the flag set, each query writes its JSON body to `DIR/lsp/<op>__<file-slug>__L<line>C<col>.json` and prints `WROTE: <path>` on stdout instead of dumping the response. Filenames are derived deterministically from the operation + target, so a repeat query overwrites the same file — giving an effective per-run cache, an inspectable audit trail of every LSP call the run made, and a way to diff runs over the same unit. The Step 3 agent prompt and `contract-extraction.md` now both instruct the agent to pass `--run-dir $RUN_DIR` on every invocation.
+
 ## [0.38.0] - 2026-04-22
 
 ### tdd-contract-review
