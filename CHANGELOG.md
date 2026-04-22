@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.0] - 2026-04-22
+
+### tdd-contract-review
+
+#### Added
+- **LSP-assisted call-tree construction via `multilspy`.** Step 3 (Contract Extraction) now treats LSP queries as the first-priority tool for building the `### Call trees` block. New helper at `tdd-contract-review/scripts/lsp_query.py` wraps `multilspy` and exposes `definition`, `document_symbols`, and `references` for 12 languages (ruby, typescript, javascript, go, python, java, rust, csharp, dart, kotlin, php, cpp). The script self-bootstraps a venv next to itself on first run — no separate setup step. On macOS it also auto-PATHs the brewed Ruby and its gem bin so `solargraph` installs into a writable location instead of failing on the system Ruby. The Step 3 agent prompt and `contract-extraction.md` both flag the workflow: `document_symbols` for own-node line ranges, `definition` to walk call sites outward, `references` for Checkpoint 2 file-closure verification. Read + Grep remain primary for contract field semantics (validations, enum values, response shapes) and for tagging `[unresolved]` runtime dispatch (`rescue_from`, `before_action`, `send`, DI lookup) that no LSP can resolve statically.
+
 ## [0.37.2] - 2026-04-21
 
 ### tdd-contract-review
