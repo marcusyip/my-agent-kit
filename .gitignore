@@ -15,3 +15,6 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Python venvs (e.g. tdd-contract-review/scripts/.venv from lsp_query.py bootstrap)
+.venv/

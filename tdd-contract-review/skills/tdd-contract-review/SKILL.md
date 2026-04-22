@@ -248,6 +248,7 @@ Prompt:
 
    Read [skill dir]/contract-extraction.md in full. It contains:
    - 'Output File Shape (01-extraction.md)' — follow the ordered sections, row labels, tree grammar, and root-set tag vocabulary verbatim; the orchestrator grep-gates on them. See benchmark/fixtures/v2-example/01-extraction.md for a worked example.
+   - 'LSP-assisted call-tree construction' — first-priority tool ([plugin root]/tdd-contract-review/scripts/lsp_query.py) for building the call tree. Use `document_symbols` for own-node line ranges and `definition` to resolve call sites; only fall back to Read+Grep when LSP returns nothing. Read+Grep remain primary for contract field semantics.
    - Per-framework extraction guidance for API / DB / Jobs / Outbound / UI Props.
    - 'Contract Extraction Summary Example' — the typed-prefix format for fields following the mandatory sections.
 

@@ -176,6 +176,34 @@ Produce the Contract Extraction Summary (typed field prefixes per field — see 
 
 If a contract type cannot be identified (e.g., no DB schema found), keep the Checkpoint 1 row with status `Not detected` or `Not applicable` (never leave blank) and note the reason in the Evidence column.
 
+## LSP-assisted call-tree construction (primary tool)
+
+For building the `### Call trees` block, **LSP is the first-priority tool, not a fallback.** Read and Grep are reserved for what LSP cannot give you (contract field semantics, runtime dispatch). Reach for LSP first; only drop back to Read+Grep when LSP returns nothing useful.
+
+`<plugin-root>/tdd-contract-review/scripts/lsp_query.py` wraps a real language server (via the `multilspy` library) and exposes three operations: `definition`, `document_symbols`, `references`.
+
+Default workflow for the call tree:
+1. **Start from the entry point.** `document_symbols` on the unit's source file lists every method with start/end lines — these become the own-node line ranges. No more guessing.
+2. **Walk outwards.** For each call site inside an own-node body, run `definition` to find the target file and symbol. If LSP resolves it, promote it to an own-node and recurse. If it doesn't, fall back to Read+Grep, then to `[unresolved]`.
+3. **Confirm reach.** `references` on a method tells you who calls it — useful at Checkpoint 2 (file closure) to verify nothing in the unit's blast radius was missed.
+
+CLI:
+
+```bash
+SCRIPT="<plugin-root>/tdd-contract-review/scripts/lsp_query.py"
+"$SCRIPT" --lang ruby --project <repo-root> document_symbols <file>
+"$SCRIPT" --lang ruby --project <repo-root> definition <file> <line> <col>
+"$SCRIPT" --lang ruby --project <repo-root> references <file> <line> <col>
+```
+
+Languages: `ruby`, `typescript`, `javascript`, `go`, `python`, `java`, `rust`, `csharp`, `dart`, `kotlin`, `php`, `cpp`. The first call per language pays a one-time install cost (multilspy fetches the language server binary). Cold-start per invocation is ~5–30s; this is acceptable for call-tree work because accuracy beats latency at Step 3.
+
+**Coordinate convention.** LSP positions are 0-indexed (`line: 9` means file line 10). The own-node format `Symbol @ path:start-end` uses 1-indexed line numbers — add 1 to the LSP `line` field before writing.
+
+When LSP is NOT the right tool:
+- **Contract field semantics** — validations, enum values, response shapes, request param keys, default values. LSP returns symbol locations, not what those symbols mean. Read the source.
+- **Runtime dispatch** — `before_action`, `rescue_from`, `send`, `method_missing`, DI lookup. Solargraph (Ruby) is especially weak here. After LSP returns nothing, tag the call `[unresolved]` and put the responsible file in the Root set with `dispatched-at-runtime` or `implicitly-invoked`.
+
 ## Per-Framework Extraction
 
 ### API Contract (inbound endpoints)
