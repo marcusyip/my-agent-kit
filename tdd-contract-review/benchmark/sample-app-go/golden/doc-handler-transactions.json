@@ -1,0 +1,141 @@
+[
+  [
+    {
+      "kind": 23,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 17
+          },
+          "start": {
+            "character": 5,
+            "line": 14
+          }
+        },
+        "uri": "file://./internal/handler/transactions.go"
+      },
+      "name": "TransactionsHandler"
+    },
+    {
+      "kind": 12,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 21
+          },
+          "start": {
+            "character": 0,
+            "line": 19
+          }
+        },
+        "uri": "file://./internal/handler/transactions.go"
+      },
+      "name": "NewTransactionsHandler"
+    },
+    {
+      "kind": 23,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 31
+          },
+          "start": {
+            "character": 5,
+            "line": 23
+          }
+        },
+        "uri": "file://./internal/handler/transactions.go"
+      },
+      "name": "createTxPayload"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 70
+          },
+          "start": {
+            "character": 0,
+            "line": 33
+          }
+        },
+        "uri": "file://./internal/handler/transactions.go"
+      },
+      "name": "(*TransactionsHandler).Index"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 115
+          },
+          "start": {
+            "character": 0,
+            "line": 72
+          }
+        },
+        "uri": "file://./internal/handler/transactions.go"
+      },
+      "name": "(*TransactionsHandler).Create"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 137
+          },
+          "start": {
+            "character": 0,
+            "line": 117
+          }
+        },
+        "uri": "file://./internal/handler/transactions.go"
+      },
+      "name": "(*TransactionsHandler).Show"
+    },
+    {
+      "kind": 12,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 151
+          },
+          "start": {
+            "character": 0,
+            "line": 139
+          }
+        },
+        "uri": "file://./internal/handler/transactions.go"
+      },
+      "name": "serializeTransaction"
+    },
+    {
+      "kind": 12,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 157
+          },
+          "start": {
+            "character": 0,
+            "line": 153
+          }
+        },
+        "uri": "file://./internal/handler/transactions.go"
+      },
+      "name": "writeJSON"
+    }
+  ],
+  null
+]

@@ -1,0 +1,65 @@
+{
+  "comment": "LSP benchmark targets. Positions resolved at runtime from in_symbol + call_text — never hardcode line/col. Run scripts/lsp-bench.py --record to seed golden/.",
+  "targets": [
+    {
+      "id": "doc-handler-transactions",
+      "op": "document_symbols",
+      "file": "internal/handler/transactions.go"
+    },
+    {
+      "id": "doc-handler-wallets",
+      "op": "document_symbols",
+      "file": "internal/handler/wallets.go"
+    },
+    {
+      "id": "doc-service-transaction",
+      "op": "document_symbols",
+      "file": "internal/service/transaction_service.go"
+    },
+    {
+      "id": "doc-model-wallet",
+      "op": "document_symbols",
+      "file": "internal/model/wallet.go"
+    },
+    {
+      "id": "doc-model-transaction",
+      "op": "document_symbols",
+      "file": "internal/model/transaction.go"
+    },
+    {
+      "id": "def-handler-create-service-call",
+      "op": "definition",
+      "file": "internal/handler/transactions.go",
+      "in_symbol": "(*TransactionsHandler).Create",
+      "call_text": "h.service.Call"
+    },
+    {
+      "id": "def-handler-create-find-wallet",
+      "op": "definition",
+      "file": "internal/handler/transactions.go",
+      "in_symbol": "(*TransactionsHandler).Create",
+      "call_text": "h.repo.FindWalletForUser"
+    },
+    {
+      "id": "def-service-deduct-withdraw",
+      "op": "definition",
+      "file": "internal/service/transaction_service.go",
+      "in_symbol": "(*TransactionService).deductBalance",
+      "call_text": "w.Withdraw"
+    },
+    {
+      "id": "def-service-charge-gateway",
+      "op": "definition",
+      "file": "internal/service/transaction_service.go",
+      "in_symbol": "(*TransactionService).chargePaymentGateway",
+      "call_text": "s.gateway.Charge"
+    },
+    {
+      "id": "ref-gateway-charge",
+      "op": "references",
+      "file": "internal/payment/gateway.go",
+      "in_symbol": "Gateway",
+      "call_text": "Charge"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+[
+  [
+    {
+      "name": "deposit!",
+      "containerName": "Wallet",
+      "kind": 6,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/models/wallet.rb",
+        "range": {
+          "start": {
+            "line": 15,
+            "character": 2
+          },
+          "end": {
+            "line": 22,
+            "character": 5
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "withdraw!",
+      "containerName": "Wallet",
+      "kind": 6,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/models/wallet.rb",
+        "range": {
+          "start": {
+            "line": 24,
+            "character": 2
+          },
+          "end": {
+            "line": 32,
+            "character": 5
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "set_default_balance",
+      "containerName": "Wallet",
+      "kind": 6,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/models/wallet.rb",
+        "range": {
+          "start": {
+            "line": 36,
+            "character": 2
+          },
+          "end": {
+            "line": 38,
+            "character": 5
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "Wallet",
+      "containerName": "",
+      "kind": 5,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/models/wallet.rb",
+        "range": {
+          "start": {
+            "line": 2,
+            "character": 0
+          },
+          "end": {
+            "line": 39,
+            "character": 3
+          }
+        }
+      },
+      "deprecated": false
+    }
+  ],
+  null
+]

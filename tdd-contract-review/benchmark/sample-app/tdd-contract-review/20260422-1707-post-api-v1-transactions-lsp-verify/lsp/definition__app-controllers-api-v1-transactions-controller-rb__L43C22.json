@@ -1,0 +1,17 @@
+[
+  {
+    "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+    "range": {
+      "start": {
+        "line": 37,
+        "character": 8
+      },
+      "end": {
+        "line": 41,
+        "character": 9
+      }
+    },
+    "absolutePath": "/Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+    "relativePath": "app/controllers/api/v1/transactions_controller.rb"
+  }
+]

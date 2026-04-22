@@ -16,32 +16,36 @@ module Api
 
       # POST /api/v1/wallets
       def create
-        wallet = current_user.wallets.build(wallet_params)
+        result = WalletCreateService.new(user: current_user, params: wallet_params).call
 
-        if wallet.save
-          render json: { wallet: serialize_wallet(wallet) }, status: :created
+        if result.success?
+          render json: { wallet: serialize_wallet(result.wallet) }, status: :created
         else
-          render json: { error: wallet.errors.full_messages.join(', ') },
-                 status: :unprocessable_entity
+          render json: { error: result.error }, status: :unprocessable_entity
         end
       end
 
       # PATCH /api/v1/wallets/:id
       def update
-        wallet = current_user.wallets.find(params[:id])
-        wallet.update!(wallet_params)
+        result = WalletUpdateService.new(
+          user: current_user,
+          wallet_id: params[:id],
+          params: wallet_params
+        ).call
 
-        render json: { wallet: serialize_wallet(wallet) }
-      rescue ActiveRecord::RecordNotFound
-        render json: { error: 'Wallet not found' }, status: :not_found
-      rescue ActiveRecord::RecordInvalid => e
-        # BUG: leaks internal state — balance, user_id, and full validation chain in error response
-        render json: {
-          error: e.message,
-          wallet_id: wallet.id,
-          balance: wallet.balance.to_s,
-          user_id: wallet.user_id
-        }, status: :unprocessable_entity
+        if result.success?
+          render json: { wallet: serialize_wallet(result.wallet) }
+        elsif result.status == :not_found
+          render json: { error: result.error }, status: :not_found
+        else
+          # BUG: leaks internal state — balance, user_id, and full validation chain in error response
+          render json: {
+            error: result.error,
+            wallet_id: result.wallet.id,
+            balance: result.wallet.balance.to_s,
+            user_id: result.wallet.user_id
+          }, status: :unprocessable_entity
+        end
       end
 
       private

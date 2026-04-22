@@ -1,0 +1,17 @@
+[
+  {
+    "absolutePath": "./internal/model/wallet.go",
+    "range": {
+      "end": {
+        "character": 25,
+        "line": 75
+      },
+      "start": {
+        "character": 17,
+        "line": 75
+      }
+    },
+    "relativePath": "internal/model/wallet.go",
+    "uri": "file://./internal/model/wallet.go"
+  }
+]

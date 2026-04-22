@@ -1,0 +1,17 @@
+[
+  {
+    "absolutePath": "./internal/store/memory.go",
+    "range": {
+      "end": {
+        "character": 38,
+        "line": 89
+      },
+      "start": {
+        "character": 21,
+        "line": 89
+      }
+    },
+    "relativePath": "internal/store/memory.go",
+    "uri": "file://./internal/store/memory.go"
+  }
+]

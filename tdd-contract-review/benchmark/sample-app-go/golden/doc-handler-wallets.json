@@ -1,0 +1,124 @@
+[
+  [
+    {
+      "kind": 23,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 15
+          },
+          "start": {
+            "character": 5,
+            "line": 13
+          }
+        },
+        "uri": "file://./internal/handler/wallets.go"
+      },
+      "name": "WalletsHandler"
+    },
+    {
+      "kind": 12,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 19
+          },
+          "start": {
+            "character": 0,
+            "line": 17
+          }
+        },
+        "uri": "file://./internal/handler/wallets.go"
+      },
+      "name": "NewWalletsHandler"
+    },
+    {
+      "kind": 23,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 27
+          },
+          "start": {
+            "character": 5,
+            "line": 21
+          }
+        },
+        "uri": "file://./internal/handler/wallets.go"
+      },
+      "name": "walletPayload"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 41
+          },
+          "start": {
+            "character": 0,
+            "line": 29
+          }
+        },
+        "uri": "file://./internal/handler/wallets.go"
+      },
+      "name": "(*WalletsHandler).Index"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 73
+          },
+          "start": {
+            "character": 0,
+            "line": 43
+          }
+        },
+        "uri": "file://./internal/handler/wallets.go"
+      },
+      "name": "(*WalletsHandler).Create"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 126
+          },
+          "start": {
+            "character": 0,
+            "line": 75
+          }
+        },
+        "uri": "file://./internal/handler/wallets.go"
+      },
+      "name": "(*WalletsHandler).Update"
+    },
+    {
+      "kind": 12,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 137
+          },
+          "start": {
+            "character": 0,
+            "line": 128
+          }
+        },
+        "uri": "file://./internal/handler/wallets.go"
+      },
+      "name": "serializeWallet"
+    }
+  ],
+  null
+]

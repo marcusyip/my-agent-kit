@@ -1,0 +1,176 @@
+[
+  [
+    {
+      "name": "index",
+      "containerName": "Api::V1::TransactionsController",
+      "kind": 6,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+        "range": {
+          "start": {
+            "line": 9,
+            "character": 6
+          },
+          "end": {
+            "line": 33,
+            "character": 9
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "create",
+      "containerName": "Api::V1::TransactionsController",
+      "kind": 6,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+        "range": {
+          "start": {
+            "line": 36,
+            "character": 6
+          },
+          "end": {
+            "line": 52,
+            "character": 9
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "show",
+      "containerName": "Api::V1::TransactionsController",
+      "kind": 6,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+        "range": {
+          "start": {
+            "line": 55,
+            "character": 6
+          },
+          "end": {
+            "line": 61,
+            "character": 9
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "set_wallet",
+      "containerName": "Api::V1::TransactionsController",
+      "kind": 6,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+        "range": {
+          "start": {
+            "line": 65,
+            "character": 6
+          },
+          "end": {
+            "line": 71,
+            "character": 9
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "transaction_params",
+      "containerName": "Api::V1::TransactionsController",
+      "kind": 6,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+        "range": {
+          "start": {
+            "line": 73,
+            "character": 6
+          },
+          "end": {
+            "line": 75,
+            "character": 9
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "serialize_transaction",
+      "containerName": "Api::V1::TransactionsController",
+      "kind": 6,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+        "range": {
+          "start": {
+            "line": 77,
+            "character": 6
+          },
+          "end": {
+            "line": 89,
+            "character": 9
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "Api",
+      "containerName": "",
+      "kind": 2,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+        "range": {
+          "start": {
+            "line": 2,
+            "character": 0
+          },
+          "end": {
+            "line": 92,
+            "character": 3
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "V1",
+      "containerName": "Api",
+      "kind": 2,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+        "range": {
+          "start": {
+            "line": 3,
+            "character": 2
+          },
+          "end": {
+            "line": 91,
+            "character": 5
+          }
+        }
+      },
+      "deprecated": false
+    },
+    {
+      "name": "TransactionsController",
+      "containerName": "Api::V1",
+      "kind": 5,
+      "location": {
+        "uri": "file:///Users/marcusyip/Sources/continuously-working-with-claude-code/personal-workspace/my-agent-kit/tdd-contract-review/benchmark/sample-app/app/controllers/api/v1/transactions_controller.rb",
+        "range": {
+          "start": {
+            "line": 4,
+            "character": 4
+          },
+          "end": {
+            "line": 90,
+            "character": 7
+          }
+        }
+      },
+      "deprecated": false
+    }
+  ],
+  null
+]

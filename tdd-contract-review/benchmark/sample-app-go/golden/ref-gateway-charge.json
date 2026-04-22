@@ -1,0 +1,17 @@
+[
+  {
+    "absolutePath": "./internal/service/transaction_service.go",
+    "range": {
+      "end": {
+        "character": 30,
+        "line": 120
+      },
+      "start": {
+        "character": 24,
+        "line": 120
+      }
+    },
+    "relativePath": "internal/service/transaction_service.go",
+    "uri": "file://./internal/service/transaction_service.go"
+  }
+]

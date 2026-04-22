@@ -1,0 +1,175 @@
+[
+  [
+    {
+      "kind": 5,
+      "location": {
+        "range": {
+          "end": {
+            "character": 24,
+            "line": 10
+          },
+          "start": {
+            "character": 5,
+            "line": 10
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "WalletStatus"
+    },
+    {
+      "kind": 14,
+      "location": {
+        "range": {
+          "end": {
+            "character": 40,
+            "line": 13
+          },
+          "start": {
+            "character": 1,
+            "line": 13
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "WalletActive"
+    },
+    {
+      "kind": 14,
+      "location": {
+        "range": {
+          "end": {
+            "character": 43,
+            "line": 14
+          },
+          "start": {
+            "character": 1,
+            "line": 14
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "WalletSuspended"
+    },
+    {
+      "kind": 14,
+      "location": {
+        "range": {
+          "end": {
+            "character": 40,
+            "line": 15
+          },
+          "start": {
+            "character": 1,
+            "line": 15
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "WalletClosed"
+    },
+    {
+      "kind": 13,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 20
+          },
+          "start": {
+            "character": 4,
+            "line": 18
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "allowedCurrencies"
+    },
+    {
+      "kind": 23,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 33
+          },
+          "start": {
+            "character": 5,
+            "line": 22
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "Wallet"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 55
+          },
+          "start": {
+            "character": 0,
+            "line": 35
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "(*Wallet).Validate"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 59
+          },
+          "start": {
+            "character": 0,
+            "line": 57
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "(*Wallet).IsActive"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 73
+          },
+          "start": {
+            "character": 0,
+            "line": 61
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "(*Wallet).Deposit"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 90
+          },
+          "start": {
+            "character": 0,
+            "line": 75
+          }
+        },
+        "uri": "file://./internal/model/wallet.go"
+      },
+      "name": "(*Wallet).Withdraw"
+    }
+  ],
+  null
+]

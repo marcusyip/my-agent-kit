@@ -1,0 +1,277 @@
+[
+  [
+    {
+      "kind": 23,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 17
+          },
+          "start": {
+            "character": 5,
+            "line": 12
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "CreateParams"
+    },
+    {
+      "kind": 23,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 24
+          },
+          "start": {
+            "character": 5,
+            "line": 19
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "Result"
+    },
+    {
+      "kind": 23,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 29
+          },
+          "start": {
+            "character": 5,
+            "line": 26
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "TransactionService"
+    },
+    {
+      "kind": 12,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 33
+          },
+          "start": {
+            "character": 0,
+            "line": 31
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "NewTransactionService"
+    },
+    {
+      "kind": 13,
+      "location": {
+        "range": {
+          "end": {
+            "character": 59,
+            "line": 36
+          },
+          "start": {
+            "character": 1,
+            "line": 36
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "ErrWalletInactive"
+    },
+    {
+      "kind": 13,
+      "location": {
+        "range": {
+          "end": {
+            "character": 69,
+            "line": 37
+          },
+          "start": {
+            "character": 1,
+            "line": 37
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "ErrCurrencyMismatch"
+    },
+    {
+      "kind": 13,
+      "location": {
+        "range": {
+          "end": {
+            "character": 59,
+            "line": 38
+          },
+          "start": {
+            "character": 1,
+            "line": 38
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "ErrInsufficientFunds"
+    },
+    {
+      "kind": 13,
+      "location": {
+        "range": {
+          "end": {
+            "character": 64,
+            "line": 39
+          },
+          "start": {
+            "character": 1,
+            "line": 39
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "ErrPaymentProcessing"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 70
+          },
+          "start": {
+            "character": 0,
+            "line": 42
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "(*TransactionService).Call"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 77
+          },
+          "start": {
+            "character": 0,
+            "line": 72
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "(*TransactionService).validateWalletActive"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 84
+          },
+          "start": {
+            "character": 0,
+            "line": 79
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "(*TransactionService).validateCurrencyMatch"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 94
+          },
+          "start": {
+            "character": 0,
+            "line": 86
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "(*TransactionService).validateSufficientBalance"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 110
+          },
+          "start": {
+            "character": 0,
+            "line": 96
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "(*TransactionService).buildTransaction"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 117
+          },
+          "start": {
+            "character": 0,
+            "line": 112
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "(*TransactionService).deductBalance"
+    },
+    {
+      "kind": 6,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 131
+          },
+          "start": {
+            "character": 0,
+            "line": 119
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "(*TransactionService).chargePaymentGateway"
+    },
+    {
+      "kind": 12,
+      "location": {
+        "range": {
+          "end": {
+            "character": 1,
+            "line": 135
+          },
+          "start": {
+            "character": 0,
+            "line": 133
+          }
+        },
+        "uri": "file://./internal/service/transaction_service.go"
+      },
+      "name": "failure"
+    }
+  ],
+  null
+]
