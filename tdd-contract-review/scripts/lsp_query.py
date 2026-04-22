@@ -5,16 +5,21 @@ First invocation creates a venv next to this script and pip-installs
 multilspy, then re-execs inside it. Subsequent invocations just import.
 
 Usage:
-  lsp_query.py --lang LANG --project PATH definition FILE LINE COL
-  lsp_query.py --lang LANG --project PATH document_symbols FILE
-  lsp_query.py --lang LANG --project PATH references FILE LINE COL
+  lsp_query.py --lang LANG --project PATH [--run-dir DIR] definition FILE LINE COL
+  lsp_query.py --lang LANG --project PATH [--run-dir DIR] document_symbols FILE
+  lsp_query.py --lang LANG --project PATH [--run-dir DIR] references FILE LINE COL
 
 LANG values: ruby, typescript, javascript, go, python, java, rust,
              csharp, dart, kotlin, php, cpp.
 
 FILE is relative to --project. LINE and COL are 0-indexed (LSP convention).
 
-Output: JSON to stdout. Bootstrap and LSP server log lines go to stderr.
+Output:
+  Without --run-dir: JSON to stdout.
+  With --run-dir DIR: JSON written to DIR/lsp/<auto>.json; stdout prints
+    `WROTE: <path>`. Filename is derived from op + file + line/col so
+    repeat queries are idempotent (overwrite the same file = effective
+    per-run cache). Bootstrap and LSP server log lines always go to stderr.
 """
 import json
 import os
@@ -46,6 +51,7 @@ ensure_venv()
 
 import argparse  # noqa: E402
 import glob  # noqa: E402
+import re  # noqa: E402
 
 from multilspy import SyncLanguageServer  # noqa: E402
 from multilspy.multilspy_config import MultilspyConfig  # noqa: E402
@@ -72,10 +78,27 @@ def setup_lang_toolchain(lang):
             prepend_path(gem_bin)
 
 
+def slugify_path(p):
+    """app/controllers/api/v1/foo.rb -> app-controllers-api-v1-foo-rb"""
+    return re.sub(r"[^A-Za-z0-9]+", "-", p).strip("-")
+
+
+def auto_filename(op, file, line=None, col=None):
+    slug = slugify_path(file)
+    if line is not None:
+        return f"{op}__{slug}__L{line}C{col}.json"
+    return f"{op}__{slug}.json"
+
+
 def build_parser():
     ap = argparse.ArgumentParser(description="LSP query wrapper")
     ap.add_argument("--lang", required=True, help="multilspy code_language")
     ap.add_argument("--project", required=True, help="repo root absolute path")
+    ap.add_argument(
+        "--run-dir",
+        default=None,
+        help="if set, write JSON to <run-dir>/lsp/<auto>.json and print WROTE: <path>",
+    )
     sub = ap.add_subparsers(dest="op", required=True)
 
     p_def = sub.add_parser("definition", help="resolve symbol at FILE:LINE:COL")
@@ -117,8 +140,19 @@ def main():
         else:
             sys.exit(f"unknown op: {args.op}")
 
-    json.dump(result, sys.stdout, indent=2, default=str)
-    sys.stdout.write("\n")
+    if args.run_dir:
+        out_dir = Path(args.run_dir).resolve() / "lsp"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        line = getattr(args, "line", None)
+        col = getattr(args, "col", None)
+        out_path = out_dir / auto_filename(args.op, args.file, line, col)
+        with open(out_path, "w") as f:
+            json.dump(result, f, indent=2, default=str)
+            f.write("\n")
+        sys.stdout.write(f"WROTE: {out_path}\n")
+    else:
+        json.dump(result, sys.stdout, indent=2, default=str)
+        sys.stdout.write("\n")
 
 
 if __name__ == "__main__":

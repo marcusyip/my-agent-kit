@@ -191,10 +191,12 @@ CLI:
 
 ```bash
 SCRIPT="<plugin-root>/tdd-contract-review/scripts/lsp_query.py"
-"$SCRIPT" --lang ruby --project <repo-root> document_symbols <file>
-"$SCRIPT" --lang ruby --project <repo-root> definition <file> <line> <col>
-"$SCRIPT" --lang ruby --project <repo-root> references <file> <line> <col>
+"$SCRIPT" --lang ruby --project <repo-root> --run-dir $RUN_DIR document_symbols <file>
+"$SCRIPT" --lang ruby --project <repo-root> --run-dir $RUN_DIR definition <file> <line> <col>
+"$SCRIPT" --lang ruby --project <repo-root> --run-dir $RUN_DIR references <file> <line> <col>
 ```
+
+**Always pass `--run-dir $RUN_DIR`.** With the flag set, the wrapper writes each query's JSON to `$RUN_DIR/lsp/<op>__<file-slug>__L<line>C<col>.json` and prints `WROTE: <path>` to stdout instead of dumping the body. Filenames are derived deterministically from the operation + file + position, so a repeat query overwrites the same file — that gives you an effective per-run cache and a flat audit trail of every LSP call the run made. Omit the flag only when running the script by hand to inspect a single response on stdout.
 
 Languages: `ruby`, `typescript`, `javascript`, `go`, `python`, `java`, `rust`, `csharp`, `dart`, `kotlin`, `php`, `cpp`. The first call per language pays a one-time install cost (multilspy fetches the language server binary). Cold-start per invocation is ~5–30s; this is acceptable for call-tree work because accuracy beats latency at Step 3.
 
