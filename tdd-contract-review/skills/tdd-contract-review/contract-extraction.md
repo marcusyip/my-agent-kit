@@ -185,18 +185,20 @@ For building the `### Call trees` block, **LSP is mandatory, not optional.** Thi
 
 **Algorithm — execute every step, in order, for every applicable target:**
 
-1. **Seed.** Run `document_symbols` on the unit's entry source file. The returned ranges are the own-node line ranges for every method/class in that file. Do not estimate ranges from a Read; use the LSP output verbatim.
+1. **Seed.** Run `document_symbols` on the unit's entry source file to get accurate line ranges for the symbols it defines. Promote ONLY the symbol(s) the unit owns (e.g., for `POST /api/v1/transactions` on `TransactionsController#create`, that's `create` plus any `before_action` filters that gate it — not `index`, `show`, etc.). Use the LSP-returned ranges verbatim; do not estimate from a Read.
+
+   **Coordinate convention.** LSP positions are 0-indexed (`line: 9` means file line 10). The own-node format `Symbol @ path:start-end` uses 1-indexed line numbers — add 1 to the LSP `line` field before writing.
 2. **Walk every call site.** For EVERY call site inside EVERY own-node body, run `definition` on the call site's file:line:col. Treat every method invocation, function call, constant reference, and module access as a call site — do not pre-filter by guessing which ones "look interesting".
    - If `definition` returns a target file inside the project: promote the target to an own-node and go to step 3 for that file.
    - If `definition` returns an empty array (`[]`): mark the line `[unresolved]` in the tree with a one-line reason (`-- definition returned empty, runtime dispatch suspected` is a fine default). Do NOT silently substitute Read+Grep here — the empty result is the contract.
    - If `definition` returns a target outside the project (gem, stdlib, external SDK): emit `[external -> slug]` per the tree grammar.
 3. **Recurse.** For each newly-promoted own-node file, run `document_symbols` (once per file — the wrapper auto-overwrites, so a repeat is cheap but adds no information). Then loop back to step 2 for every call site inside its own-nodes.
-4. **Closure.** Before declaring the tree complete, run `references` on the entry-point symbol. The returned callers reveal whether anything in the unit's blast radius was missed (relevant for Checkpoint 2 file closure).
+4. **Closure (optional).** Run `references` on the entry-point symbol when Checkpoint 2 needs to confirm test-file scope — the returned callers surface test files that exercise the unit. The gate does not require this call; skip it when the call tree from steps 1–3 is sufficient.
 
 **Read+Grep is NOT an acceptable substitute for `definition`.** It is permitted ONLY for:
 - **Contract field semantics** — validation rules, enum values, response shapes, request param keys, default values. LSP returns symbol locations, not what those symbols mean.
 - **`definition` returned empty** — and only after you've marked the node `[unresolved]`. Using Grep to "fill in" what `definition` couldn't resolve is non-compliant: the contract is that the node was unresolvable, not that you grepped harder.
-- **Runtime dispatch** — `before_action`, `rescue_from`, `send`, `method_missing`, DI container lookups. Mark `[unresolved]` and put the responsible file in the Root set with `dispatched-at-runtime` / `implicitly-invoked`.
+- **Runtime dispatch** — `before_action`, `rescue_from`, `send`, `method_missing`, DI container lookups. Mark `[unresolved]` and put the responsible file in the Root set with `dispatched-at-runtime` / `implicitly-invoked`. Solargraph (Ruby) is especially weak here.
 
 A sub-agent that skips `definition` because it could "tell from the code" what the call resolves to is producing an unaudited tree. Run the LSP call.
 
@@ -206,7 +208,7 @@ A sub-agent that skips `definition` because it could "tell from the code" what t
 - LSP calls: <D> document_symbols, <F> definitions, <R> references
 ```
 
-These three counts equal the count of `document_symbols__*.json`, `definition__*.json`, and `references__*.json` files in `$RUN_DIR/lsp/`. The orchestrator's LSP-utilization GATE compares them against the Root set / Call tree counts; under-reporting fails the gate.
+These three counts equal the count of `document_symbols__*.json`, `definition__*.json`, and `references__*.json` files in `$RUN_DIR/lsp/`. The orchestrator's LSP-utilization GATE counts those files on disk directly (it does not parse this Summary line): it requires `lsp_artifacts >= root_set_files` AND `>= 1 definition` query. The Summary line is a self-report for human reviewers, not a gate input.
 
 CLI:
 
@@ -220,12 +222,6 @@ SCRIPT="<plugin-root>/tdd-contract-review/scripts/lsp_query.py"
 **Always pass `--run-dir $RUN_DIR`.** With the flag set, the wrapper writes each query's JSON to `$RUN_DIR/lsp/<op>__<file-slug>__L<line>C<col>.json` and prints `WROTE: <path>` to stdout instead of dumping the body. Filenames are derived deterministically from the operation + file + position, so a repeat query overwrites the same file — that gives you an effective per-run cache and a flat audit trail of every LSP call the run made. Omit the flag only when running the script by hand to inspect a single response on stdout.
 
 Languages: `ruby`, `typescript`, `javascript`, `go`, `python`, `java`, `rust`, `csharp`, `dart`, `kotlin`, `php`, `cpp`. The first call per language pays a one-time install cost (multilspy fetches the language server binary). Cold-start per invocation is ~5–30s; this is acceptable for call-tree work because accuracy beats latency at Step 3.
-
-**Coordinate convention.** LSP positions are 0-indexed (`line: 9` means file line 10). The own-node format `Symbol @ path:start-end` uses 1-indexed line numbers — add 1 to the LSP `line` field before writing.
-
-When LSP is NOT the right tool:
-- **Contract field semantics** — validations, enum values, response shapes, request param keys, default values. LSP returns symbol locations, not what those symbols mean. Read the source.
-- **Runtime dispatch** — `before_action`, `rescue_from`, `send`, `method_missing`, DI lookup. Solargraph (Ruby) is especially weak here. After LSP returns nothing, tag the call `[unresolved]` and put the responsible file in the Root set with `dispatched-at-runtime` or `implicitly-invoked`.
 
 ## Per-Framework Extraction
 

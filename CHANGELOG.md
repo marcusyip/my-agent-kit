@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.1] - 2026-04-22
+
+### tdd-contract-review
+
+#### Changed
+- **`contract-extraction.md` LSP algorithm section tidied.** No behavior change; clarity and doc-accuracy pass:
+  - Step 1 (Seed) now scopes own-nodes to **only the symbol(s) the unit owns** (e.g., `create` on a controller, not `index`/`show`/etc.) — fixes prior "every method/class in that file" over-scoping.
+  - **Coordinate convention** (LSP 0-indexed → own-node 1-indexed `+1`) moved into Step 1 where the agent first reads line ranges, instead of being buried after the CLI examples.
+  - Step 4 (`references` closure) downgraded from mandatory to **optional** with a concrete use case — the gate doesn't enforce it, and "blast radius" was an imprecise frame for a single-unit review.
+  - Gate description rewritten to match actual behavior: the gate counts JSON files in `$RUN_DIR/lsp/` directly (it does not parse the Summary line), requires `lsp_artifacts >= root_set_files` AND `>= 1 definition`. The Summary line is informational, not a gate input.
+  - Duplicate "When LSP is NOT the right tool" block at the end **deleted** — its content was a near-subset of the earlier permitted-uses list (Solargraph-weak note folded into the runtime-dispatch bullet).
+
 ## [0.40.0] - 2026-04-22
 
 ### tdd-contract-review
