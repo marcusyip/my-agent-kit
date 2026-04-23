@@ -137,18 +137,23 @@ Flags:
   no-critical    disable critical mode even if auto-detected
 ```
 
-### Step 2: Discovery + Unit Guard
+### Step 2: Preliminary Survey + Unit Guard
+
+This step is a fast preliminary survey from test files and known-location files. It is **NOT authoritative** — Step 3's LSP call-tree walk is the ground truth for DB model tracing, outbound API discovery, and everything downstream. Step 2's job is to (a) resolve the unit so the GATE can fire before any agent dispatches and (b) seed the extraction agent with the cheapest useful signals. Do not walk the source tree here.
 
 1. **Find test files.** Glob for `**/*.test.{ts,tsx,js,jsx}`, `**/*.spec.{ts,tsx,js,jsx}`, `**/*_test.go`, `**/*_spec.rb`, `**/*.test.py`, `**/test_*.py`
-2. **Detect test framework.**
-3. **Resolve the unit to a single source file.**
+2. **Detect test framework** from the test files.
+3. **Resolve the unit to a single source file** (required for the GATE below).
    - If unit is `VERB /path`: grep for route definitions, find the handler.
    - If unit is a class name: glob + grep for `class ClassName`.
    - If unit is a file path: use it directly.
-4. **Find DB schema files** traced from the unit's source: schema snapshot (`db/schema.rb`, `structure.sql`, `schema.prisma`) and model/entity files. Migrations are fallback only — do not include them when a snapshot exists.
-5. **Find outbound API client files** traced from the unit's source.
-6. **Check project conventions.** Read CLAUDE.md, config files.
-7. **Detect critical mode** unless overridden by `critical`/`no-critical` arg. Money/balance/currency fields, payment gateways, or decimal types → critical mode ON (loads both money-correctness and API-security checklists).
+4. **DB schema snapshot** — glob known locations only: `db/schema.rb`, `structure.sql`, `db/structure.sql`, `prisma/schema.prisma`, `schema.sql`. Pick the first hit, or report `not found`. Do NOT walk model/entity files — Step 3's LSP walk traces those authoritatively.
+5. **Check project conventions.** Read CLAUDE.md, config files.
+6. **Detect critical mode** unless overridden by `critical`/`no-critical` arg. Narrow-scope detection:
+   - Scan test files (already globbed in step 1) for money vocabulary: `amount`, `balance`, `currency`, `decimal`, `cents`, `price`, `fee`.
+   - Scan the schema snapshot (if found) for `decimal` / `numeric` columns on money-like names.
+   - Any hit → critical mode ON.
+   - This is intentionally narrower than a full-repo sweep. If it misses, the user can force with the `critical` flag.
 
 **GATE (one-unit):** Exactly one source file must resolve from the unit identifier.
 - **0 matches**: print the following and stop:
@@ -176,14 +181,14 @@ Flags:
 === TDD Contract Review — Run Preview ===
 Unit:                <unit identifier>
 Source:              <resolved source file:line of handler or class def>
-DB schema:           <N files, or "not found">
-Outbound:            <N clients, or "not found">
-Critical mode:       ON (reason: <one-line signal that triggered it, e.g., "decimal column 'balance' in db/schema.rb">)
+DB schema snapshot:  <path, or "not found">
+Critical mode:       ON (reason: <one-line signal that triggered it, e.g., "test file mentions 'amount'" or "decimal column 'balance' in db/schema.rb">)
                      OR OFF
 Previous extraction: found at <$PREV_EXTRACTION> (<YYYY-MM-DD HH:MM from dir prefix>)
                      OR "none found (skip reuse ask)"
 Pipeline:            <N> agent dispatches, 3 checkpoints
 Run dir:             $RUN_DIR
+Note: DB model files and outbound API clients are discovered by Step 3's LSP walk, not here.
 ```
 
 The first checkpoint fires within ~30s of this preview (after extraction, or sooner if the user picks Reuse at Step 2.6). This preview is informational — it makes auto-detected critical mode visible and flags when a prior extraction is available for reuse. It is NOT a hard gate; do not wait for input here.
@@ -273,9 +278,10 @@ Prompt:
    Run directory: $RUN_DIR
    Unit: [unit identifier]
    Source file: [resolved path]
-   DB schema files: [list]
-   Outbound client files: [list]
+   DB schema snapshot: [path, or "not found — discover via LSP walk + known-location glob"]
    Critical mode: [yes/no]
+
+   Step 2 ran a deliberately narrow preliminary survey (test files + source file + schema snapshot only). It did NOT enumerate DB model files or outbound API clients — YOU discover those via the mandatory LSP call-tree walk below.
 
    Read [skill dir]/contract-extraction.md in full. It contains:
    - 'Output File Shape (01-extraction.md)' — follow the ordered sections, row labels, tree grammar, and root-set tag vocabulary verbatim; the orchestrator grep-gates on them. See benchmark/fixtures/v2-example/01-extraction.md for a worked example.
