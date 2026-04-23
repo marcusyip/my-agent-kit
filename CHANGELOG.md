@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.43.0] - 2026-04-23
+## [0.44.0] - 2026-04-23
+
+### tdd-contract-review
+
+#### Changed
+- **Step 2 renamed "Discovery" → "Preliminary Survey" and narrowed in scope.** The step's output is now explicitly marked "NOT authoritative" — it produces a rough DB-snapshot + model-class list to seed Step 3, and the authoritative call tree / DB touch set / outbound surface is built in Step 3 via `lsp_tree.py`. Dropped the standalone outbound-client discovery pass (outbound edges fall out of the LSP walk in Step 3) and restricted the DB pass to `schema.rb` / migrations + model class names (no more column-by-column guesswork). Step 3 prompt params updated to match.
+- **Step 6 sub-agent prompts now splice skill sections inline via `<<<CONTEXT_PACK>>>` markers instead of instructing each agent to `Read` full skill files.** New Step 6a.1 pre-compiles 10 named packs (`PACK_SCENARIOS`, `PACK_OUTSHAPE_*`, `PACK_MODEL`, `PACK_MONEY_*`, `PACK_SECURITY_*`) by extracting just the relevant headings from `scenario-checklist.md`, `test-patterns.md`, `gap-analysis.md`, `money-correctness-checklists.md`, and `api-security-checklists.md`. Each per-type / F1 / F2 / merge agent receives only the packs it needs. Cuts sub-agent token spend ~50% in non-critical mode and ~70% in critical mode; DEEPEN REQUEST block on revise also points at `PACK_SCENARIOS` instead of the full file path.
+
+
 
 ### tdd-contract-review
 
