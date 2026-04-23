@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.0] - 2026-04-23
+
+### tdd-contract-review
+
+#### Added
+- **Go interface-hop in `scripts/lsp_tree.py`.** When the walker hits a method whose `definition` lands on a Go `interface { ... }` signature, it now issues a `textDocument/implementation` request at the original call site and descends into every concrete implementation returned by `gopls`. Previously the tree dead-ended at `Method @ path [symbol-not-found]` and the model/data layer was invisible. The interface node is rendered with an `[interface]` tag, each impl becomes a normal own-node child. A new `implementation__*.json` artifact is persisted under `$RUN_DIR/lsp/` for auditability.
+- **`benchmark/check-lsp-tool.sh` — Go interface-hop regression guard.** Seeds `(*TransactionService).chargePaymentGateway`, asserts `[interface]` tag + `(*StubGateway).Charge` concrete impl + absence of `[symbol-not-found]` + presence of the implementation artifact. Fails loudly if a future refactor re-introduces the dead-end.
+- **Native `LSP` tool added to `agents/staff-engineer.md` frontmatter.** Subagent can now call `definition` / `implementations` / `references` directly for languages `lsp_tree.py` doesn't cover (Python, Rust, Java, C#, Kotlin, Dart). Requires the user's Claude Code to have a code-intelligence plugin installed.
+- **Step 2.5 LSP Plugin Preflight in `SKILL.md`.** One `AskUserQuestion` per run nudges the user to install a code-intelligence plugin when they haven't. Three options: `Yes — proceed` / `Not installed — proceed anyway` / `Not installed — stop to install` (clean abort, removes empty `$RUN_DIR`). The scripted LSP path runs either way; the preflight only affects whether the native `LSP` tool is available for non-lsp_tree languages.
+
+#### Changed
+- **Three-path LSP routing.** SKILL.md and contract-extraction.md now route by language + plugin availability: `lsp_tree.py` for Go/Ruby/TS (preferred), native `LSP` tool for other languages when the plugin is installed, `lsp_query.py` in two roles — (a) resolve a single ambiguous dispatch mid-walk, (b) last-resort fallback for non-lsp_tree languages when no plugin is installed. Previously `lsp_query.py` was the generic fallback for all non-lsp_tree work.
+- **Previous-extraction check renumbered Step 2.5 → Step 2.6.** To make room for the new LSP preflight. Cross-references in `benchmark/test-plan.md` and `benchmark/notes/token-usage.md` updated.
+
+#### Removed
+- **LSP-utilization GATE (Step 3).** The gate counted `$RUN_DIR/lsp/*.json` artifacts and required `LSP_COUNT >= ROOT_SET_COUNT` AND `>= 1 definition`. Native LSP tool invocations leave no on-disk artifacts, so the gate would now always fail for non-lsp_tree languages using the native path. Removed rather than made language-aware — the shape gates (Checkpoint 1 / 2 / sub-files) still catch the user-visible failure modes; under-utilization is now surveilled by the `## Summary` self-report line only. The Revise checkpoint path still exists for user-initiated deepen requests.
+
 ## [0.42.1] - 2026-04-23
 
 ### tdd-contract-review
