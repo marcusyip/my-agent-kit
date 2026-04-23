@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.45.0] - 2026-04-23
+
+### tdd-contract-review
+
+#### Removed
+- **`Revise` button (auto-iterate deepen path).** Checkpoint `AskUserQuestion` now surfaces only `Continue` / `Stop`; the former `Revise` option re-dispatched the current agent with a blind "look harder" DEEPEN REQUEST block. At Checkpoint 3 that fanned out to every Extracted per-type agent + F1 + F2 + merge (up to 6 agents × cap 3 visits = 18 re-runs possible) without telling the agent what was wrong. The free-text path (`Type something else`) remains the sole revision channel — it produces sharper re-dispatches because the user's typed feedback is passed through verbatim as `REVISION REQUEST`. Reviewed token economics in the skill review on 2026-04-23; the CP3 auto-iterate was the biggest single source of untargeted spend in the skill.
+- **DEEPEN REQUEST blocks.** Three blocks removed from `SKILL.md`: Checkpoint 1 (re-walk source), Checkpoint 2 (reconciliation-first re-audit), Per-type + Merge (Checkpoint 3 fan-out). The REVISION REQUEST block template (free-text path) is unchanged and remains the only revision injection.
+
+#### Changed
+- **Revision cap semantics.** Cap stays at 3 per checkpoint but now counts only specific-feedback (free-text) revisions. On the 4th visit, the question prefix `Revised 3 times already — please Continue or Stop.` is added; further free-text input is treated as Continue rather than dispatching.
+- **Review Hints at every checkpoint** reworded: references to a `Revise` button now say "type feedback" / "revise with feedback", matching the free-text-only reality.
+- **`benchmark/test-plan.md`** category E renamed "Reuse & Revision paths" and cases E5/E7/E8 updated to match the free-text-only revision model; E1–E4 and E6 unchanged.
+
 ## [0.44.0] - 2026-04-23
 
 ### tdd-contract-review
