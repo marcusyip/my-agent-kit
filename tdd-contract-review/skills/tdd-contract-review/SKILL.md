@@ -188,36 +188,57 @@ Note: DB model files and outbound API clients are discovered by Step 3's LSP wal
 
 The first checkpoint fires within ~30s of this preview (after extraction, or sooner if the user picks Reuse at Step 2.6). This preview is informational — it makes auto-detected critical mode visible and flags when a prior extraction is available for reuse. It is NOT a hard gate; do not wait for input here.
 
-### Step 2.5: LSP Plugin Preflight
+### Step 2.5: LSP Plugin Check
 
-Step 3 uses `lsp_tree.py` / `lsp_query.py` as its scripted LSP path — always available regardless of this check. Claude Code ALSO ships a built-in `LSP` tool that adds native interface→impl hops, call hierarchies, and type information to the agent's reasoning, but only when a [code-intelligence plugin](https://code.claude.com/docs/en/discover-plugins#code-intelligence) is installed for the target language. The scripted path is the correctness floor; the built-in tool is an accuracy upgrade the user can opt into.
+Step 3 uses `lsp_tree.py` / `lsp_query.py` as its scripted LSP path — always available regardless of this check. Claude Code ALSO ships a native `LSP` tool via the [code-intelligence plugin](https://code.claude.com/docs/en/discover-plugins#code-intelligence), which adds interface→impl hops, call hierarchies, and type information when installed. The scripted path is the correctness floor; the native tool is an accuracy upgrade for languages `lsp_tree.py` does not natively cover.
 
-**AskUserQuestion** once per run so the user can pause and install if they'd benefit. The scripted LSP path runs either way — this check only nudges install, it does not gate correctness.
+This step auto-detects installation and language, then prompts only when the prompt is actionable. Users with the plugin already installed, and users on Go/Ruby/TypeScript, see no prompt at all.
 
-- question: `Claude Code's built-in \`LSP\` tool improves accuracy on interface/impl hops and call hierarchies. Is the code-intelligence plugin installed for <detected-lang>? (Optional — the scripted LSP path runs regardless.)`
-- header: `LSP preflight`
-- options (exactly these three, in this order):
-  - label `Yes — proceed` — description: `Plugin installed; continue.`
-  - label `Not installed — proceed anyway` — description: `Continue with scripted LSP only.`
-  - label `Not installed — stop to install` — description: `Exit so I can install and re-run.`
+**Detect plugin installation.** Inspect `~/.claude/plugins/installed_plugins.json` — it lists every installed plugin as `<name>@<marketplace>` keys. Match the plugin name (case-insensitive) against `code-intelligence`:
 
-Resolve `<detected-lang>` from the unit's source file extension (`.go` → `go`, `.rb` → `ruby`, `.ts`/`.tsx` → `typescript`, `.py` → `python`, etc.).
+```bash
+PLUGIN_INSTALLED=0
+INSTALLED_FILE="$HOME/.claude/plugins/installed_plugins.json"
+if command -v jq >/dev/null 2>&1 && [[ -f "$INSTALLED_FILE" ]]; then
+  if jq -r '.plugins | keys[]' "$INSTALLED_FILE" 2>/dev/null \
+     | awk -F@ '{print tolower($1)}' \
+     | grep -qx 'code-intelligence'; then
+    PLUGIN_INSTALLED=1
+  fi
+fi
+```
+
+Missing file, missing jq, or malformed JSON all mean "not detected" — the user still reaches the prompt below for non-native-covered languages, so a spurious prompt once is acceptable.
+
+**Detect language** from the unit's source file extension: `.go` → `go`, `.rb` → `ruby`, `.ts`/`.tsx` → `typescript`, `.py` → `python`, `.rs` → `rust`, `.java` → `java`, `.cs` → `csharp`, `.kt` → `kotlin`, `.dart` → `dart`, anything else → `other`. Store as `$DETECTED_LANG`. Also compute `$NATIVE_LSP_AVAILABLE = yes` iff `PLUGIN_INSTALLED=1`, else `no` — this string is passed into the Step 3 agent prompt so the agent deterministically knows which LSP path to use.
+
+**Decide whether to prompt (no question fires in cases 1 or 2):**
+
+1. `PLUGIN_INSTALLED=1` → print `(code-intelligence plugin detected — native LSP tool available for <detected-lang>)` and go to Step 2.6.
+2. `PLUGIN_INSTALLED=0` AND `$DETECTED_LANG` ∈ { `go`, `ruby`, `typescript` } → print `(scripted LSP covers <detected-lang> fully; native LSP tool not needed)` and go to Step 2.6.
+3. `PLUGIN_INSTALLED=0` AND `$DETECTED_LANG` ∈ { `python`, `rust`, `java`, `csharp`, `kotlin`, `dart`, `other` } → run the **AskUserQuestion** below.
+
+**AskUserQuestion** (only reached when the prompt is actionable):
+
+- question: `The code-intelligence plugin (adds a native LSP tool for tracing function calls across files) is not installed. It would improve accuracy on <detected-lang>. The skill continues either way.`
+- header: `Code-intelligence plugin`
+- options (exactly these two, in this order):
+  - label `Continue without it` — description: `Use scripted LSP only. Accuracy is slightly lower on <detected-lang>.`
+  - label `Show install steps and continue` — description: `Print how to install, then proceed. Benefit applies on the next run.`
 
 **Branch on selection:**
 
-1. **Yes — proceed** → go to Step 2.6.
-2. **Not installed — proceed anyway** → print `(continuing with scripted LSP only; native LSP tool not installed)` and go to Step 2.6.
-3. **Not installed — stop to install** → print the block below, remove the empty run directory (`rmdir "$RUN_DIR" 2>/dev/null || true`), and exit. No `$RUN_DIR` artifacts are written.
+1. **Continue without it** → go to Step 2.6.
+2. **Show install steps and continue** → print the block below, then go to Step 2.6 (does NOT stop the current run).
 
    ```
-   Install Claude Code's code-intelligence plugin:
-     1. Run `/plugins` in Claude Code and install the plugin for <detected-lang>
-     2. Ensure the language server binary (gopls / pyright / typescript-language-server / …) is on $PATH
-     3. Re-run /tdd-contract-review <unit>
+   Code-intelligence plugin — install for next run:
+     1. In Claude Code, run `/plugins` and install the `code-intelligence` plugin
+     2. Ensure the language server binary for <detected-lang> (pyright / rust-analyzer / jdtls / …) is on $PATH
    Docs: https://code.claude.com/docs/en/discover-plugins#code-intelligence
    ```
 
-Free-text fallback: affirmative-sounding text ("yes", "go", "proceed", "ok", "installed") → treat as (1); stop-intent text ("stop", "quit", "exit", "cancel") → treat as (3); anything else → treat as (2) with the one-line warning.
+Free-text fallback: text matching "install" / "show" / "yes" / "steps" → treat as (2); anything else → treat as (1).
 
 ### Step 2.6: Previous Extraction Check (optional reuse)
 
@@ -275,6 +296,7 @@ Prompt:
    Source file: [resolved path]
    DB schema snapshot: [path, or "not found — discover via LSP walk + known-location glob"]
    Critical mode: [yes/no]
+   Native LSP tool available: [$NATIVE_LSP_AVAILABLE — yes if the code-intelligence plugin is installed (Step 2.5 detection), no otherwise]
 
    Step 2 ran a deliberately narrow preliminary survey (test files + source file + schema snapshot only). It did NOT enumerate DB model files or outbound API clients — YOU discover those via the mandatory LSP call-tree walk below.
 
@@ -282,15 +304,15 @@ Prompt:
    - 'Output File Shape (01-extraction.md)' — follow the ordered sections, row labels, tree grammar, and root-set tag vocabulary verbatim; the orchestrator grep-gates on them. See benchmark/fixtures/v2-example/01-extraction.md for a worked example.
    - 'LSP-assisted call-tree construction (mandatory algorithm)' — execute the algorithm step by step. Three tool paths are available:
      - `[plugin root]/tdd-contract-review/scripts/lsp_tree.py` — preferred for Go, Ruby, and TypeScript/TSX (including React / React Native). Walks the full call tree in one invocation and persists every underlying LSP query under `$RUN_DIR/lsp/`.
-     - Native `LSP` tool — for other languages (Python, Rust, Java, C#, Kotlin, Dart) when the Step 2.5 preflight confirmed a code-intelligence plugin is installed. Use its `definition` / `implementations` / `references` operations directly; no scripted wrapper needed.
-     - `[plugin root]/tdd-contract-review/scripts/lsp_query.py` — two roles: (a) resolve a single ambiguous dispatch mid-walk when `lsp_tree.py` under-resolves a call site, or (b) last-resort fallback for non-lsp_tree languages when no code-intelligence plugin is installed.
+     - Native `LSP` tool — for other languages (Python, Rust, Java, C#, Kotlin, Dart) when `Native LSP tool available: yes` above. Use its `definition` / `implementations` / `references` operations directly; no scripted wrapper needed.
+     - `[plugin root]/tdd-contract-review/scripts/lsp_query.py` — two roles: (a) resolve a single ambiguous dispatch mid-walk when `lsp_tree.py` under-resolves a call site, or (b) last-resort fallback for non-lsp_tree languages when `Native LSP tool available: no`.
      For scripted tools, pass `--run-dir $RUN_DIR` to every invocation so each query's JSON is persisted under `$RUN_DIR/lsp/` for auditability. See `contract-extraction.md` for the exact CLIs and routing rules.
    - Per-framework extraction guidance for API / DB / Jobs / Outbound / UI Props.
    - 'Contract Extraction Summary Example' — the typed-prefix format for fields following the mandatory sections.
 
    If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md, and append the Money-correctness + API-security dimension tables after the Contract Extraction Summary.
 
-   LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py --lang <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name> --scope local --run-dir $RUN_DIR` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$RUN_DIR/lsp/`. **Always pass `--scope local`** so the rendered tree drops stdlib / gem / `node_modules` edges (only the rendered tree is trimmed — every LSP query still runs). For other languages, use the native `LSP` tool's `definition` / `implementations` / `references` on EVERY call site in EVERY own-node. If the Step 2.5 preflight confirmed no code-intelligence plugin is installed, fall back to `lsp_query.py definition --run-dir $RUN_DIR <file> <line> <col>` on every call site instead. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
+   LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py --lang <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name> --scope local --run-dir $RUN_DIR` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$RUN_DIR/lsp/`. **Always pass `--scope local`** so the rendered tree drops stdlib / gem / `node_modules` edges (only the rendered tree is trimmed — every LSP query still runs). For other languages: if `Native LSP tool available: yes`, use the native `LSP` tool's `definition` / `implementations` / `references` on EVERY call site in EVERY own-node; if `Native LSP tool available: no`, fall back to `lsp_query.py definition --run-dir $RUN_DIR <file> <line> <col>` on every call site instead. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
 
    WRITE the full output to $RUN_DIR/01-extraction.md. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.md' when done."
 ```
