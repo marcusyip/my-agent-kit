@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.45.1] - 2026-04-23
+
+### tdd-contract-review
+
+#### Changed
+- **Checkpoint `AskUserQuestion` wording tightened.** The "to revise, type feedback" hint moved from `Stop`'s description into the question text, where meta-guidance belongs. `Continue` now says `Proceed to <next step>. Artifacts up to this checkpoint are final.` (explicit about the one-way nature of accepting a checkpoint). `Stop` now says `Exit without proceeding. All files in $RUN_DIR are preserved.` — single-purpose, no longer doubling as a revise-nudge. No behavior change; prompts only.
+
 ## [0.45.0] - 2026-04-23
 
 ### tdd-contract-review
