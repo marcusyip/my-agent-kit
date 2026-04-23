@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.42.0] - 2026-04-23
+
+### tdd-contract-review
+
+#### Added
+- **`scripts/lsp_tree.py --lang ts` — TypeScript / TSX support.** The standalone call-tree builder now handles `.ts` and `.tsx` files, including React and React Native function components, hooks, and class components. Closes the third stack in the benchmark roadmap (Go, Ruby, TypeScript) — the walker, cache, `--scope local` filter, and `--run-dir` artifact writer all reuse the existing language-agnostic machinery.
+  - Call-site extraction lives in a new helper `scripts/callsites_ts.py` using `tree-sitter-typescript` (PyPI wheels; no Node dependency). Symbol grammar mirrors the Ruby/Solargraph convention: `Foo#bar` (instance method), `Foo.bar` (static · namespace member · object-literal arrow), `Foo` (class/function/const-arrow at module scope), `bar` (free function / hook at module scope).
+  - **`preopen_typescript_project()`** walks `project/src/**/*.{ts,tsx}` at startup and opens each file in the LSP session before any query. Without this, `typescript-language-server`'s first cross-file `definition` call returns the local import binding instead of chasing through to the source file. Go / Ruby servers index the whole project on startup and don't need this.
+- **`benchmark/sample-app-ts/`** — React Native-style fixture (screen + custom hook + service + model, no `node_modules`) that exercises the depth-5 TS walk end-to-end. External hooks deliberately tag as `[external]`.
+- **`benchmark/notes/lsp-tree-ts-options.md`** — design notes capturing the parser-option comparison (tree-sitter vs. tsc API vs. multilspy `semanticTokens`), the per-language call-tree helper status matrix, and the outcome of the Opt 3 spike (multilspy exposes no `semanticTokens` path, so the tree-sitter helper wins on reduced surface area).
+
+#### Changed
+- **`SKILL.md` + `contract-extraction.md`** now surface `lsp_tree.py` as the preferred entry point for Go / Ruby / TS, so agents running the skill in other repos discover it. `lsp_query.py` stays as the per-call fallback for other languages (Python, Rust, Java, C#, Kotlin, Dart). Both the Step 3 LSP directive and the Checkpoint-1 deepen block now reference both scripts with language-based dispatch.
+
 ## [0.41.0] - 2026-04-23
 
 ### tdd-contract-review
