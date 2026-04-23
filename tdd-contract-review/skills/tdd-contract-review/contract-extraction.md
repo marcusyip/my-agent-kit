@@ -194,12 +194,16 @@ Two scripts are available. Use the one that fits the language:
 SCRIPT="<plugin-root>/tdd-contract-review/scripts/lsp_tree.py"
 # Symbol grammar: Go "(*Type).Method" / "Name"; Ruby "Foo#bar" / "Foo.bar" / "Foo";
 # TypeScript "Foo#bar" / "Foo.bar" / "Foo" / "bar" (handles .ts AND .tsx / React / RN).
-"$SCRIPT" --lang go   --project <repo-root> --file <rel-path> --symbol "(*Handler).Create" --run-dir $RUN_DIR
-"$SCRIPT" --lang ruby --project <repo-root> --file <rel-path> --symbol "TransactionsController#create" --run-dir $RUN_DIR
-"$SCRIPT" --lang ts   --project <repo-root> --file <rel-path> --symbol "TransactionScreen" --run-dir $RUN_DIR
+# ALWAYS pass --scope local — it trims stdlib / gem / node_modules edges from the
+# rendered tree without suppressing the underlying LSP query (GATE count unaffected).
+"$SCRIPT" --lang go   --project <repo-root> --file <rel-path> --symbol "(*Handler).Create"            --scope local --run-dir $RUN_DIR
+"$SCRIPT" --lang ruby --project <repo-root> --file <rel-path> --symbol "TransactionsController#create" --scope local --run-dir $RUN_DIR
+"$SCRIPT" --lang ts   --project <repo-root> --file <rel-path> --symbol "TransactionScreen"            --scope local --run-dir $RUN_DIR
 ```
 
-Useful flags: `--depth N` (cap walk depth, default 5), `--scope local` (drop calls that resolve outside the project — stdlib/gems — while still running the LSP query so the GATE artifact count is unaffected), `--format json` (machine-readable tree in addition to the LSP artifacts).
+**`--scope local` is the default you want.** Without it, the rendered tree includes every stdlib, gem, or `node_modules` call on the path — `fmt.Sprintf`, `Hash#[]`, `console.log`, React's `useState` — which drowns the unit's real blast radius in noise. The flag trims external edges from the rendered tree only; the LSP `definition` query still runs for each call site and still writes its JSON artifact to `$RUN_DIR/lsp/`, so the Step 3 LSP-utilization GATE (which counts artifacts on disk) is unaffected. Omit it (`--scope all`, the implicit default) only when you deliberately need to audit a dependency boundary.
+
+Other flags: `--depth N` (cap walk depth, default 5), `--format json` (machine-readable tree in addition to the LSP artifacts).
 
 The walker writes the rendered tree to `$RUN_DIR/tree__<file-slug>__<symbol-slug>.md`. Read it, paste the relevant subtree into the `### Call trees` fenced block of `01-extraction.md`, and proceed with the algorithm below for any parts the walker flagged `[unresolved]` or `[depth-cap]` that need deeper inspection.
 

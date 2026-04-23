@@ -257,7 +257,7 @@ Prompt:
 
    If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md, and append the Money-correctness + API-security dimension tables after the Contract Extraction Summary.
 
-   LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py walk --run-dir $RUN_DIR --lang <go|ruby|ts> --project <project-root> <symbol>` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$RUN_DIR/lsp/`. For other languages, fall back to `lsp_query.py definition --run-dir $RUN_DIR <file> <line> <col>` on EVERY call site in EVERY own-node. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. The orchestrator's LSP-utilization GATE counts JSON artifacts in $RUN_DIR/lsp/ after you finish; an under-utilized run will fail the gate and trigger an automatic Revise. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
+   LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py --lang <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name> --scope local --run-dir $RUN_DIR` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$RUN_DIR/lsp/`. **Always pass `--scope local`** so the rendered tree drops stdlib / gem / `node_modules` edges (the LSP query still runs, so the GATE artifact count is unaffected — only the tree is trimmed to the unit's real blast radius). For other languages, fall back to `lsp_query.py definition --run-dir $RUN_DIR <file> <line> <col>` on EVERY call site in EVERY own-node. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. The orchestrator's LSP-utilization GATE counts JSON artifacts in $RUN_DIR/lsp/ after you finish; an under-utilized run will fail the gate and trigger an automatic Revise. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
 
    WRITE the full output to $RUN_DIR/01-extraction.md. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.md' when done."
 ```
@@ -307,11 +307,15 @@ Then automatically re-dispatch the Step 3 agent with the **DEEPEN REQUEST block 
 ```
 DEEPEN REQUEST: The user reviewed $RUN_DIR/01-extraction.md and asked for a
 more complete pass. Re-examine the source exhaustively:
-- LSP re-walk (mandatory). For Go/Ruby/TS, run `lsp_tree.py walk --run-dir
-  $RUN_DIR --lang <go|ruby|ts> --project <project-root> <symbol>` for each
-  root-set entry. For other languages, run `lsp_query.py definition --run-dir
-  $RUN_DIR <file> <line> <col>` for every call site in every own-node you
-  previously resolved via Read or Grep, and persist the result to $RUN_DIR/lsp/.
+- LSP re-walk (mandatory). For Go/Ruby/TS, run `lsp_tree.py --lang
+  <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name>
+  --scope local --run-dir $RUN_DIR` for each root-set entry (always pass
+  `--scope local` — it trims stdlib / gem / node_modules edges from the
+  rendered tree without suppressing the LSP query, so GATE artifact counts
+  are unaffected). For other languages, run `lsp_query.py definition
+  --run-dir $RUN_DIR <file> <line> <col>` for every call site in every
+  own-node you previously resolved via Read or Grep, and persist the
+  result to $RUN_DIR/lsp/.
   After this pass, $RUN_DIR/lsp/ MUST contain at least one JSON file per file
   in the Root set, and at least one `definition__*.json`. The orchestrator's
   LSP-utilization GATE will re-run after you finish; another shallow result
