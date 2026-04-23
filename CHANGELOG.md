@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.46.0] - 2026-04-23
+
+### tdd-contract-review
+
+#### Changed
+- **Step 2.5 LSP plugin preflight → detection-first LSP plugin check.** The previous step asked every user, on every run, "is the code-intelligence plugin installed?" with three options (yes/no-proceed/no-stop). The new step reads `~/.claude/plugins/installed_plugins.json` directly and only prompts when a prompt is actionable. Users with the plugin already installed see no prompt. Users on Go/Ruby/TypeScript see no prompt (the bundled `lsp_tree.py` covers those fully; the native LSP tool adds nothing they need). The prompt now appears only for Python/Rust/Java/C#/Kotlin/Dart runs where the plugin is not installed, and asks a cleaner yes/no ("continue without / show install steps and continue") — removed the "stop to install" option since the skill works fine without the plugin.
+- **`Native LSP tool available: yes|no` parameter added to the Step 3 extraction agent prompt.** The orchestrator passes the detected state so the agent picks the right LSP path deterministically instead of inferring from "preflight confirmed" prose. `contract-extraction.md` updated to match.
+
 ## [0.45.1] - 2026-04-23
 
 ### tdd-contract-review
