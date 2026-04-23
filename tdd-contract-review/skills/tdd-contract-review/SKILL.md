@@ -424,14 +424,62 @@ Read `$RUN_DIR/01-extraction.md`. For each Checkpoint 1 row, look at the Status 
 - `Not detected` or `Not applicable` → skip this type (no sub-file produced)
 
 If critical mode is yes, ALSO dispatch BOTH cross-cutting agents (regardless of which contract types are Extracted):
-- **F1 (money-correctness)** — reads `money-correctness-checklists.md`
-- **F2 (api-security)** — reads `api-security-checklists.md`
+- **F1 (money-correctness)** — uses money-correctness checklists (delivered via `PACK_MONEY_FULL`)
+- **F2 (api-security)** — uses API-security checklists (delivered via `PACK_SECURITY_FULL`)
+
+#### Step 6a.1 — Compile skill-file context packs
+
+Before dispatching Step 6b agents, the orchestrator reads skill files ONCE and extracts the sections each agent needs. Those slices are embedded inline in each agent's dispatch prompt under `<<<CONTEXT_PACK:*>>>` markers. Sub-agents no longer run `Read [skill dir]/*.md` — the relevant content is already in their prompt. This cuts sub-agent token spend ~50% in non-critical mode, ~70% in critical mode.
+
+**Helper (inline Bash).** Extract one `## Heading` section from a file:
+
+```bash
+extract_section() {
+  # args: $1 = file path, $2 = heading text (without "## " prefix)
+  awk -v h="## $2" '
+    $0 == h { cap=1; print; next }
+    cap && /^## / { exit }
+    cap
+  ' "$1"
+}
+```
+
+Call multiple times and join with a blank line to concatenate sections into one pack.
+
+**Compile these packs** (read each skill file once, extract named sections):
+
+| Pack | Source file | Section(s) to extract | Used by |
+|---|---|---|---|
+| `PACK_SCENARIOS` | `scenario-checklist.md` | full file | A, B, C |
+| `PACK_OUTSHAPE_PERTYPE` | `gap-analysis.md` | `Scenario Enumeration Rules (per-type agents A/B/C)` + `Output File Shape — Per-type Sub-report (A/B/C)` | A, B, C |
+| `PACK_OUTSHAPE_F1` | `gap-analysis.md` | `Output File Shape — F1 Money-Correctness (\`03d-gaps-money.md\`)` | F1 |
+| `PACK_OUTSHAPE_F2` | `gap-analysis.md` | `Output File Shape — F2 API-Security (\`03e-gaps-security.md\`)` | F2 |
+| `PACK_OUTSHAPE_MERGE` | `gap-analysis.md` | `Output File Shape — Merged Report (\`03-gaps.md\`)` | Merge (6c) |
+| `PACK_MODEL` | `test-patterns.md` | `Input/Assertion Model` + `Contract Boundary Rules` | A, B, C |
+| `PACK_MONEY_CHECKS` (critical only) | `money-correctness-checklists.md` | `Gap Analysis Scenario Checklists` | A, B, C |
+| `PACK_MONEY_FULL` (critical only) | `money-correctness-checklists.md` | full file | F1 |
+| `PACK_SECURITY_CHECKS` (critical only) | `api-security-checklists.md` | `Gap Analysis Scenario Checklists` | A, B, C |
+| `PACK_SECURITY_FULL` (critical only) | `api-security-checklists.md` | full file | F2 |
+
+**Fallback.** If `extract_section` returns empty (heading drifted or renamed), inline the full source file instead and print one line to the terminal: `(splice fallback: '<heading>' not found in <file>, inlining full file)`. Never fail the run — the agent still gets complete content, just with more tokens.
+
+**Envelope format.** Every pack is embedded in the dispatch prompt between these markers:
+
+```
+<<<CONTEXT_PACK:<PACK_NAME>:start>>>
+<extracted content, verbatim>
+<<<CONTEXT_PACK:<PACK_NAME>:end>>>
+```
+
+Pack content is passed through verbatim — do not paraphrase, summarize, or reformat. The agent treats the pack as equivalent to having read that section of the source file directly.
+
+**Revise paths.** On any Revise re-dispatch (Checkpoint 3 auto-iterate, or specific-feedback free-text), the orchestrator MUST recompile context packs before re-dispatching. Skill files may have been updated between runs; stale packs defeat the point.
 
 #### Step 6b — Parallel per-type dispatch
 
 Dispatch all per-type agents in a single orchestrator message (parallel tool calls). Each agent writes its own sub-file and returns only `WROTE: <path>`.
 
-**Scenario checklist.** Every field in the Test Structure Tree MUST enumerate every applicable scenario from `[skill dir]/scenario-checklist.md`, applied per the field's type + constraints. Do NOT collapse assertion fields into a "HAPPY PATH assertions" group — each assertion field gets its own branch. Per-type prompts reference this file by path; do not inline the matrix.
+**Scenario checklist.** Every field in the Test Structure Tree MUST enumerate every applicable scenario from the scenario checklist (delivered to each agent via `PACK_SCENARIOS` — see Step 6a.1), applied per the field's type + constraints. Do NOT collapse assertion fields into a "HAPPY PATH assertions" group — each assertion field gets its own branch.
 
 **Progress output.** Before dispatching, print the plan (list only agents that will actually run — skip types marked `Not detected` / `Not applicable` in Checkpoint 1):
 
@@ -454,18 +502,38 @@ Model:       sonnet
 Description: Gap analysis — <CONTRACT_TYPE>
 Prompt:
   "TASK: Exhaustive per-field gap analysis for CONTRACT TYPE: <CONTRACT_TYPE>
-   Skill directory: [skill dir]
    Run directory: $RUN_DIR
    Critical mode: [yes/no]
 
    Read $RUN_DIR/01-extraction.md — focus ONLY on the <CONTRACT_TYPE> section. Ignore other contract types.
    Read $RUN_DIR/02-audit.md — identify existing test coverage for <CONTRACT_TYPE> fields.
-   Read [skill dir]/scenario-checklist.md — every field in the tree MUST enumerate every applicable scenario from that matrix, applied to the field's type + constraints.
-   Read [skill dir]/gap-analysis.md — follow 'Scenario Enumeration Rules (per-type agents A/B/C)' and 'Output File Shape — Per-type Sub-report (A/B/C)'. Section headings, order, and the (<CONTRACT_TYPE>) qualifier on Test Structure Tree / Contract Map are non-negotiable.
-   Read [skill dir]/test-patterns.md for scenario conventions.
-   If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md for per-field checks relevant to this contract type (precision, enum values, sensitive-data leak, injection).
+
+   DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers. Treat each pack as equivalent to having read that section of the source file.
 
    Use <TYPE_PREFIX> in gap ids (GAPI-NNN for API, GDB-NNN for DB, GOUT-NNN for Outbound — per the substitution table below this prompt).
+
+   The output shape, scenario matrix, and input/assertion model in the packs are mandatory. Follow section headings, order, and the (<CONTRACT_TYPE>) qualifier on Test Structure Tree / Contract Map verbatim.
+
+   <<<CONTEXT_PACK:SCENARIOS:start>>>
+   [orchestrator inlines PACK_SCENARIOS verbatim]
+   <<<CONTEXT_PACK:SCENARIOS:end>>>
+
+   <<<CONTEXT_PACK:OUTSHAPE:start>>>
+   [orchestrator inlines PACK_OUTSHAPE_PERTYPE verbatim]
+   <<<CONTEXT_PACK:OUTSHAPE:end>>>
+
+   <<<CONTEXT_PACK:MODEL:start>>>
+   [orchestrator inlines PACK_MODEL verbatim]
+   <<<CONTEXT_PACK:MODEL:end>>>
+
+   [IF critical mode, ALSO append both blocks below:]
+   <<<CONTEXT_PACK:MONEY_CHECKS:start>>>
+   [orchestrator inlines PACK_MONEY_CHECKS verbatim]
+   <<<CONTEXT_PACK:MONEY_CHECKS:end>>>
+
+   <<<CONTEXT_PACK:SECURITY_CHECKS:start>>>
+   [orchestrator inlines PACK_SECURITY_CHECKS verbatim]
+   <<<CONTEXT_PACK:SECURITY_CHECKS:end>>>
 
    WRITE the full output to $RUN_DIR/<OUTPUT_FILE>. Return only 'WROTE: $RUN_DIR/<OUTPUT_FILE>' when done."
 ```
@@ -486,12 +554,21 @@ Model:       opus
 Description: Gap analysis — money-correctness cross-cutting
 Prompt:
   "TASK: Cross-cutting money-correctness gap analysis for this unit.
-   Skill directory: [skill dir]
    Run directory: $RUN_DIR
 
    Read $RUN_DIR/01-extraction.md (full file) and $RUN_DIR/02-audit.md (full file).
-   Read [skill dir]/money-correctness-checklists.md for the dimensions and scenario checklists.
-   Read [skill dir]/gap-analysis.md — follow 'Output File Shape — F1 Money-Correctness (03d-gaps-money.md)'. The systemic focus areas (precision, idempotency, state machine, balance/ledger, concurrency, multi-step atomicity, external integration, refunds, fees/tax, holds, settlement, FX, limits) and the Money:<dimension> type format are described there. Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level integrity only.
+
+   DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers.
+
+   <<<CONTEXT_PACK:MONEY_FULL:start>>>
+   [orchestrator inlines PACK_MONEY_FULL verbatim — full money-correctness-checklists.md]
+   <<<CONTEXT_PACK:MONEY_FULL:end>>>
+
+   <<<CONTEXT_PACK:OUTSHAPE:start>>>
+   [orchestrator inlines PACK_OUTSHAPE_F1 verbatim — systemic focus areas and Money:<dimension> type format]
+   <<<CONTEXT_PACK:OUTSHAPE:end>>>
+
+   Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level integrity only.
 
    WRITE to $RUN_DIR/03d-gaps-money.md. Return only 'WROTE: $RUN_DIR/03d-gaps-money.md' when done."
 ```
@@ -504,12 +581,21 @@ Model:       opus
 Description: Gap analysis — API-security cross-cutting
 Prompt:
   "TASK: Cross-cutting API-security gap analysis for this unit.
-   Skill directory: [skill dir]
    Run directory: $RUN_DIR
 
    Read $RUN_DIR/01-extraction.md (full file) and $RUN_DIR/02-audit.md (full file).
-   Read [skill dir]/api-security-checklists.md for the dimensions and scenario checklists.
-   Read [skill dir]/gap-analysis.md — follow 'Output File Shape — F2 API-Security (03e-gaps-security.md)'. The systemic focus areas (authN, authZ/IDOR, rate limiting, data leaks, injection, audit trail, KYC/AML, PCI, MFA, webhook trust) and the Security:<dimension> type format are described there. Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level security integrity only.
+
+   DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers.
+
+   <<<CONTEXT_PACK:SECURITY_FULL:start>>>
+   [orchestrator inlines PACK_SECURITY_FULL verbatim — full api-security-checklists.md]
+   <<<CONTEXT_PACK:SECURITY_FULL:end>>>
+
+   <<<CONTEXT_PACK:OUTSHAPE:start>>>
+   [orchestrator inlines PACK_OUTSHAPE_F2 verbatim — systemic focus areas and Security:<dimension> type format]
+   <<<CONTEXT_PACK:OUTSHAPE:end>>>
+
+   Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level security integrity only.
 
    WRITE to $RUN_DIR/03e-gaps-security.md. Return only 'WROTE: $RUN_DIR/03e-gaps-security.md' when done."
 ```
@@ -526,14 +612,19 @@ Model:       opus
 Description: Gap merge
 Prompt:
   "TASK: Merge per-type gap reports into unified $RUN_DIR/03-gaps.md.
-   Skill directory: [skill dir]
    Run directory: $RUN_DIR
 
    Read every sub-file that exists: $RUN_DIR/03a-gaps-api.md, $RUN_DIR/03b-gaps-db.md, $RUN_DIR/03c-gaps-outbound.md, $RUN_DIR/03d-gaps-money.md, $RUN_DIR/03e-gaps-security.md.
    Also read $RUN_DIR/02-audit.md for the anti-patterns section.
    Skip any sub-file that does not exist.
 
-   Read [skill dir]/gap-analysis.md — follow 'Output File Shape — Merged Report (03-gaps.md)'. The 7-section structure, Checkpoint 2 row labels, dedupe rules, and hygiene-section copy-forward are non-negotiable. The orchestrator grep-gates on the Checkpoint 2 row labels (API inbound, DB, Outbound API, Jobs, UI Props).
+   DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers.
+
+   <<<CONTEXT_PACK:OUTSHAPE:start>>>
+   [orchestrator inlines PACK_OUTSHAPE_MERGE verbatim — 7-section structure, Checkpoint 2 row labels, dedupe rules, hygiene-section copy-forward]
+   <<<CONTEXT_PACK:OUTSHAPE:end>>>
+
+   The orchestrator grep-gates on the Checkpoint 2 row labels (API inbound, DB, Outbound API, Jobs, UI Props).
 
    WRITE $RUN_DIR/03-gaps.md. Return only 'WROTE: $RUN_DIR/03-gaps.md' when done."
 ```
@@ -564,8 +655,9 @@ Prompt:
 ```
 DEEPEN REQUEST: Re-examine your previous $RUN_DIR/<sub-file>. For every field
 in your Contract Map:
-- Re-enumerate scenarios from [skill dir]/scenario-checklist.md — are any
-  applicable scenarios missing from the Test Structure Tree?
+- Re-enumerate scenarios from the PACK_SCENARIOS content embedded in your
+  original prompt — are any applicable scenarios missing from the Test
+  Structure Tree?
 - For each ✓ covered status: re-verify the cited test file:line actually
   asserts what the scenario requires. Weak assertion → downgrade to PARTIAL.
 - For each ✗ missing or PARTIAL: is the priority right given critical mode?
