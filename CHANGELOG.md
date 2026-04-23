@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.42.1] - 2026-04-23
+
+### tdd-contract-review
+
+#### Changed
+- **`SKILL.md` + `contract-extraction.md` now instruct agents to always pass `--scope local` to `lsp_tree.py`.** Without it, the rendered call tree includes every stdlib / gem / `node_modules` edge on the path (`fmt.Sprintf`, `Hash#[]`, React's `useState`, etc.) and drowns the unit's real blast radius in noise. The flag trims external edges from the rendered tree only; the underlying LSP `definition` query still runs and still writes its JSON artifact to `$RUN_DIR/lsp/`, so the Step 3 LSP-utilization GATE (artifact count) is unaffected.
+
+#### Fixed
+- **`SKILL.md` invocation: dropped the bogus `walk` subcommand.** v0.42.0 introduced `lsp_tree.py walk --lang ... <symbol>` — the script has no `walk` subcommand; the actual CLI is `--lang ... --project ... --file ... --symbol ...`. Agents copy-pasting the v0.42.0 line would have hit an arg-parse error on first invocation.
+
 ## [0.42.0] - 2026-04-23
 
 ### tdd-contract-review
