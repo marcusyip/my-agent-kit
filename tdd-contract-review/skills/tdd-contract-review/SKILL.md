@@ -73,11 +73,11 @@ Resolve `$RUN_DIR/<file>` to an absolute filesystem path first, then substitute 
 
 Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
 
-- question: `Review checkpoint <N> of 3 — proceed to <next step>?` (the clickable path is already printed in Step A; do NOT repeat `$RUN_DIR/<file>` here — `AskUserQuestion` does not render markdown, so an inline path would show as unclickable duplicate noise)
+- question: `Review checkpoint <N> of 3 — proceed to <next step>? To revise, pick 'Type something else' and describe the gap.` (the clickable path is already printed in Step A; do NOT repeat `$RUN_DIR/<file>` here — `AskUserQuestion` does not render markdown, so an inline path would show as unclickable duplicate noise)
 - header: `Checkpoint <N>/3`
 - options (exactly these two, in this order):
-  - label `Continue` — description: `Proceed to <next step>.`
-  - label `Stop` — description: `Preserve files and exit. For a targeted revision, pick 'Type something else' and describe the gap.`
+  - label `Continue` — description: `Proceed to <next step>. Artifacts up to this checkpoint are final.`
+  - label `Stop` — description: `Exit without proceeding. All files in $RUN_DIR are preserved.`
 
 There is intentionally no `Revise` button. A blind "look harder" re-dispatch costs tokens without telling the agent *what* is wrong; specific typed feedback produces sharper revisions. The free-text path (below) is the only revision channel.
 
