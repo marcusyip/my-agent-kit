@@ -124,7 +124,7 @@ until the guard prints its error.
 D3 needs a new fixture (a tiny standalone controller without money signals); the sample
 app is fintech-saturated and can't express an OFF case faithfully.
 
-### E. Reuse & Revise paths — Phase 2
+### E. Reuse & Revision paths — Phase 2
 
 | Case  | Scenario                                                   | Expected                                            |
 |-------|------------------------------------------------------------|-----------------------------------------------------|
@@ -132,10 +132,13 @@ app is fintech-saturated and can't express an OFF case faithfully.
 | E2    | Prior extraction exists, same critical mode                | AskUserQuestion offered, Reuse copies + goes to Checkpoint 1 |
 | E3    | Prior extraction exists, different critical mode           | AskUserQuestion offered WITH mismatch warning line  |
 | E4    | Reuse picked, but prior file malformed (missing Checkpoint 1 row) | GATE fails, falls through to fresh extraction |
-| E5    | Revise at Checkpoint 1                                     | Same Step 3 agent re-dispatched with DEEPEN REQUEST block appended |
+| E5    | Free-text feedback at Checkpoint 1 ("look closer at audit log fields") | Step 3 agent re-dispatched with REVISION REQUEST block appended verbatim |
 | E6    | Free-text feedback at Checkpoint 2 ("please add the foo scenario") | REVISION REQUEST block appended verbatim    |
-| E7    | 4th visit to same checkpoint                               | Revise option dropped, prompt prefix added          |
-| E8    | Revise at Checkpoint 3                                     | Re-dispatches all per-type agents, then merge agent |
+| E7    | 4th visit to same checkpoint                               | Prompt prefix added; further free-text treated as Continue |
+| E8    | Free-text feedback at Checkpoint 3 naming one contract type | That single per-type agent re-dispatched, then merge agent re-runs |
+
+AskUserQuestion only surfaces Continue / Stop — auto-iterate `Revise` was removed in v0.45.0
+(see CHANGELOG). All revision goes through the free-text path, which requires specific user input.
 
 Realistic automation of E requires intercepting the skill's tool calls (mock
 AskUserQuestion, mock Agent dispatch, capture prompts). Worth it once E4/E8 regressions

@@ -75,25 +75,20 @@ Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
 
 - question: `Review checkpoint <N> of 3 — proceed to <next step>?` (the clickable path is already printed in Step A; do NOT repeat `$RUN_DIR/<file>` here — `AskUserQuestion` does not render markdown, so an inline path would show as unclickable duplicate noise)
 - header: `Checkpoint <N>/3`
-- options (exactly these three, in this order):
+- options (exactly these two, in this order):
   - label `Continue` — description: `Proceed to <next step>.`
-  - label `Revise` — description: `Re-run this step with a deeper pass. For specific feedback, pick 'Type something else' and type it.`
-  - label `Stop` — description: `Preserve files and exit.`
+  - label `Stop` — description: `Preserve files and exit. For a targeted revision, pick 'Type something else' and describe the gap.`
+
+There is intentionally no `Revise` button. A blind "look harder" re-dispatch costs tokens without telling the agent *what* is wrong; specific typed feedback produces sharper revisions. The free-text path (below) is the only revision channel.
 
 ### Step C — Branch on selection
 
 1. **Continue** → proceed to the next step.
 2. **Stop** → preserve every file in `$RUN_DIR` and exit without proceeding. Print one line: `Stopped at checkpoint <N>. Files preserved in $RUN_DIR`.
-3. **Revise** → NO follow-up question. Re-dispatch the same agent that produced the current file (the target is specified per checkpoint in that step's PAUSE reference) with the step-specific **DEEPEN REQUEST** block appended verbatim to the agent's original prompt. DEEPEN REQUEST blocks are defined near each PAUSE section below. Do NOT prompt the user for feedback.
-
-   **Checkpoint 3 exception:** A "more complete" gap report usually means per-field gaps the per-type agents missed, not just a better merge. At Checkpoint 3, the Revise path first re-dispatches all `Extracted` per-type agents from Step 6b in parallel (each with its own deepen prompt) plus both critical-mode agents if applicable, then re-runs the merge agent. See the Checkpoint 3 PAUSE section for the per-type deepen prompt.
-
-   After the re-dispatch(es) return, re-run the GATE check for this step. If the GATE fails, surface the failure and stop — do NOT loop on a failing gate. If the GATE passes, loop back to Step A (re-echo the updated Summary) and Step B (re-ask the checkpoint question).
-
-4. **Type something else** (user picked the auto-provided free-text option — rendered as `Type something else` in the CLI) → interpret the typed text:
+3. **Type something else** (user picked the auto-provided free-text option — rendered as `Type something else` in the CLI) → interpret the typed text:
    - Affirmative words (`go`, `yes`, `ok`, `continue`, `proceed`) → treat as Continue.
    - Stop intent (`stop`, `quit`, `abort`, `cancel`, `no`) → treat as Stop.
-   - Anything else → treat as **specific-feedback Revise**: re-dispatch the same agent, but append this block instead of the DEEPEN REQUEST block:
+   - Anything else → treat as **specific-feedback revision**: re-dispatch the same agent that produced the current file (the target is specified per checkpoint in that step's PAUSE reference) with this block appended verbatim to the agent's original prompt:
 
      ```
      REVISION REQUEST: The user reviewed $RUN_DIR/<file> and asked for changes. Regenerate the file, addressing this feedback verbatim:
@@ -101,9 +96,9 @@ Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
      Overwrite $RUN_DIR/<file>. Return only 'WROTE: $RUN_DIR/<file>' when done.
      ```
 
-     Then re-run the GATE and loop back to Step A on pass. The typed text is passed through verbatim — the agent sees the user's own words, not a paraphrase.
+     After re-dispatch, re-run the GATE check for this step. If the GATE fails, surface the failure and stop — do NOT loop on a failing gate. If the GATE passes, loop back to Step A (re-echo the updated Summary) and Step B (re-ask the checkpoint question). The typed text is passed through verbatim — the agent sees the user's own words, not a paraphrase.
 
-**Revision cap: 3 per checkpoint**, counting any mix of Revise (deepen) and specific-feedback free-text paths. Track the count for this checkpoint in your working state for the run. On the 4th visit to the same checkpoint, drop the `Revise` option — present only `Continue` and `Stop`, and prepend `Revised 3 times already — please Continue or Stop.` to the question text.
+**Revision cap: 3 per checkpoint** (counts only specific-feedback revisions). Track the count for this checkpoint in your working state for the run. On the 4th visit to the same checkpoint, prepend `Revised 3 times already — please Continue or Stop.` to the question text; if the user still types free text at that point, treat it as Continue (do not re-dispatch).
 
 ## Review Workflow
 
@@ -259,7 +254,7 @@ Free-text fallback (user typed something instead of picking): treat affirmative-
 
 1. Copy the file: `cp "$PREV_EXTRACTION" "$RUN_DIR/01-extraction.md"` via Bash.
 2. Run the **Checkpoint 1 shape GATE** (same grep used in Step 3, described under "GATE (Checkpoint 1 shape)" below): verify all 5 required rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`) appear with a valid three-state status (`Extracted` | `Not detected` | `Not applicable`).
-3. If GATE passes: jump directly to the **Checkpoint 1 PAUSE** in Step 3 — apply the Checkpoint Interaction Pattern with `<N>` = `1`, `<file>` = `01-extraction.md`, `<next step>` = `the test audit step`. The Revise target remains the Step 3 Contract extraction agent; Revise dispatches the agent with the DEEPEN REQUEST block, overwriting the reused file with a fresh, deeper extraction.
+3. If GATE passes: jump directly to the **Checkpoint 1 PAUSE** in Step 3 — apply the Checkpoint Interaction Pattern with `<N>` = `1`, `<file>` = `01-extraction.md`, `<next step>` = `the test audit step`. Specific-feedback revision re-dispatches the Step 3 Contract extraction agent, overwriting the reused file.
 4. If GATE fails: print `GATE FAILED on reused $PREV_EXTRACTION (file is malformed or from an older skill version) — falling through to fresh extraction`, then proceed to Step 3 normally. Do not leave the malformed copy in `$RUN_DIR` — either remove it first (`rm "$RUN_DIR/01-extraction.md"`) or let Step 3's agent overwrite it.
 
 **Branch — Extract fresh:** proceed to Step 3 directly with no file copy.
@@ -306,47 +301,14 @@ Prompt:
 - `<N>` = `1`
 - `<file>` = `01-extraction.md`
 - `<next step>` = `the test audit step`
-- Revise re-dispatch target = the Step 3 **Contract extraction** agent above. Reuse its original prompt verbatim. On Revise (auto-iterate), append the DEEPEN REQUEST block below. On specific-feedback free-text fallback, append the REVISION REQUEST block from the Checkpoint Interaction Pattern instead.
+- Specific-feedback revision target = the Step 3 **Contract extraction** agent above. Reuse its original prompt verbatim and append the REVISION REQUEST block from the Checkpoint Interaction Pattern.
 
 **Review Hint (Checkpoint 1):**
 
 ```
-- Call trees drive everything. Scan the ### Call trees fenced block: if the handler delegates to a service class that isn't an own-node (Symbol @ path:range), the extraction missed a branch — CP2 and CP3 will inherit that gap. Fixing it here is cheaper than three Revises later.
-- `Not applicable` is a claim, not a gap. It asserts this contract type cannot apply to this unit. If `Outbound API: Not applicable` on a handler you think calls an external service, check for `[external -> slug]` in the tree; if none, pick Revise — the agent may have missed the call site.
-- Contract fields are the vocabulary for CP2 and CP3. A field that isn't extracted here can never be audited or gap-checked downstream. When in doubt, Revise now.
-```
-
-**DEEPEN REQUEST block (Checkpoint 1):**
-
-```
-DEEPEN REQUEST: The user reviewed $RUN_DIR/01-extraction.md and asked for a
-more complete pass. Re-examine the source exhaustively:
-- LSP re-walk (mandatory). For Go/Ruby/TS, run `lsp_tree.py --lang
-  <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name>
-  --scope local --run-dir $RUN_DIR` for each root-set entry (always pass
-  `--scope local` — it trims stdlib / gem / node_modules edges from the
-  rendered tree). For other languages, use the native `LSP` tool's
-  `definition` / `implementations` / `references` on every call site in
-  every own-node you previously resolved via Read or Grep. If no
-  code-intelligence plugin is installed, fall back to `lsp_query.py
-  definition --run-dir $RUN_DIR <file> <line> <col>` per call site instead.
-- Re-walk every own-node in the ### Call trees block and every file in the
-  ### Root set. Look for fields / headers / params you missed, and for
-  downstream methods that should be own-nodes but got skipped.
-- For every [unresolved] dispatch in the tree: try harder to resolve it via
-  `definition`, OR confirm its responsible file is in the Root set with a
-  dispatched-at-runtime / implicitly-invoked tag. Grep is NOT a substitute
-  for `definition` here — `[unresolved]` is the correct outcome when
-  `definition` returns empty.
-- For every Checkpoint 1 row marked `Not detected`: investigate harder — look
-  for implicit contracts (session keys, cookies, cache entries, audit-log
-  fields, feature flags).
-- For every `Extracted` row: count again. Optional fields, nullable columns,
-  derived/computed fields, fields set via callbacks or hooks.
-- If critical mode is on: re-check money-correctness and API-security
-  dimensions for anything missed.
-Overwrite $RUN_DIR/01-extraction.md. The `## Summary` section MUST reflect
-updated counts. Return only 'WROTE: $RUN_DIR/01-extraction.md' when done.
+- Call trees drive everything. Scan the ### Call trees fenced block: if the handler delegates to a service class that isn't an own-node (Symbol @ path:range), the extraction missed a branch — CP2 and CP3 will inherit that gap. Fixing it here is cheaper than three revisions later.
+- `Not applicable` is a claim, not a gap. It asserts this contract type cannot apply to this unit. If `Outbound API: Not applicable` on a handler you think calls an external service, check for `[external -> slug]` in the tree; if none, type feedback naming the suspected call site — the agent may have missed it.
+- Contract fields are the vocabulary for CP2 and CP3. A field that isn't extracted here can never be audited or gap-checked downstream. When in doubt, type feedback now.
 ```
 
 ### Step 4-5: Test Audit
@@ -376,41 +338,14 @@ Prompt:
 - `<N>` = `2`
 - `<file>` = `02-audit.md`
 - `<next step>` = `the gap analysis step`
-- Revise re-dispatch target = the Step 4-5 **Test structure audit** agent above. Reuse its original prompt verbatim. On Revise (auto-iterate), append the DEEPEN REQUEST block below. On specific-feedback free-text fallback, append the REVISION REQUEST block from the Checkpoint Interaction Pattern instead.
+- Specific-feedback revision target = the Step 4-5 **Test structure audit** agent above. Reuse its original prompt verbatim and append the REVISION REQUEST block from the Checkpoint Interaction Pattern.
 
 **Review Hint (Checkpoint 2):**
 
 ```
-- Reconciliation first. `Test files (grep count)` MUST equal `Test Inventory (agent count)` in the Summary. Mismatch means the agent skipped reads; Revise before judging anything else — the coverage matrix is only trustworthy once counts reconcile.
+- Reconciliation first. `Test files (grep count)` MUST equal `Test Inventory (agent count)` in the Summary. Mismatch means the agent skipped reads; type feedback to trigger a re-inventory before judging anything else — the coverage matrix is only trustworthy once counts reconcile.
 - A test that runs is not a test that verifies. WEAK assertions (presence-only checks like `expect(x).not_to be_nil`, smoke checks with no value comparison) don't catch silent corruption. Scan Assertion Depth for WEAK entries on fields that matter — money amounts, auth headers, state transitions.
-- UNCOVERED fields preview CP3 gaps. Any UNCOVERED field you're surprised by (a required request param, an enum value, a computed column) is a gap you already care about. Note it before advancing; if several look wrong, Revise.
-```
-
-**DEEPEN REQUEST block (Checkpoint 2):**
-
-```
-DEEPEN REQUEST: The user reviewed $RUN_DIR/02-audit.md and asked for a more
-complete pass. START WITH RECONCILIATION:
-- Verify the `## Summary`: `Test files (grep count)` MUST equal
-  `Test Inventory (agent count)`. If mismatch, the inventory is incomplete —
-  that is the first thing to fix.
-- Re-run READ PROTOCOL Step 1 (framework-pattern grep) on every test file
-  to confirm the grep count is current.
-- Re-run READ PROTOCOL Step 2 (chunked reads) on any file where your original
-  Test Inventory was short of the grep count.
-Then re-examine the tests exhaustively:
-- Re-read every test file to EOF. Look for cases you skipped: nested
-  describes, shared examples, helpers, setup/teardown blocks, parameterised
-  tests.
-- For every contract field from $RUN_DIR/01-extraction.md: confirm whether a
-  test exists and cite test file:line in the Per-Field Coverage Matrix.
-- Look harder for anti-patterns: mocking internal code, assertion-free tests,
-  over-stubbing, fragile setup, order-dependent tests, time-sensitive tests.
-- Re-check per-field coverage: each assertion, each boundary, each enum
-  value, each error branch. Downgrade WEAK assertions to PARTIAL in the
-  Coverage Matrix.
-Overwrite $RUN_DIR/02-audit.md. The `## Summary` reconciliation lines MUST
-match after revision. Return only 'WROTE: $RUN_DIR/02-audit.md' when done.
+- UNCOVERED fields preview CP3 gaps. Any UNCOVERED field you're surprised by (a required request param, an enum value, a computed column) is a gap you already care about. Note it before advancing; if several look wrong, type feedback naming them.
 ```
 
 ### Step 6: Gap Analysis (parallel per-type + merge)
@@ -473,7 +408,7 @@ Call multiple times and join with a blank line to concatenate sections into one 
 
 Pack content is passed through verbatim — do not paraphrase, summarize, or reformat. The agent treats the pack as equivalent to having read that section of the source file directly.
 
-**Revise paths.** On any Revise re-dispatch (Checkpoint 3 auto-iterate, or specific-feedback free-text), the orchestrator MUST recompile context packs before re-dispatching. Skill files may have been updated between runs; stale packs defeat the point.
+**Revision re-dispatch.** On any specific-feedback revision re-dispatch (per-type agent or merge agent), the orchestrator MUST recompile context packs before re-dispatching. Skill files may have been updated between runs; stale packs defeat the point.
 
 #### Step 6b — Parallel per-type dispatch
 
@@ -635,48 +570,14 @@ Prompt:
 - `<N>` = `3`
 - `<file>` = `03-gaps.md`
 - `<next step>` = `the final report step (Step 7-8)`
-- Revise re-dispatch target — Checkpoint 3 has TWO paths:
-  - **Revise (auto-iterate deepen)** — NOT just a merge re-run. A "more complete" gap report usually means per-field gaps the per-type agents missed, not just a better merge. Execute this sequence:
-    1. Re-dispatch all per-type agents from Step 6b (every agent whose sub-file exists) in parallel, each with the **Per-type DEEPEN REQUEST block** appended to its Step 6b prompt. Include the F1 money-correctness and F2 API-security agents if their sub-files exist. Print the same `=== Step 6b: Gap analysis (<N> parallel agents) ===` plan line and the `✓ <sub-file> (<N> gaps)` breadcrumbs as the original Step 6b run.
-    2. After all per-type agents return and the Step 6b sub-files GATE passes, re-dispatch the Step 6c **Gap merge** agent with the **Merge DEEPEN REQUEST block** appended.
-    3. Re-run the Checkpoint 2 gap-coverage GATE on the updated `$RUN_DIR/03-gaps.md`. If it fails, surface the failure and stop.
-  - **Specific-feedback free-text fallback** (user typed free text that is not affirmative / not stop-intent) — re-dispatch only the Step 6c **Gap merge** agent with the REVISION REQUEST block from the Checkpoint Interaction Pattern. If the typed text clearly names a single contract type that needs re-analysis (not just re-merging), you MAY first re-dispatch that single per-type agent from Step 6b, then re-run the merge agent.
+- Specific-feedback revision target — re-dispatch the Step 6c **Gap merge** agent with the REVISION REQUEST block from the Checkpoint Interaction Pattern appended. If the typed text clearly names a single contract type that needs re-analysis (not just re-merging), you MAY first re-dispatch that single per-type agent from Step 6b, then re-run the merge agent.
 
 **Review Hint (Checkpoint 3):**
 
 ```
-- Priority calibration is the main risk. CRITICAL = data loss, security breach, or money off by a cent. If a CRITICAL gap reads "academic" or a MEDIUM describes a real outage path, use the free-text Revise path with specific re-calibration feedback — the agent will honor typed requests verbatim.
-- Test stubs are executable specs. Read one CRITICAL stub end-to-end — if you can't tell what it asserts, the gap description isn't concrete enough to act on. That's a Revise signal, not a Continue signal.
-- Dedupe sanity check. The cross-cutting money (F1) and security (F2) agents overlap with the per-type agents by design. The merge step is supposed to collapse duplicates (same field + same failure mode). Two gaps describing the same failure mean the merge missed — Revise.
-```
-
-**Per-type DEEPEN REQUEST block (appended to each Step 6b per-type agent):**
-
-```
-DEEPEN REQUEST: Re-examine your previous $RUN_DIR/<sub-file>. For every field
-in your Contract Map:
-- Re-enumerate scenarios from the PACK_SCENARIOS content embedded in your
-  original prompt — are any applicable scenarios missing from the Test
-  Structure Tree?
-- For each ✓ covered status: re-verify the cited test file:line actually
-  asserts what the scenario requires. Weak assertion → downgrade to PARTIAL.
-- For each ✗ missing or PARTIAL: is the priority right given critical mode?
-Overwrite $RUN_DIR/<sub-file>. Return only 'WROTE: $RUN_DIR/<sub-file>' when done.
-```
-
-**Merge DEEPEN REQUEST block (appended to the Step 6c merge agent):**
-
-```
-DEEPEN REQUEST: The per-type sub-files have been re-generated with a deeper
-pass. Re-merge $RUN_DIR/03-gaps.md from the updated sub-files. In addition:
-- Look harder for cross-type interactions (e.g., an API field and a DB column
-  that both map to the same logical entity and share a gap).
-- Re-calibrate priorities: if critical mode is on, missing coverage on money
-  or security dimensions should usually be CRITICAL or HIGH, not MEDIUM.
-- Keep dedupe rules from the original prompt (highest priority wins, combine
-  descriptions, keep richer stub).
-Overwrite $RUN_DIR/03-gaps.md. The `## Summary` section MUST reflect updated
-counts. Return only 'WROTE: $RUN_DIR/03-gaps.md' when done.
+- Priority calibration is the main risk. CRITICAL = data loss, security breach, or money off by a cent. If a CRITICAL gap reads "academic" or a MEDIUM describes a real outage path, type specific re-calibration feedback — the agent will honor typed requests verbatim.
+- Test stubs are executable specs. Read one CRITICAL stub end-to-end — if you can't tell what it asserts, the gap description isn't concrete enough to act on. That's a revision signal, not a Continue signal.
+- Dedupe sanity check. The cross-cutting money (F1) and security (F2) agents overlap with the per-type agents by design. The merge step is supposed to collapse duplicates (same field + same failure mode). Two gaps describing the same failure mean the merge missed — type feedback naming the duplicate pair.
 ```
 
 ### Step 7-8: Report + findings.json
