@@ -168,7 +168,7 @@ Flags:
 
 **Compute unit-slug** from the identifier. Compute run directory: `tdd-contract-review/$(date +%Y%m%d-%H%M)-{unit-slug}/`. Create the directory. Store path as `$RUN_DIR`.
 
-**Look for a previous extraction for this unit.** Glob `tdd-contract-review/*-{unit-slug}/01-extraction.md`, exclude `$RUN_DIR` itself, sort results by the `YYYYMMDD-HHMM` timestamp prefix in the directory name (lexicographic order works), pick the most recent. Store its path as `$PREV_EXTRACTION` (empty string if no match). This drives the optional reuse ask in Step 2.5.
+**Look for a previous extraction for this unit.** Glob `tdd-contract-review/*-{unit-slug}/01-extraction.md`, exclude `$RUN_DIR` itself, sort results by the `YYYYMMDD-HHMM` timestamp prefix in the directory name (lexicographic order works), pick the most recent. Store its path as `$PREV_EXTRACTION` (empty string if no match). This drives the optional reuse ask in Step 2.6.
 
 **Run preview.** Before proceeding to Step 3, print this 1-screen summary so the user can interrupt before the first agent dispatch:
 
@@ -186,9 +186,40 @@ Pipeline:            <N> agent dispatches, 3 checkpoints
 Run dir:             $RUN_DIR
 ```
 
-The first checkpoint fires within ~30s of this preview (after extraction, or sooner if the user picks Reuse at Step 2.5). This preview is informational — it makes auto-detected critical mode visible and flags when a prior extraction is available for reuse. It is NOT a hard gate; do not wait for input here.
+The first checkpoint fires within ~30s of this preview (after extraction, or sooner if the user picks Reuse at Step 2.6). This preview is informational — it makes auto-detected critical mode visible and flags when a prior extraction is available for reuse. It is NOT a hard gate; do not wait for input here.
 
-### Step 2.5: Previous Extraction Check (optional reuse)
+### Step 2.5: LSP Plugin Preflight
+
+Step 3 uses `lsp_tree.py` / `lsp_query.py` as its scripted LSP path — always available regardless of this check. Claude Code ALSO ships a built-in `LSP` tool that adds native interface→impl hops, call hierarchies, and type information to the agent's reasoning, but only when a [code-intelligence plugin](https://code.claude.com/docs/en/discover-plugins#code-intelligence) is installed for the target language. The scripted path is the correctness floor; the built-in tool is an accuracy upgrade the user can opt into.
+
+**AskUserQuestion** once per run so the user can pause and install if they'd benefit. The scripted LSP path runs either way — this check only nudges install, it does not gate correctness.
+
+- question: `Claude Code's built-in \`LSP\` tool improves accuracy on interface/impl hops and call hierarchies. Is the code-intelligence plugin installed for <detected-lang>? (Optional — the scripted LSP path runs regardless.)`
+- header: `LSP preflight`
+- options (exactly these three, in this order):
+  - label `Yes — proceed` — description: `Plugin installed; continue.`
+  - label `Not installed — proceed anyway` — description: `Continue with scripted LSP only.`
+  - label `Not installed — stop to install` — description: `Exit so I can install and re-run.`
+
+Resolve `<detected-lang>` from the unit's source file extension (`.go` → `go`, `.rb` → `ruby`, `.ts`/`.tsx` → `typescript`, `.py` → `python`, etc.).
+
+**Branch on selection:**
+
+1. **Yes — proceed** → go to Step 2.6.
+2. **Not installed — proceed anyway** → print `(continuing with scripted LSP only; native LSP tool not installed)` and go to Step 2.6.
+3. **Not installed — stop to install** → print the block below, remove the empty run directory (`rmdir "$RUN_DIR" 2>/dev/null || true`), and exit. No `$RUN_DIR` artifacts are written.
+
+   ```
+   Install Claude Code's code-intelligence plugin:
+     1. Run `/plugins` in Claude Code and install the plugin for <detected-lang>
+     2. Ensure the language server binary (gopls / pyright / typescript-language-server / …) is on $PATH
+     3. Re-run /tdd-contract-review <unit>
+   Docs: https://code.claude.com/docs/en/discover-plugins#code-intelligence
+   ```
+
+Free-text fallback: affirmative-sounding text ("yes", "go", "proceed", "ok", "installed") → treat as (1); stop-intent text ("stop", "quit", "exit", "cancel") → treat as (3); anything else → treat as (2) with the one-line warning.
+
+### Step 2.6: Previous Extraction Check (optional reuse)
 
 If `$PREV_EXTRACTION` is empty, skip this step entirely — do not print anything, do not ask — and proceed to Step 3.
 
@@ -248,45 +279,22 @@ Prompt:
 
    Read [skill dir]/contract-extraction.md in full. It contains:
    - 'Output File Shape (01-extraction.md)' — follow the ordered sections, row labels, tree grammar, and root-set tag vocabulary verbatim; the orchestrator grep-gates on them. See benchmark/fixtures/v2-example/01-extraction.md for a worked example.
-   - 'LSP-assisted call-tree construction (mandatory algorithm)' — execute the algorithm step by step. Two scripts are available:
+   - 'LSP-assisted call-tree construction (mandatory algorithm)' — execute the algorithm step by step. Three tool paths are available:
      - `[plugin root]/tdd-contract-review/scripts/lsp_tree.py` — preferred for Go, Ruby, and TypeScript/TSX (including React / React Native). Walks the full call tree in one invocation and persists every underlying LSP query under `$RUN_DIR/lsp/`.
-     - `[plugin root]/tdd-contract-review/scripts/lsp_query.py` — fallback for other languages (Python, Rust, Java, C#, Kotlin, Dart). Manual per-call `document_symbols`/`definition` queries.
-     Pass `--run-dir $RUN_DIR` to every invocation so each query's JSON is persisted under `$RUN_DIR/lsp/`. See `contract-extraction.md` for the exact CLI and when to pick which script.
+     - Native `LSP` tool — for other languages (Python, Rust, Java, C#, Kotlin, Dart) when the Step 2.5 preflight confirmed a code-intelligence plugin is installed. Use its `definition` / `implementations` / `references` operations directly; no scripted wrapper needed.
+     - `[plugin root]/tdd-contract-review/scripts/lsp_query.py` — two roles: (a) resolve a single ambiguous dispatch mid-walk when `lsp_tree.py` under-resolves a call site, or (b) last-resort fallback for non-lsp_tree languages when no code-intelligence plugin is installed.
+     For scripted tools, pass `--run-dir $RUN_DIR` to every invocation so each query's JSON is persisted under `$RUN_DIR/lsp/` for auditability. See `contract-extraction.md` for the exact CLIs and routing rules.
    - Per-framework extraction guidance for API / DB / Jobs / Outbound / UI Props.
    - 'Contract Extraction Summary Example' — the typed-prefix format for fields following the mandatory sections.
 
    If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md, and append the Money-correctness + API-security dimension tables after the Contract Extraction Summary.
 
-   LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py --lang <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name> --scope local --run-dir $RUN_DIR` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$RUN_DIR/lsp/`. **Always pass `--scope local`** so the rendered tree drops stdlib / gem / `node_modules` edges (the LSP query still runs, so the GATE artifact count is unaffected — only the tree is trimmed to the unit's real blast radius). For other languages, fall back to `lsp_query.py definition --run-dir $RUN_DIR <file> <line> <col>` on EVERY call site in EVERY own-node. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. The orchestrator's LSP-utilization GATE counts JSON artifacts in $RUN_DIR/lsp/ after you finish; an under-utilized run will fail the gate and trigger an automatic Revise. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
+   LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py --lang <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name> --scope local --run-dir $RUN_DIR` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$RUN_DIR/lsp/`. **Always pass `--scope local`** so the rendered tree drops stdlib / gem / `node_modules` edges (only the rendered tree is trimmed — every LSP query still runs). For other languages, use the native `LSP` tool's `definition` / `implementations` / `references` on EVERY call site in EVERY own-node. If the Step 2.5 preflight confirmed no code-intelligence plugin is installed, fall back to `lsp_query.py definition --run-dir $RUN_DIR <file> <line> <col>` on every call site instead. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
 
    WRITE the full output to $RUN_DIR/01-extraction.md. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.md' when done."
 ```
 
 **GATE (Checkpoint 1 shape):** Grep `$RUN_DIR/01-extraction.md` for exactly 5 Checkpoint 1 rows: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`. Each row must have a three-state status: `Extracted` | `Not detected` | `Not applicable`. If any row is missing, print which one and stop with a specific error (do not silently re-dispatch).
-
-**GATE (LSP utilization):** A shallow LSP run produces a markdown-shape-valid extraction whose call tree is incomplete. This gate rejects under-utilized runs:
-
-```
-LSP_COUNT=$(ls "$RUN_DIR/lsp/" 2>/dev/null | wc -l | tr -d ' ')
-DEF_COUNT=$(ls "$RUN_DIR/lsp/" 2>/dev/null | grep -c '^definition__')
-ROOT_SET_COUNT=$(awk '/^### Root set/{f=1; next} f && /^### /{exit} f && /^- /{n++} END{print n+0}' "$RUN_DIR/01-extraction.md")
-```
-
-Require BOTH:
-- `LSP_COUNT >= ROOT_SET_COUNT` — at minimum, the agent has touched LSP roughly once per file it considered worth listing in the Root set. This is a coarse proxy; it catches the failure mode where the agent ran a single `document_symbols` on the entry file then built the rest of the tree via Grep.
-- `DEF_COUNT >= 1` — the agent ran at least one `definition` query, proving they walked beyond the entry file.
-
-On fail, print:
-
-```
-✗ GATE FAILED: LSP under-utilized.
-  $RUN_DIR/lsp/ contains <LSP_COUNT> JSON artifacts (<DEF_COUNT> definitions).
-  Root set lists <ROOT_SET_COUNT> files. Expected lsp_artifacts >= root_set_files
-  AND >=1 definition query. Call tree is likely incomplete (Read+Grep was used
-  where `definition` should have been).
-```
-
-Then automatically re-dispatch the Step 3 agent with the **DEEPEN REQUEST block (Checkpoint 1)** below appended — do NOT pass the checkpoint silently. After the re-dispatch returns, re-run BOTH gates (shape + LSP-utilization). If LSP-utilization fails again, surface the second failure to the user and stop.
 
 **PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
 - `<N>` = `1`
@@ -311,15 +319,11 @@ more complete pass. Re-examine the source exhaustively:
   <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name>
   --scope local --run-dir $RUN_DIR` for each root-set entry (always pass
   `--scope local` — it trims stdlib / gem / node_modules edges from the
-  rendered tree without suppressing the LSP query, so GATE artifact counts
-  are unaffected). For other languages, run `lsp_query.py definition
-  --run-dir $RUN_DIR <file> <line> <col>` for every call site in every
-  own-node you previously resolved via Read or Grep, and persist the
-  result to $RUN_DIR/lsp/.
-  After this pass, $RUN_DIR/lsp/ MUST contain at least one JSON file per file
-  in the Root set, and at least one `definition__*.json`. The orchestrator's
-  LSP-utilization GATE will re-run after you finish; another shallow result
-  will fail the run.
+  rendered tree). For other languages, use the native `LSP` tool's
+  `definition` / `implementations` / `references` on every call site in
+  every own-node you previously resolved via Read or Grep. If no
+  code-intelligence plugin is installed, fall back to `lsp_query.py
+  definition --run-dir $RUN_DIR <file> <line> <col>` per call site instead.
 - Re-walk every own-node in the ### Call trees block and every file in the
   ### Root set. Look for fields / headers / params you missed, and for
   downstream methods that should be own-nodes but got skipped.

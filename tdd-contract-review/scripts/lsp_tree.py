@@ -38,8 +38,8 @@ languages.
 
 --run-dir behavior:
   * Every LSP response is written to DIR/lsp/<op>__<slug>__L<line>C<col>.json
-    (same naming scheme as `lsp_query.py`). The tdd-contract-review
-    LSP-utilization GATE counts those files on disk.
+    (same naming scheme as `lsp_query.py`), giving a flat audit trail of every
+    LSP call the run made.
   * The final tree is written to DIR/tree__<file-slug>__<symbol-slug>.<md|json>
     (extension follows --format), and `WROTE: <path>` is printed on stdout
     instead of the tree body.
@@ -77,6 +77,7 @@ def ensure_venv():
 ensure_venv()
 
 import argparse  # noqa: E402
+import asyncio  # noqa: E402
 import glob  # noqa: E402
 import json  # noqa: E402
 import re  # noqa: E402
@@ -246,6 +247,28 @@ def reconstruct_symbol_go(source: str, target_line: int, fallback: str):
     return fallback
 
 
+def is_go_interface_method(source: str, target_line: int) -> bool:
+    """True if source:target_line sits on a method signature inside an
+    `interface { ... }` block. Go-only — interface method lines have no
+    `func` keyword, just `Name(args) returnType`.
+    """
+    lines = source.split("\n")
+    if target_line < 0 or target_line >= len(lines):
+        return False
+    decl = lines[target_line].lstrip()
+    if decl.startswith(("func ", "type ", "//", "/*")):
+        return False
+    if not re.match(r"[A-Za-z_]\w*\s*\(", decl):
+        return False
+    depth = 0
+    for i in range(target_line - 1, -1, -1):
+        ln = lines[i]
+        depth += ln.count("}") - ln.count("{")
+        if depth < 0:
+            return "interface" in ln
+    return False
+
+
 def reconstruct_symbol_ruby(abs_file: Path, target_line: int, fallback: str):
     """Shell out to callsites.rb @LINE resolve mode; returns Solargraph symbol."""
     try:
@@ -364,6 +387,49 @@ class TreeWalker:
         self.persist("definition", file_rel, result, line, col)
         return result
 
+    def request_implementation(self, file_rel: str, line: int, col: int):
+        """textDocument/implementation. multilspy doesn't wrap this in a
+        public API, so we call the underlying async send.implementation
+        directly and normalize the response to a list of Location dicts
+        matching request_definition's shape (has `uri`, `range`,
+        `absolutePath`).
+        """
+        sync = self.server
+        uri = (self.project / file_rel).resolve().as_uri()
+        params = {
+            "textDocument": {"uri": uri},
+            "position": {"line": line, "character": col},
+        }
+        coro = sync.language_server.server.send.implementation(params)
+        raw = asyncio.run_coroutine_threadsafe(coro, sync.loop).result(
+            timeout=sync.timeout
+        )
+        if raw is None:
+            locs = []
+        elif isinstance(raw, list):
+            locs = raw
+        else:
+            locs = [raw]
+        normalized = []
+        for item in locs:
+            if not isinstance(item, dict):
+                continue
+            if "uri" in item and "range" in item:
+                out = dict(item)
+            elif "targetUri" in item and "targetSelectionRange" in item:
+                # LocationLink → Location shape
+                out = {
+                    "uri": item["targetUri"],
+                    "range": item["targetSelectionRange"],
+                }
+            else:
+                continue
+            abs_path = out["uri"][len("file://"):] if out["uri"].startswith("file://") else out["uri"]
+            out["absolutePath"] = abs_path
+            normalized.append(out)
+        self.persist("implementation", file_rel, normalized, line, col)
+        return normalized
+
     def walk(self, file_rel: str, symbol: str, call_name: str, depth: int):
         node = {
             "call_name": call_name,
@@ -476,6 +542,75 @@ class TreeWalker:
                 })
                 continue
 
+            # Go interface hop: when `definition` lands on an interface
+            # method signature, fan out to concrete implementations via
+            # textDocument/implementation. The LSP query must use the
+            # ORIGINAL call site (file_rel, line, col) — gopls resolves
+            # impls from the variable's static type at the use site.
+            if self.lang == "go" and is_go_interface_method(target_source, target_line):
+                try:
+                    impls = self.request_implementation(file_rel, line, col)
+                    iface_tag = "interface" if impls else "interface (no impls)"
+                except Exception as exc:
+                    impls = []
+                    iface_tag = f"interface (lsp-error: {exc})"
+                iface_node = {
+                    "call_name": name,
+                    "file": target_rel,
+                    "start_line": target_line + 1,
+                    "end_line": None,
+                    "children": [],
+                    "tag": iface_tag,
+                }
+                for impl in impls:
+                    impl_abs_str = resolve_target_path(impl)
+                    if not impl_abs_str:
+                        iface_node["children"].append({
+                            "call_name": name, "tag": "no-path", "children": [],
+                        })
+                        continue
+                    impl_abs = Path(impl_abs_str)
+                    impl_line = impl["range"]["start"]["line"]
+                    try:
+                        impl_rel = impl_abs.resolve().relative_to(self.project).as_posix()
+                    except ValueError:
+                        if self.scope == "local":
+                            continue
+                        iface_node["children"].append({
+                            "call_name": name,
+                            "file": str(impl_abs),
+                            "tag": "external",
+                            "children": [],
+                        })
+                        continue
+                    ikey = (impl_rel, impl_line)
+                    if ikey in self.visited:
+                        iface_node["children"].append({
+                            "call_name": name,
+                            "file": impl_rel,
+                            "start_line": impl_line + 1,
+                            "tag": "seen",
+                            "children": [],
+                        })
+                        continue
+                    self.visited.add(ikey)
+                    try:
+                        impl_source = impl_abs.read_text()
+                    except OSError:
+                        iface_node["children"].append({
+                            "call_name": name, "file": impl_rel,
+                            "tag": "unreadable", "children": [],
+                        })
+                        continue
+                    impl_symbol = reconstruct_symbol(
+                        impl_abs, impl_source, impl_line, name, self.lang,
+                    )
+                    iface_node["children"].append(
+                        self.walk(impl_rel, impl_symbol, name, depth + 1)
+                    )
+                node["children"].append(iface_node)
+                continue
+
             target_symbol = reconstruct_symbol(
                 target_abs, target_source, target_line, name, self.lang,
             )
@@ -524,8 +659,8 @@ def main():
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
     parser.add_argument("--scope", choices=["all", "local"], default="all",
                         help="local: drop calls that resolve outside the project "
-                             "(stdlib / gems). LSP queries still run so the GATE "
-                             "artifact count is unaffected.")
+                             "(stdlib / gems). LSP queries still run so the on-disk "
+                             "artifact audit trail is unaffected.")
     parser.add_argument("--run-dir", default=None,
                         help="persist every LSP response under DIR/lsp/")
     args = parser.parse_args()

@@ -128,7 +128,7 @@ app is fintech-saturated and can't express an OFF case faithfully.
 
 | Case  | Scenario                                                   | Expected                                            |
 |-------|------------------------------------------------------------|-----------------------------------------------------|
-| E1    | No prior extraction dir for unit                           | Step 2.5 silent, proceeds to Step 3                 |
+| E1    | No prior extraction dir for unit                           | Step 2.6 silent, proceeds to Step 3                 |
 | E2    | Prior extraction exists, same critical mode                | AskUserQuestion offered, Reuse copies + goes to Checkpoint 1 |
 | E3    | Prior extraction exists, different critical mode           | AskUserQuestion offered WITH mismatch warning line  |
 | E4    | Reuse picked, but prior file malformed (missing Checkpoint 1 row) | GATE fails, falls through to fresh extraction |
@@ -173,7 +173,7 @@ To close C/D/E deterministically without running the skill end-to-end:
    good/bad runs. Replay detection: for a new version, dispatch same prompts, diff outputs.
    Covers E5/E6 DEEPEN and REVISION request propagation.
 
-4. **Prior-run fixture.** Checked-in sample `01-extraction.md` files (same-critical, different-critical, malformed) under `benchmark/fixtures/prior-extractions/` so Step 2.5
+4. **Prior-run fixture.** Checked-in sample `01-extraction.md` files (same-critical, different-critical, malformed) under `benchmark/fixtures/prior-extractions/` so Step 2.6
    branches can be exercised from a contrived `$PREV_EXTRACTION`. Closes E2–E4.
 
 None of these are needed for the compound value promised by A+B. Add them when a C/D/E

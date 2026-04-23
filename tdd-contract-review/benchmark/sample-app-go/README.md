@@ -3,10 +3,8 @@
 Go fixture for benchmarking the `tdd-contract-review` plugin against `gopls`.
 
 **LSP is not optional here.** The skill's Step 3 call-tree algorithm requires
-`document_symbols` + `definition` + (where needed) `references` per root-set file,
-and the orchestrator's LSP-utilization GATE fails any run where
-`lsp_artifacts < root_set_files` or zero `definition` queries ran. This fixture
-exists to exercise that mandatory path on a non-Ruby codebase.
+`document_symbols` + `definition` + (where needed) `references` per root-set file.
+This fixture exists to exercise that mandatory path on a non-Ruby codebase.
 
 Mirrors the domain of `../sample-app/` (fintech: users / wallets / transactions) so
 call-tree and contract extraction can be compared across languages on the same
@@ -54,8 +52,8 @@ positions at runtime (bounded regex inside the symbol body), invokes
 
 Current targets: 5 `document_symbols` (one per root-set file), 4 `definition`
 (handler → service → model → interface), 1 `references` (interface → impl).
-Together they satisfy the Step-3 LSP-utilization GATE (`lsp_artifacts ≥
-root_set_files` and `≥ 1 definition`) by design.
+Together they exercise every LSP operation the skill's Step 3 call-tree
+algorithm relies on.
 
 Paths in recorded goldens are normalised to project-relative
 (`file://./internal/...`) so checkouts on different machines diff cleanly.

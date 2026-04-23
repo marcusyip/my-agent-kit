@@ -43,7 +43,7 @@ Scannable one-screen overview shown at Checkpoint 1. Bullets only, no prose. Cou
 - Unresolved dispatches: <N>     # count of [unresolved] lines inside the tree
 - External calls: <N>            # count of unique [external -> slug] entries
 - Entry points declared: <N>     # count of bullets under ## Entry points
-- LSP calls: <D> document_symbols, <F> definitions, <R> references   # MUST equal counts in $RUN_DIR/lsp/
+- LSP calls: <D> document_symbols, <F> definitions, <R> references   # scripted tools: equals counts in $RUN_DIR/lsp/; native LSP: self-report
 - Critical mode: ON (reason: <one-line signal>) OR OFF
 ```
 
@@ -179,14 +179,15 @@ If a contract type cannot be identified (e.g., no DB schema found), keep the Che
 
 ## LSP-assisted call-tree construction (mandatory algorithm)
 
-For building the `### Call trees` block, **LSP is mandatory, not optional.** This section is an algorithm, not guidance — sub-agents that skip steps to save time produce shallow trees that pass the markdown-shape gate but miss real branches. The Step 3 LSP-utilization GATE in SKILL.md will fail the run if it detects under-utilization.
+For building the `### Call trees` block, **LSP is mandatory, not optional.** This section is an algorithm, not guidance — sub-agents that skip steps to save time produce shallow trees that pass the markdown-shape gate but miss real branches.
 
-Two scripts are available. Use the one that fits the language:
+Three tool paths are available. Pick by language + plugin availability:
 
-- **`<plugin-root>/tdd-contract-review/scripts/lsp_tree.py` — preferred for Go, Ruby, TypeScript/TSX.** A standalone one-shot walker: given a seed symbol, it parses the file with an AST helper, walks every outgoing call via `definition`, and emits a nested tree. All LSP queries share a single language-server session, so the cold-start cost (~5–30s) is paid once per invocation, not once per call site. With `--run-dir $RUN_DIR`, every `definition` / `document_symbols` response is persisted under `$RUN_DIR/lsp/` using the same filename scheme `lsp_query.py` uses — the LSP-utilization GATE counts artifacts on disk and does not care which tool produced them.
-- **`<plugin-root>/tdd-contract-review/scripts/lsp_query.py` — fallback for other languages** (Python, Java, Rust, C#, Kotlin, Dart, etc.) and for per-call queries (e.g. resolving a single ambiguous dispatch). Exposes three operations: `definition`, `document_symbols`, `references`.
+- **`<plugin-root>/tdd-contract-review/scripts/lsp_tree.py` — preferred for Go, Ruby, TypeScript/TSX.** A standalone one-shot walker: given a seed symbol, it parses the file with an AST helper, walks every outgoing call via `definition`, and emits a nested tree. All LSP queries share a single language-server session, so the cold-start cost (~5–30s) is paid once per invocation, not once per call site. With `--run-dir $RUN_DIR`, every `definition` / `document_symbols` response is persisted under `$RUN_DIR/lsp/` using the same filename scheme `lsp_query.py` uses, giving a flat audit trail of every LSP call.
+- **Native `LSP` tool — for other languages** (Python, Java, Rust, C#, Kotlin, Dart, etc.) when the Step 2.5 preflight confirmed a code-intelligence plugin is installed. Call `definition` / `implementations` / `references` directly on call sites — no scripted wrapper. Artifacts are not persisted under `$RUN_DIR/lsp/`; the `## Summary` LSP-calls line is a self-report in that case.
+- **`<plugin-root>/tdd-contract-review/scripts/lsp_query.py`** — two roles: (a) resolve a single ambiguous dispatch mid-walk when `lsp_tree.py` flags `[unresolved]` and you want a targeted `definition` / `references`, or (b) last-resort fallback for non-lsp_tree languages when no code-intelligence plugin is installed. Exposes `definition`, `document_symbols`, `references`.
 
-**When in doubt, start with `lsp_tree.py`.** If the language is supported and the target is a standard call-tree walk from a seed symbol, one `lsp_tree.py` invocation replaces dozens of `lsp_query.py` calls. Drop back to `lsp_query.py` only when the language isn't supported or you need a single targeted query the walker won't reach.
+**When in doubt, start with `lsp_tree.py`.** If the language is supported and the target is a standard call-tree walk from a seed symbol, one `lsp_tree.py` invocation replaces dozens of `lsp_query.py` calls. For unsupported languages, prefer the native `LSP` tool; drop to `lsp_query.py` only when the plugin is absent.
 
 `lsp_tree.py` CLI:
 
@@ -195,13 +196,13 @@ SCRIPT="<plugin-root>/tdd-contract-review/scripts/lsp_tree.py"
 # Symbol grammar: Go "(*Type).Method" / "Name"; Ruby "Foo#bar" / "Foo.bar" / "Foo";
 # TypeScript "Foo#bar" / "Foo.bar" / "Foo" / "bar" (handles .ts AND .tsx / React / RN).
 # ALWAYS pass --scope local — it trims stdlib / gem / node_modules edges from the
-# rendered tree without suppressing the underlying LSP query (GATE count unaffected).
+# rendered tree without suppressing the underlying LSP query (artifacts still persist).
 "$SCRIPT" --lang go   --project <repo-root> --file <rel-path> --symbol "(*Handler).Create"            --scope local --run-dir $RUN_DIR
 "$SCRIPT" --lang ruby --project <repo-root> --file <rel-path> --symbol "TransactionsController#create" --scope local --run-dir $RUN_DIR
 "$SCRIPT" --lang ts   --project <repo-root> --file <rel-path> --symbol "TransactionScreen"            --scope local --run-dir $RUN_DIR
 ```
 
-**`--scope local` is the default you want.** Without it, the rendered tree includes every stdlib, gem, or `node_modules` call on the path — `fmt.Sprintf`, `Hash#[]`, `console.log`, React's `useState` — which drowns the unit's real blast radius in noise. The flag trims external edges from the rendered tree only; the LSP `definition` query still runs for each call site and still writes its JSON artifact to `$RUN_DIR/lsp/`, so the Step 3 LSP-utilization GATE (which counts artifacts on disk) is unaffected. Omit it (`--scope all`, the implicit default) only when you deliberately need to audit a dependency boundary.
+**`--scope local` is the default you want.** Without it, the rendered tree includes every stdlib, gem, or `node_modules` call on the path — `fmt.Sprintf`, `Hash#[]`, `console.log`, React's `useState` — which drowns the unit's real blast radius in noise. The flag trims external edges from the rendered tree only; the LSP `definition` query still runs for each call site and still writes its JSON artifact to `$RUN_DIR/lsp/`. Omit it (`--scope all`, the implicit default) only when you deliberately need to audit a dependency boundary.
 
 Other flags: `--depth N` (cap walk depth, default 5), `--format json` (machine-readable tree in addition to the LSP artifacts).
 
@@ -232,7 +233,7 @@ A sub-agent that skips `definition` because it could "tell from the code" what t
 - LSP calls: <D> document_symbols, <F> definitions, <R> references
 ```
 
-These three counts equal the count of `document_symbols__*.json`, `definition__*.json`, and `references__*.json` files in `$RUN_DIR/lsp/`. The orchestrator's LSP-utilization GATE counts those files on disk directly (it does not parse this Summary line): it requires `lsp_artifacts >= root_set_files` AND `>= 1 definition` query. The Summary line is a self-report for human reviewers, not a gate input.
+When scripted tools are used (`lsp_tree.py` or `lsp_query.py`), these three counts equal the count of `document_symbols__*.json`, `definition__*.json`, and `references__*.json` files in `$RUN_DIR/lsp/`. When the native `LSP` tool is used for non-lsp_tree languages, there are no on-disk artifacts and the counts are a self-report for human reviewers.
 
 CLI:
 

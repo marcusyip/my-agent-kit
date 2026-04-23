@@ -81,7 +81,7 @@ skill reference files under `skills/tdd-contract-review/`.
    ≈ another **~100–190k**.
 4. **Critical-mode surcharge:** +~130k (~80% more than non-critical), split
    across 3 opus dispatches (F1, F2, merge).
-5. **Reuse at Step 2.5** saves ~13–23k (Step 3 entirely) but does nothing for
+5. **Reuse at Step 2.6** saves ~13–23k (Step 3 entirely) but does nothing for
    the other ~280k.
 
 ## Revise-loop multipliers
