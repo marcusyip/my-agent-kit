@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""Standalone LSP-driven call-tree builder (Go, Ruby).
+"""Standalone LSP-driven call-tree builder (Go, Ruby, TypeScript/TSX).
 
 Given a seed symbol, walks outgoing calls via `definition` and emits a nested
 markdown (or JSON) tree. Runs all LSP queries inside a single multilspy session
 so the language-server cold-start is paid once per invocation, not per call site.
 
 Call-site enumeration is AST-accurate:
-  * Go   — delegates to `scripts/callsites.go` (built once into `.bin/callsites`).
-  * Ruby — delegates to `scripts/callsites.rb` (Prism-based).
+  * Go         — `scripts/callsites.go` (built once into `.bin/callsites`).
+  * Ruby       — `scripts/callsites.rb` (Prism-based).
+  * TypeScript — `scripts/callsites_ts.py` (tree-sitter-typescript; handles
+                 .ts and .tsx, including React / React Native function
+                 components, hooks, and class components).
 
 Usage:
   lsp_tree.py --lang LANG --project PATH --file FILE --symbol NAME \
               [--depth N] [--format markdown|json] [--run-dir DIR]
 
---lang: `go` or `ruby`. Other values error out — see `contract-extraction.md`
-for the algorithmic walk that covers Python/TS and other languages.
+--lang: `go`, `ruby`, or `ts`. Other values error out — see
+`contract-extraction.md` for the algorithmic walk that covers Python and other
+languages.
 
 --symbol grammar (Go):
   "(*Type).Method"   pointer-receiver method
@@ -25,6 +29,12 @@ for the algorithmic walk that covers Python/TS and other languages.
   "A::B::Foo#bar"    instance method (nested namespace supported)
   "A::B::Foo.bar"    class / singleton method (def self.bar)
   "A::B::Foo"        class or module body
+
+--symbol grammar (TypeScript, mirrors the Ruby form):
+  "Foo#bar"          class instance method (non-static)
+  "Foo.bar"          class static · namespace member · object-literal arrow
+  "Foo"              class body · function · const-arrow at module scope
+  "bar"              free function / const-arrow / hook at module scope
 
 --run-dir behavior:
   * Every LSP response is written to DIR/lsp/<op>__<slug>__L<line>C<col>.json
@@ -58,7 +68,8 @@ def ensure_venv():
             [str(VENV_PY), "-m", "pip", "install", "--quiet", "--upgrade", "pip"]
         )
         subprocess.check_call(
-            [str(VENV_PY), "-m", "pip", "install", "--quiet", "multilspy"]
+            [str(VENV_PY), "-m", "pip", "install", "--quiet",
+             "multilspy", "tree-sitter", "tree-sitter-typescript"]
         )
     os.execv(str(VENV_PY), [str(VENV_PY), str(Path(__file__).resolve()), *sys.argv[1:]])
 
@@ -80,6 +91,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 CALLSITES_GO_SRC = SCRIPTS_DIR / "callsites.go"
 CALLSITES_GO_BIN = SCRIPTS_DIR / ".bin" / "callsites"
 CALLSITES_RB = SCRIPTS_DIR / "callsites.rb"
+CALLSITES_TS = SCRIPTS_DIR / "callsites_ts.py"
 
 
 def prepend_path(*dirs):
@@ -122,6 +134,18 @@ def _run_ruby_helper(args):
     return json.loads(proc.stdout)
 
 
+def _run_ts_helper(args):
+    # Run in the same venv Python so tree-sitter + tree-sitter-typescript
+    # (installed by ensure_venv) are guaranteed available.
+    proc = subprocess.run(
+        [str(VENV_PY), str(CALLSITES_TS), *args],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"callsites_ts.py failed: {proc.stderr.strip()}")
+    return json.loads(proc.stdout)
+
+
 def extract_node(abs_file: Path, in_symbol: str, lang: str) -> dict:
     """Return {start_line, end_line, calls=[(line, col, name), ...]}.
 
@@ -145,6 +169,13 @@ def extract_node(abs_file: Path, in_symbol: str, lang: str) -> dict:
         }
     if lang == "ruby":
         data = _run_ruby_helper([str(abs_file), in_symbol])
+        return {
+            "start_line": data["start_line"],
+            "end_line": data["end_line"],
+            "calls": [(c["line"], c["col"], c["name"]) for c in data["calls"]],
+        }
+    if lang == "ts":
+        data = _run_ts_helper([str(abs_file), in_symbol])
         return {
             "start_line": data["start_line"],
             "end_line": data["end_line"],
@@ -225,12 +256,24 @@ def reconstruct_symbol_ruby(abs_file: Path, target_line: int, fallback: str):
     return sym or fallback
 
 
+def reconstruct_symbol_ts(abs_file: Path, target_line: int, fallback: str):
+    """Shell out to callsites_ts.py @LINE resolve mode; returns Grammar-A symbol."""
+    try:
+        data = _run_ts_helper([str(abs_file), f"@{target_line}"])
+    except Exception:
+        return fallback
+    sym = data.get("symbol") or ""
+    return sym or fallback
+
+
 def reconstruct_symbol(abs_file: Path, source: str, target_line: int,
                        fallback: str, lang: str):
     if lang == "go":
         return reconstruct_symbol_go(source, target_line, fallback)
     if lang == "ruby":
         return reconstruct_symbol_ruby(abs_file, target_line, fallback)
+    if lang == "ts":
+        return reconstruct_symbol_ts(abs_file, target_line, fallback)
     return fallback
 
 
@@ -241,6 +284,32 @@ def resolve_target_path(defn: dict):
         if uri.startswith("file://"):
             abs_path = uri[len("file://"):]
     return abs_path
+
+
+def preopen_typescript_project(server, project: Path, opened: dict):
+    """Open every .ts / .tsx file under project/src (or project root) so
+    typescript-language-server registers them in its project graph. Without
+    this, the first `definition` call on a cross-file use-site returns the
+    local import binding instead of chasing through to the source file."""
+    src_root = project / "src" if (project / "src").is_dir() else project
+    for path in src_root.rglob("*"):
+        if path.suffix.lower() not in (".ts", ".tsx"):
+            continue
+        # Skip declaration files — they rarely hold real definitions we walk to.
+        if path.name.endswith(".d.ts"):
+            continue
+        try:
+            rel = path.resolve().relative_to(project).as_posix()
+        except ValueError:
+            continue
+        if rel in opened:
+            continue
+        try:
+            file_ctx = server.open_file(rel)
+            file_ctx.__enter__()
+            opened[rel] = file_ctx
+        except Exception as exc:
+            print(f"[lsp_tree] preopen warning ({rel}): {exc}", file=sys.stderr)
 
 
 def slugify_path(p: str) -> str:
@@ -461,11 +530,12 @@ def main():
                         help="persist every LSP response under DIR/lsp/")
     args = parser.parse_args()
 
-    if args.lang not in ("go", "ruby"):
+    if args.lang not in ("go", "ruby", "ts"):
         sys.exit(
-            f"--lang {args.lang}: only `go` and `ruby` are supported today "
-            "(AST-based call-site detection). For other languages, use the "
-            "manual walk with lsp_query.py as described in contract-extraction.md."
+            f"--lang {args.lang}: only `go`, `ruby`, and `ts` are supported "
+            "today (AST-based call-site detection). For other languages, use "
+            "the manual walk with lsp_query.py as described in "
+            "contract-extraction.md."
         )
 
     project = Path(args.project).resolve()
@@ -478,7 +548,9 @@ def main():
     if args.lang == "go":
         ensure_callsites_bin()
 
-    config = MultilspyConfig.from_dict({"code_language": args.lang})
+    # multilspy expects the Language enum values ("typescript", not "ts").
+    ml_lang = {"ts": "typescript"}.get(args.lang, args.lang)
+    config = MultilspyConfig.from_dict({"code_language": ml_lang})
     logger = MultilspyLogger()
     server = SyncLanguageServer.create(config, logger, str(project))
 
@@ -492,6 +564,14 @@ def main():
     try:
         walker = TreeWalker(server, project, args.depth, opened, args.lang,
                             args.scope, run_dir)
+        # typescript-language-server only resolves cross-file `definition`
+        # after the target file has been opened by the client. Pre-open every
+        # .ts / .tsx under the project so the first use-site query chases
+        # through imports instead of stopping at the import binding. Ruby /
+        # Go servers index the whole project on startup and don't need this.
+        if args.lang == "ts":
+            preopen_typescript_project(server, project, opened)
+
         seed_abs = project / args.file
         try:
             seed_info = extract_node(seed_abs, args.symbol, args.lang)

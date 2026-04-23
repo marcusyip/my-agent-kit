@@ -49,46 +49,24 @@ Depends on: v0.37.0 shipped; at least one benchmark unit exercising codegen.
 Blocked by: deciding where the glob list lives (per-user extensible config
 vs. a static file shipped with the plugin).
 
-## Deferred from lsp_tree.py Ruby landing (2026-04-23)
+## Landed
 
-### TypeScript support in `lsp_tree.py`
-**Surfaced while adding Ruby dispatch to `scripts/lsp_tree.py`.**
-What: add `--lang ts` (and/or `--lang js`) alongside the existing `go` and
-`ruby` dispatch. Needs a third call-site helper — `scripts/callsites.ts` or
-equivalent — that parses the file with the TypeScript Compiler API (or
-tree-sitter-typescript) and emits the same `{start_line, end_line, calls=[
-{line, col, name}, …]}` JSON the Ruby helper (`callsites.rb`) produces. The
-Python side only needs a dispatch branch in `extract_node` and a
-`reconstruct_symbol_ts` sibling; `scope=local` filtering and LSP walking are
-already language-agnostic.
+### TypeScript support in `lsp_tree.py` — landed 2026-04-23
+Shipped `--lang ts` (handles `.ts` and `.tsx`, including React / React
+Native function components, hooks, and class components) via
+`scripts/callsites_ts.py` (tree-sitter-typescript). Symbol grammar mirrors
+the Ruby/Solargraph convention (`Foo#bar`, `Foo.bar`, `Foo`, `bar`).
+Fixture: `benchmark/sample-app-ts/` (screen + hook + service + model, no
+`node_modules` — external hooks deliberately tag as `[external]`).
+Design notes: `benchmark/notes/lsp-tree-ts-options.md`. TS files are
+pre-opened at startup so ts-server's project graph resolves cross-file
+`definition` calls through imports; Ruby/Go servers index on startup and
+don't need this.
 
-Why: the plugin's target audience runs Rails, Go, and increasingly Next.js /
-NestJS stacks. Today TS users fall back to the manual `lsp_query.py` walk
-from `contract-extraction.md`, which is slower to dogfood and produces fewer
-GATE artifacts. multilspy already bundles a TS/JS server, so the missing
-piece is only the AST-level call-site extractor.
-
-Pros: single tool covers the three most common stacks in the benchmark
-roadmap; the walker, cache, artifact writer, `--scope local` filter, and
-tree renderer all work unchanged. Tree-sitter-typescript is available on PyPI
-(`tree-sitter-typescript`) and would let us keep the helper in-process rather
-than shelling out to Node.
-
-Cons: TS has many more call-site shapes than Go or Ruby (arrow methods in
-object literals, React hooks as top-level calls inside function components,
-tagged templates that look like calls, JSX elements that desugar to
-`createElement`). Symbol grammar has to decide: `Foo.bar` class method vs.
-`Foo::bar` namespace member vs. bare `useFoo` hook. Solargraph-style
-weakness reappears for React hooks whose implementations live in node\_modules.
-
-Depends on: picking the parser (tsc compiler API via Node subprocess — heavy
-but canonical; or `tree-sitter-typescript` in-process — lighter but fuzzier
-for generics / decorators / type-only imports). Recommend tree-sitter to
-match the zero-Node-dependency ethos of the existing helpers.
-
-Blocked by: a sample-app-ts fixture under `benchmark/` with at least one
-controller + service + model triplet so the symbol grammar and call-site
-heuristics can be calibrated against real code, not guessed.
+Follow-ups deferred: JS-only (`.js`/`.jsx`) dispatch; destructured
+assignment reconstruction (today `const [items, setItems] = useState(...)`
+reports `setItems` as `symbol-not-found` because ts-server points at a
+tuple-element position).
 
 ## Deferred from plan-ceo-review (2026-04-17)
 

@@ -1,0 +1,7 @@
+{
+  "name": "sample-app-ts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Minimal React Native-style TypeScript fixture for tdd-contract-review LSP tests.",
+  "_notes": "Intentionally has no runtime dependencies. `react` / `react-native` imports resolve to 'external' via the LSP walker — that is the fixture's point."
+}

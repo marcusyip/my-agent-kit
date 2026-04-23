@@ -181,7 +181,27 @@ If a contract type cannot be identified (e.g., no DB schema found), keep the Che
 
 For building the `### Call trees` block, **LSP is mandatory, not optional.** This section is an algorithm, not guidance — sub-agents that skip steps to save time produce shallow trees that pass the markdown-shape gate but miss real branches. The Step 3 LSP-utilization GATE in SKILL.md will fail the run if it detects under-utilization.
 
-`<plugin-root>/tdd-contract-review/scripts/lsp_query.py` wraps a real language server (via `multilspy`) and exposes three operations: `definition`, `document_symbols`, `references`.
+Two scripts are available. Use the one that fits the language:
+
+- **`<plugin-root>/tdd-contract-review/scripts/lsp_tree.py` — preferred for Go, Ruby, TypeScript/TSX.** A standalone one-shot walker: given a seed symbol, it parses the file with an AST helper, walks every outgoing call via `definition`, and emits a nested tree. All LSP queries share a single language-server session, so the cold-start cost (~5–30s) is paid once per invocation, not once per call site. With `--run-dir $RUN_DIR`, every `definition` / `document_symbols` response is persisted under `$RUN_DIR/lsp/` using the same filename scheme `lsp_query.py` uses — the LSP-utilization GATE counts artifacts on disk and does not care which tool produced them.
+- **`<plugin-root>/tdd-contract-review/scripts/lsp_query.py` — fallback for other languages** (Python, Java, Rust, C#, Kotlin, Dart, etc.) and for per-call queries (e.g. resolving a single ambiguous dispatch). Exposes three operations: `definition`, `document_symbols`, `references`.
+
+**When in doubt, start with `lsp_tree.py`.** If the language is supported and the target is a standard call-tree walk from a seed symbol, one `lsp_tree.py` invocation replaces dozens of `lsp_query.py` calls. Drop back to `lsp_query.py` only when the language isn't supported or you need a single targeted query the walker won't reach.
+
+`lsp_tree.py` CLI:
+
+```bash
+SCRIPT="<plugin-root>/tdd-contract-review/scripts/lsp_tree.py"
+# Symbol grammar: Go "(*Type).Method" / "Name"; Ruby "Foo#bar" / "Foo.bar" / "Foo";
+# TypeScript "Foo#bar" / "Foo.bar" / "Foo" / "bar" (handles .ts AND .tsx / React / RN).
+"$SCRIPT" --lang go   --project <repo-root> --file <rel-path> --symbol "(*Handler).Create" --run-dir $RUN_DIR
+"$SCRIPT" --lang ruby --project <repo-root> --file <rel-path> --symbol "TransactionsController#create" --run-dir $RUN_DIR
+"$SCRIPT" --lang ts   --project <repo-root> --file <rel-path> --symbol "TransactionScreen" --run-dir $RUN_DIR
+```
+
+Useful flags: `--depth N` (cap walk depth, default 5), `--scope local` (drop calls that resolve outside the project — stdlib/gems — while still running the LSP query so the GATE artifact count is unaffected), `--format json` (machine-readable tree in addition to the LSP artifacts).
+
+The walker writes the rendered tree to `$RUN_DIR/tree__<file-slug>__<symbol-slug>.md`. Read it, paste the relevant subtree into the `### Call trees` fenced block of `01-extraction.md`, and proceed with the algorithm below for any parts the walker flagged `[unresolved]` or `[depth-cap]` that need deeper inspection.
 
 **Algorithm — execute every step, in order, for every applicable target:**
 
