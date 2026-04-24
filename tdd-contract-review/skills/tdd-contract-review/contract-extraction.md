@@ -33,19 +33,41 @@ unit: POST /api/v1/transactions
 
 ### 1. `## Summary`
 
-Scannable one-screen overview shown at Checkpoint 1. Bullets only, no prose. Counts MUST reconcile with the body — every number here must match what the reader can count in the corresponding section.
+Scannable one-screen overview shown at Checkpoint 1. The reviewer's question at CP1 is "did the agent miss a contract source?" — raw counts don't answer that; a per-type file list does. The Summary lists every file the reviewer must open to verify the contract is complete, grouped to match the Checkpoint 1 Coverage table (same 5 types, same order).
 
 ```
 ## Summary
 
-- Symbols in call trees: <N>     # count of own-nodes across all ROOT#n trees
-- Files in root set: <N>         # count of bullets under ### Root set
-- Unresolved dispatches: <N>     # count of [unresolved] lines inside the tree
-- External calls: <N>            # count of unique [external -> slug] entries
-- Entry points declared: <N>     # count of bullets under ## Entry points
-- LSP calls: <D> document_symbols, <F> definitions, <R> references   # scripted tools: equals counts in $RUN_DIR/lsp/; native LSP: self-report
+Contract sources by type:
+- API inbound:
+  - app/controllers/api/v1/transactions_controller.rb (TransactionsController#create)
+  - app/serializers/transaction_serializer.rb
+- DB:
+  - db/schema.rb
+  - app/models/transaction.rb
+  - app/models/wallet.rb
+- Outbound API:
+  - app/clients/payment_gateway.rb
+  - config/initializers/payment_gateway.rb
+- Jobs: Not detected
+- UI Props: Not applicable
+
+- LSP calls: <D> document_symbols, <F> definitions, <R> references
 - Critical mode: ON (reason: <one-line signal>) OR OFF
 ```
+
+**All 5 types MUST appear in this exact order** — `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`. When a type's Checkpoint 1 status is `Not detected` or `Not applicable`, write that string in place of the file list (one line, no bullets underneath).
+
+**What counts as a contract source per type** (include these; exclude anything else):
+- **API inbound** — controller / handler + request schema or params validator + response serializer.
+- **DB** — schema snapshot (`db/schema.rb`, `db/structure.sql`, `schema.prisma`, Drizzle schema, etc.) + every model / entity file for tables the unit reads or writes.
+- **Outbound API** — client class + SDK initializer / config; one grouping per external service.
+- **Jobs** — job class + params schema. For queue consumers, the consumer class + inbound message schema.
+- **UI Props** — component file + prop type declaration / runtime validator.
+
+**Exclude** internal services, repositories, validators, formatters, and other helpers that appear as own-nodes in `### Call trees` but do NOT define a contract boundary. Scope is "must read to know the contract", not "every file reached".
+
+The last two bullets (`LSP calls`, `Critical mode`) remain as run-level metadata.
 
 ### 2. `## Entry points`
 
@@ -141,6 +163,7 @@ STRICT table. Do NOT rename, reorder, or embellish row labels.
 - Do NOT write `API contract (inbound)`, `DB contract`, `Job/message consumer contract`, `UI props contract`, or any variant. Put context in the Evidence column only.
 - Column header MUST be: `| Type | Status | Evidence |` (3 columns).
 - Status MUST be one of exactly: `Extracted` | `Not detected` | `Not applicable`.
+- Evidence is a **short anchor** (1–3 words: class name, table name, SDK symbol, or a terse reason for `Not detected` / `Not applicable`). The full file list per type lives in `## Summary → Contract sources by type`; do NOT duplicate it here.
 
 ```
 ## Checkpoint 1: Contract Type Coverage

@@ -6,11 +6,20 @@ unit: POST /api/v1/transactions
 # Extraction: POST /api/v1/transactions
 
 ## Summary
-- Symbols in call trees: 13
-- Files in root set: 8
-- Unresolved dispatches: 1
-- External calls: 1
-- Entry points declared: 1
+
+Contract sources by type:
+- API inbound:
+  - app/controllers/api/v1/transactions_controller.rb (TransactionsController#create)
+- DB:
+  - db/schema.rb
+  - app/models/transaction.rb
+  - app/models/wallet.rb
+- Outbound API:
+  - config/initializers/payment_gateway.rb (PaymentGateway SDK)
+- Jobs: Not detected
+- UI Props: Not applicable
+
+- LSP calls: 3 document_symbols, 14 definitions, 0 references
 - Critical mode: OFF
 
 ## Entry points

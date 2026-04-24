@@ -52,9 +52,9 @@ The skill is an orchestrator that dispatches a Staff Engineer agent at each step
 |  | **Checkpoint 2** -- user reviews reconciliation, WEAK assertions on fields that matter, UNCOVERED fields |
 | 6a | **Type selection** -- for each `Extracted` contract type, dispatch one per-type agent; if critical mode, add F1/F2 | -- | -- |
 | 6b | **Per-type gap analysis (parallel)** -- A: API inbound, B: DB, C: Outbound API; F1: money-correctness, F2: API-security (critical mode only) | A/B/C sonnet, F1/F2 **opus** | `03a-gaps-api.md`, `03b-gaps-db.md`, `03c-gaps-outbound.md`, `03d-gaps-money.md`, `03e-gaps-security.md` |
-| 6c | **Merge** -- dedupe per-type gaps, collapse F1/F2 overlap with A/B/C, calibrate priorities, copy-forward hygiene findings | **opus** | `03-gaps.md` |
-|  | **Checkpoint 3** -- user reviews priority calibration, stub concreteness, dedupe sanity |
-| 7-8 | **Report + findings.json** -- scored `report.md` with test stubs + machine-readable `findings.json` for CI | sonnet | `report.md`, `findings.json` |
+| 6c | **Index (shell, no LLM)** -- `bash` block counts gaps per priority + per sub-file, writes a tiny index with clickable links to every `03*-gaps-*.md` on disk. Dedupe happens in Step 7. | -- (shell) | `03-index.md` |
+|  | **Checkpoint 3** -- user reviews per-type sub-files (03a..03e) directly; the index surfaces counts + coverage |
+| 7-8 | **Report + findings.json** -- scored `report.md` + machine-readable `findings.json`; Step 7 reads per-type sub-files and dedupes F1/F2 overlap with A/B/C | sonnet | `report.md`, `findings.json` |
 | 9 | **Deterministic gate** -- `jq` checks: valid JSON, CRITICAL+HIGH gaps have stubs, all Extracted types represented | -- | -- |
 
 At each checkpoint the user picks **Continue** / **Revise** / **Stop**. Revise auto-dispatches a DEEPEN pass on the responsible agent; free-text feedback re-dispatches with the user's words verbatim. Cap: 3 revises per checkpoint.
@@ -63,8 +63,8 @@ At each checkpoint the user picks **Continue** / **Revise** / **Stop**. Revise a
 
 - **One unit per run.** Extraction depth scales with focus; batching units yields shallow analysis and tangled gap reports.
 - **Three human checkpoints.** CP1 locks the contract vocabulary, CP2 reconciles test counts, CP3 calibrates priorities -- the judgments humans are better at than the model.
-- **Parallel per-type gap agents + merge.** Splitting by contract type keeps each agent's context narrow enough to enumerate every scenario per field instead of collapsing them. Critical mode adds two cross-cutting agents (money, security) kept separate from A/B/C.
-- **Model split.** Per-type enumeration uses sonnet; merge and cross-cutting synthesis use opus. Opus where reasoning quality pays off, sonnet where it doesn't.
+- **Parallel per-type gap agents, no merge agent.** Splitting by contract type keeps each agent's context narrow enough to enumerate every scenario per field instead of collapsing them. Critical mode adds two cross-cutting agents (money, security) kept separate from A/B/C. Dedupe of F1/F2 overlap with A/B/C happens during Step 7 report composition, not in a separate merge step — a `bash` block writes the `03-index.md` index deterministically.
+- **Model split.** Per-type enumeration uses sonnet; cross-cutting (F1 money, F2 security) uses opus. Opus where cross-domain reasoning pays off, sonnet where per-type enumeration is the job.
 
 Token cost per run: ~160k non-critical / ~290k critical. See [`benchmark/notes/token-usage.md`](./benchmark/notes/token-usage.md) for the per-step breakdown.
 

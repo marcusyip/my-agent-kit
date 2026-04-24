@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.48.0] - 2026-04-24
+
+### tdd-contract-review
+
+#### Changed
+- **Step 6c "Merge" opus agent eliminated; replaced with a shell-generated `03-index.md`.** The merge agent was burning ~100k tokens per run to re-read every per-type sub-file (03a/b/c/d/e), collapse F1/F2 overlap, and emit a unified `03-gaps.md`. The re-emission duplicated content that the per-type agents had already written correctly. Step 6c is now a deterministic `bash` block that `grep`s each sub-file for `^- \*\*id\*\*: G` and `^- \*\*priority\*\*: <LEVEL>`, then writes a tiny index file with priority totals, per-type counts, clickable links to each `03*-gaps-*.md`, and the Checkpoint 2 "Gap Coverage" table. No LLM involved at Step 6c.
+- **Dedupe responsibility moved to Step 7-8 (report composition).** F1 money and F2 security deliberately overlap with per-type A/B/C on the same fields — that overlap is how cross-cutting concerns are caught when a per-type agent misses them. Step 7 now dedupes by `(field + failure-mode key phrase)` while composing `report.md` and `findings.json`: keep the highest priority, combine descriptions, use the richer stub. The per-type sub-files on disk are preserved unedited; dedupe lives in the final synthesis only.
+- **Per-type Gap List grammar anchored with explicit regex.** Each gap in `03a..03e` writes `- **id**: G<PREFIX>-<NNN>` and `- **priority**: CRITICAL|HIGH|MEDIUM|LOW` on their own lines. Documented as the exact regex that Step 6c's shell `grep` relies on (`^- \*\*id\*\*: G[A-Z]+-[0-9]+`, `^- \*\*priority\*\*: (CRITICAL|HIGH|MEDIUM|LOW)$`). Deviations would silently break the index counts, so the grammar is now a contract, not a suggestion.
+- **Checkpoint 3 PAUSE redirects reviewers to the per-type sub-files.** The index surfaces counts and coverage; substantive review happens against `03a..03e` directly. Free-text revision at CP3 re-dispatches the single named per-type agent and re-runs the Step 6c shell — no merge agent to re-run.
+- **`grade-shape.sh` B17/B18 rewired to grade `03-index.md` instead of `03-gaps.md`.** B17 asserts `## Summary` + `## Checkpoint 2: Gap Coverage` on the index; B18 asserts every Extracted type from CP1 shows `Yes` in the index's Checkpoint 2 table. Also fixed B16's gap-ID regex to match the real `- **id**: G...` grammar (previous regex would not match at all).
+- **`report-template.md` Step 7-8 spec lists inputs explicitly.** Input files: `01-extraction.md`, `02-audit.md`, `03-index.md` (counts only), and per-type sub-files on disk. Hygiene pulls from `02-audit.md` directly. New "Dedupe rule" section documents the keep-highest-priority/combine-descriptions/richer-stub contract.
+
+#### Removed
+- **`03-gaps.md` merged-report artifact.** Superseded by `03-index.md` + the per-type sub-files on disk. The "Output File Shape — Merged Report" section was deleted from `gap-analysis.md`.
+
+#### Rationale
+Merge was the most expensive step per run (opus, ~100k tokens) and the one that added the least new information. Every gap it "merged" had already been written in a per-type sub-file by a cheaper sonnet agent. Killing it cuts per-run cost substantially in both non-critical and critical modes without losing any gap detection — dedupe moves downstream to a pass that already has to read all sub-files anyway.
+
 ## [0.47.2] - 2026-04-24
 
 ### tdd-contract-review

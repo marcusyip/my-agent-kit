@@ -86,8 +86,8 @@ misses — e.g. the schema rename or a dropped section. Every case is a grep / j
 | B14   | In critical mode, 03d-gaps-money.md and 03e-gaps-security.md exist                        | run dir         |
 | B15   | Each per-type sub-file has `## Test Structure Tree (<TYPE>)` and `## Contract Map (<TYPE>)` | 03a/b/c         |
 | B16   | Gap IDs use the right prefix per sub-file (GAPI in 03a, GDB in 03b, GOUT in 03c)          | 03a/b/c         |
-| B17   | `03-gaps.md` contains Summary + Test Structure Tree (unified) + Contract Map (unified) + Gap Analysis by Priority + Hygiene + Checkpoint 2 | 03-gaps         |
-| B18   | Checkpoint 2 table: every Extracted type from Checkpoint 1 shows `Yes` in Gaps Checked    | 03-gaps         |
+| B17   | `03-index.md` contains `## Summary` and `## Checkpoint 2: Gap Coverage` (shell-generated index, no LLM content) | 03-index       |
+| B18   | Checkpoint 2 table in `03-index.md`: every Extracted type from Checkpoint 1 shows `Yes` in Gaps Checked | 03-index      |
 | B19   | `report.md` exists and is non-empty                                                       | report.md       |
 | B20   | `findings.json` has at least one gap per Extracted type OR explicit coverage note in report.md | cross-file |
 
@@ -135,7 +135,7 @@ app is fintech-saturated and can't express an OFF case faithfully.
 | E5    | Free-text feedback at Checkpoint 1 ("look closer at audit log fields") | Step 3 agent re-dispatched with REVISION REQUEST block appended verbatim |
 | E6    | Free-text feedback at Checkpoint 2 ("please add the foo scenario") | REVISION REQUEST block appended verbatim    |
 | E7    | 4th visit to same checkpoint                               | Prompt prefix added; further free-text treated as Continue |
-| E8    | Free-text feedback at Checkpoint 3 naming one contract type | That single per-type agent re-dispatched, then merge agent re-runs |
+| E8    | Free-text feedback at Checkpoint 3 naming one contract type | That single per-type agent re-dispatched, then Step 6c shell block re-runs to refresh `03-index.md` |
 
 AskUserQuestion only surfaces Continue / Stop — auto-iterate `Revise` was removed in v0.45.0
 (see CHANGELOG). All revision goes through the free-text path, which requires specific user input.

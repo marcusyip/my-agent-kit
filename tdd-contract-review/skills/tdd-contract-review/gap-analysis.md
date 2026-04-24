@@ -1,7 +1,7 @@
 <!-- version: 0.34.1 -->
 # Gap Analysis Reference
 
-Detailed guidance for Step 6 of the TDD Contract Review workflow. Step 6 runs per-type gap agents in parallel (A = API inbound, B = DB, C = Outbound API), plus two cross-cutting agents in critical mode (F1 = money-correctness, F2 = API-security), then a single merge agent (6c) that produces the unified `03-gaps.md`.
+Detailed guidance for Step 6 of the TDD Contract Review workflow. Step 6 runs per-type gap agents in parallel (A = API inbound, B = DB, C = Outbound API), plus two cross-cutting agents in critical mode (F1 = money-correctness, F2 = API-security). A final shell-only step (6c) writes a tiny index file (`03-index.md`) with gap counts and clickable links to each sub-file — there is no merge agent. Dedupe of overlapping gaps (F1 ↔ A, F2 ↔ A) happens inside Step 7 while the final report is composed.
 
 ## Scenario Enumeration Rules (per-type agents A/B/C)
 
@@ -36,14 +36,20 @@ One row per field. `Scenarios Required` = comma-separated list of scenario names
 
 ### 3. `## Gap List`
 
-For each gap:
+For each gap, write exactly these bullets at the top level (no nesting, no bold-inline attributes, no alternate ordering):
 
-- **id**: `G<TYPE_PREFIX>-<NNN>` (e.g., `GAPI-001`, `GDB-001`, `GOUT-001`)
-- **priority**: `CRITICAL` | `HIGH` | `MEDIUM` | `LOW`
+```
+- **id**: G<TYPE_PREFIX>-<NNN>
+- **priority**: CRITICAL
 - **field**: typed prefix + field name
-- **type**: `<CONTRACT_TYPE>`
+- **type**: <CONTRACT_TYPE>
 - **description**: what is missing
-- **stub**: REQUIRED for CRITICAL and HIGH
+- **stub**: (REQUIRED for CRITICAL and HIGH; omit otherwise)
+```
+
+- `<TYPE_PREFIX>` is `API`, `DB`, `OUT`, `MONEY`, or `SEC`; gap ids therefore look like `GAPI-001`, `GDB-001`, `GOUT-001`, `GMONEY-001`, `GSEC-001`.
+- `- **priority**: <PRIORITY>` MUST match this exact regex on its own line: `^- \*\*priority\*\*: (CRITICAL|HIGH|MEDIUM|LOW)$`. Step 6c greps this to count gaps per priority for the index file; any deviation produces a wrong count. Do not bold the value, do not add a period.
+- `- **id**: G<PREFIX>-<NNN>` MUST match `^- \*\*id\*\*: G[A-Z]+-[0-9]+` on its own line. Step 6c greps this to count gaps per sub-file.
 
 ### 4. `## Test Stubs`
 
@@ -95,58 +101,36 @@ For each gap:
 
 Pseudocode per HIGH/CRITICAL gap.
 
-## Output File Shape — Merged Report (`03-gaps.md`)
+## Step 6c — Index file shape (`03-index.md`)
 
-Step 6c reads every sub-file that exists (`03a-gaps-api.md`, `03b-gaps-db.md`, `03c-gaps-outbound.md`, `03d-gaps-money.md`, `03e-gaps-security.md`) plus `02-audit.md`'s anti-patterns section, and produces the unified `03-gaps.md`. Skip any sub-file that does not exist.
+Step 6c is shell-only (no agent dispatch). It reads each sub-file that exists, counts gaps by priority and per-type, and writes `$RUN_DIR/03-index.md`. The exact bash block lives in `SKILL.md` under "Step 6c — Write `03-index.md`"; this section describes the output file's contract so the GATE and graders can verify it.
 
-The merged file has 7 sections in this order.
+The index has exactly two top-level sections, in this order:
 
 ### 1. `## Summary`
-
-Scannable one-screen overview shown at Checkpoint 3 before the user is asked to proceed. Bullets only, 4-8 lines max. No prose.
 
 ```
 ## Summary
 
-- Gaps by priority: CRITICAL: <N>, HIGH: <N>, MEDIUM: <N>, LOW: <N>
-- Gaps by contract type: API: <N> | DB: <N> | Outbound: <N> | Money: <N> | Security: <N>  (omit lines for types not present)
-- Test stubs generated: <N> (for CRITICAL + HIGH gaps)
-- Hygiene/anti-patterns carried from audit: <N>
+Gaps by priority (across all sub-reports):
+- CRITICAL: <N>
+- HIGH: <N>
+- MEDIUM: <N>
+- LOW: <N>
+
+Gaps by contract type:
+- API inbound: <N> — [03a-gaps-api.md](<abs-path>)
+- DB: <N> — [03b-gaps-db.md](<abs-path>)
+- Outbound API: <N> — [03c-gaps-outbound.md](<abs-path>)
+- Money (cross-cutting): <N> — [03d-gaps-money.md](<abs-path>)     # critical mode only
+- Security (cross-cutting): <N> — [03e-gaps-security.md](<abs-path>) # critical mode only
+
+Critical mode: ON|OFF
 ```
 
-### 2. `## Test Structure Tree (unified)`
+Per-type lines appear only when the corresponding sub-file exists on disk. The priority counts are totals across every sub-file that exists — the same gap may be counted twice if F1 money and A API both flagged it (dedupe happens in Step 7, not here).
 
-One root (the unit identifier). Under it, concatenate per-type branches grouped by contract type:
-
-- `### API inbound` (from `03a-gaps-api.md`)
-- `### DB` (from `03b-gaps-db.md`)
-- `### Outbound API` (from `03c-gaps-outbound.md`)
-
-Preserve every field branch and every scenario verbatim from the sub-files.
-
-### 3. `## Contract Map (unified)`
-
-Single table with all rows from all sub-reports. Column header:
-
-```
-| Typed Prefix | Field | Role | Scenarios Required | Scenarios Covered | Gap Count |
-```
-
-### 4. `## Gap Analysis by Priority`
-
-Merge gap lists from all sub-reports. **Dedupe** by `(field + description key phrase)`. When duplicates appear (e.g., F1 money + outbound agent both flag amount-mismatch, or F2 security + API agent both flag missing auth), keep the highest priority, combine descriptions, keep the richer stub.
-
-Group by `CRITICAL` / `HIGH` / `MEDIUM` / `LOW` in that order.
-
-### 5. `## Hygiene (from audit)`
-
-Copy the anti-patterns section from `$RUN_DIR/02-audit.md` verbatim (with `file:line` references). These are test-code hygiene issues, NOT contract gaps. They inform the report but are excluded from `findings.json`.
-
-### 6. `## Test Stubs for CRITICAL / HIGH Gaps`
-
-Collected from sub-reports, deduped by gap id. Use the richer stub when duplicates exist.
-
-### 7. `## Checkpoint 2: Gap Coverage`
+### 2. `## Checkpoint 2: Gap Coverage`
 
 STRICT table — the orchestrator greps for literal row labels. Column header MUST be:
 
@@ -154,7 +138,15 @@ STRICT table — the orchestrator greps for literal row labels. Column header MU
 | Contract Type | Gaps Checked | Count | Notes |
 ```
 
-- Row labels MUST be exactly: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props` (same 5 as Checkpoint 1).
+- Row labels MUST be exactly these 5 strings, in this order: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props` (same 5 as Checkpoint 1).
 - `Gaps Checked` MUST be one of: `Yes` | `N/A`.
-- For each type that had a sub-file: `Yes`, with `Count` = number of gaps from that sub-report.
-- For types marked `Not applicable` or `Not detected` in Checkpoint 1: `N/A` with an explanation in `Notes`.
+- For each type with an `Extracted` status at Checkpoint 1 and a sub-file on disk: `Yes`, with `Count` = gap count from `grep -c '^- \*\*id\*\*: G'` on that sub-file, and `Notes` = `see <sub-file>`.
+- For types marked `Not detected` or `Not applicable` at Checkpoint 1: `N/A` with `Count` = 0 and an explanation in `Notes`.
+
+There is NO Test Structure Tree, NO Contract Map, NO unified Gap Analysis, NO Hygiene section, NO Test Stubs section in `03-index.md`. Those live in the per-type sub-files (trees, maps, stubs) and `02-audit.md` (hygiene). Step 7-8 reads them directly.
+
+## Dedupe (Step 7 responsibility)
+
+The F1 money and F2 security cross-cutting agents deliberately overlap with the per-type A/B/C agents: F1 flags amount-precision gaps on the same amount fields A-API flags; F2 flags missing auth gaps on the same endpoint A-API audits. This overlap is intentional — it is how cross-cutting concerns are caught even when a per-type agent missed them.
+
+Step 7 (report writing) composes the final `report.md` and `findings.json` from every sub-file. During that pass, it dedupes by `(field + failure-mode key phrase)`: when two sub-files describe the same failure on the same field, the report agent keeps the highest priority, combines descriptions, and uses the richer stub. The per-type sub-files themselves are preserved unedited on disk — dedupe lives in the final synthesis, not in the sub-files.

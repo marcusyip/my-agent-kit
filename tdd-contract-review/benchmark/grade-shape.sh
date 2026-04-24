@@ -33,7 +33,7 @@ RUN_DIR="${1%/}"
 FINDINGS="$RUN_DIR/findings.json"
 EXTRACTION="$RUN_DIR/01-extraction.md"
 AUDIT="$RUN_DIR/02-audit.md"
-GAPS="$RUN_DIR/03-gaps.md"
+INDEX="$RUN_DIR/03-index.md"
 REPORT="$RUN_DIR/report.md"
 
 PASSED=0
@@ -205,13 +205,14 @@ else
     "[[ -z '$bad_sections' ]]"
 
   # B16: Gap IDs in each sub-file use the expected prefix. Skip if the sub-file doesn't exist.
+  # Matches the gap-analysis.md grammar: `- **id**: G<PREFIX>-<NNN>`.
   bad_prefix=""
   while IFS='|' read -r label file prefix; do
     [[ -z "$label" ]] && continue
     target="$RUN_DIR/$file"
     if [[ -f "$target" ]]; then
-      # Look for any "id: G<something>-" that is NOT the expected prefix.
-      if grep -oE 'id:\s*G[A-Z]+-[0-9]+' "$target" | grep -v "id:.*${prefix}-" >/dev/null 2>&1; then
+      # Look for any "- **id**: G<something>-" that is NOT the expected prefix.
+      if grep -oE '^- \*\*id\*\*: G[A-Z]+-[0-9]+' "$target" | grep -v "G${prefix}-" >/dev/null 2>&1; then
         bad_prefix+="$file "
       fi
     fi
@@ -235,30 +236,26 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 03-gaps.md — merged report + Checkpoint 2
+# 03-index.md — shell-generated index + Checkpoint 2
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "03-gaps.md:"
+echo "03-index.md:"
 
-if [[ ! -f "$GAPS" ]]; then
-  check B17 "03-gaps.md exists" "false"
-  skip B18 "Checkpoint 2: every Extracted type shows Yes in Gaps Checked" "03-gaps.md missing"
+if [[ ! -f "$INDEX" ]]; then
+  check B17 "03-index.md exists" "false"
+  skip B18 "Checkpoint 2: every Extracted type shows Yes in Gaps Checked" "03-index.md missing"
 else
-  check B17 "contains Summary + unified Tree + unified Map + Gap Analysis by Priority + Hygiene + Checkpoint 2" \
-    "grep -qE '^## Summary' '$GAPS' && \
-     grep -qE '^## Test Structure Tree \\(unified\\)' '$GAPS' && \
-     grep -qE '^## Contract Map \\(unified\\)' '$GAPS' && \
-     grep -qE '^## Gap Analysis by Priority' '$GAPS' && \
-     grep -qE '^## Hygiene' '$GAPS' && \
-     grep -qE '^## Checkpoint 2' '$GAPS'"
+  check B17 "contains ## Summary + ## Checkpoint 2: Gap Coverage" \
+    "grep -qE '^## Summary[[:space:]]*$' '$INDEX' && \
+     grep -qE '^## Checkpoint 2: Gap Coverage[[:space:]]*$' '$INDEX'"
 
   # B18: every Extracted type in Checkpoint 1 must show 'Yes' in the Checkpoint 2 table.
   if [[ -n "${extracted_types:-}" ]]; then
     bad_cp2=""
     while IFS='|' read -r label _ _; do
       [[ -z "$label" ]] && continue
-      grep -qE "^\\| $label \\| Yes \\|" "$GAPS" || bad_cp2+="$label/ "
+      grep -qE "^\\| $label \\| Yes \\|" "$INDEX" || bad_cp2+="$label/ "
     done <<< "$extracted_types"
 
     check B18 "Checkpoint 2: every Extracted type from Checkpoint 1 shows Yes" \

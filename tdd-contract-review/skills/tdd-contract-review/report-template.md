@@ -1,4 +1,4 @@
-<!-- version: 0.29.0 -->
+<!-- version: 0.48.0 -->
 # Report Template Reference
 
 Detailed guidance for Step 7-8 of the TDD Contract Review workflow.
@@ -12,14 +12,34 @@ The Step 7-8 agent writes TWO files to `$RUN_DIR`:
 
 ### report.md requirements
 
-- Include a **Hygiene section** that surfaces the anti-patterns from `$RUN_DIR/03-gaps.md`'s Hygiene section. These are test-code hygiene issues, not contract gaps.
+- Include a **Hygiene section** that surfaces the anti-patterns from `$RUN_DIR/02-audit.md` directly. These are test-code hygiene issues, not contract gaps.
 - Every actionable item in the report must be a `- [ ]` checkbox so the reader can work through the report as one checklist. This applies to Gap Analysis (already), Anti-Patterns Detected, and Top 5 Priority Actions. No duplicate consolidated checklist at the end.
 - Full report follows the template in "report.md Template" below. Quick mode follows "Quick Mode Template".
 
+### Input files (Step 7-8 reads these)
+
+- `$RUN_DIR/01-extraction.md` — contract extraction + Checkpoint 1 coverage table
+- `$RUN_DIR/02-audit.md` — hygiene / anti-patterns
+- `$RUN_DIR/03-index.md` — shell-generated gap index (counts + links, NOT content)
+- `$RUN_DIR/03a-gaps-api.md`, `$RUN_DIR/03b-gaps-db.md`, `$RUN_DIR/03c-gaps-outbound.md` — per-type gap sub-files (present only when the type was Extracted at Checkpoint 1)
+- `$RUN_DIR/03d-gaps-money.md`, `$RUN_DIR/03e-gaps-security.md` — cross-cutting sub-files (critical mode only)
+
+`03-index.md` is shell-generated and contains NO gap bodies — Step 7-8 reads the sub-files directly for gap content, stubs, and trees.
+
+### Dedupe rule (Step 7-8 responsibility)
+
+F1 money and F2 security overlap with per-type A/B/C by design — the same field can be flagged by multiple sub-files. When composing `report.md` and `findings.json`, dedupe by `(field + failure-mode key phrase)`:
+
+- Keep the **highest priority** across duplicates.
+- **Combine descriptions** (preserve the unique angle from each sub-file).
+- Use the **richer stub** (more assertions, more setup, or critical-mode coverage beats a thinner one).
+- Do NOT edit the per-type sub-files on disk — dedupe lives in the final synthesis only.
+
 ### findings.json requirements
 
-- Include **EVERY** gap from the `## Gap Analysis by Priority` section of `$RUN_DIR/03-gaps.md` — all four priorities: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. Do NOT drop MEDIUM or LOW.
-- Include contract gaps (from per-type sub-reports) AND critical-mode gaps (Money and Security).
+- Include **EVERY** gap from every sub-file that exists in `$RUN_DIR` (03a..03e) — all four priorities: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. Do NOT drop MEDIUM or LOW.
+- Include contract gaps (from per-type sub-reports 03a/03b/03c) AND critical-mode gaps (03d Money, 03e Security).
+- After dedupe (see rule above), each `(field + failure-mode)` appears exactly once.
 - Do NOT include hygiene / anti-pattern entries — those stay in `report.md` only.
 - `findings.json` is still written in quick mode; quick mode only affects `report.md` rendering.
 

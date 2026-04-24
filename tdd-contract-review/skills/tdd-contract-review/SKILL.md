@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.47.2
+version: 0.48.0
 ---
 
 # TDD Contract Review
@@ -23,12 +23,12 @@ tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/
 ├── 03c-gaps-outbound.md  ← per-type gap sub-report (Outbound API)
 ├── 03d-gaps-money.md     ← cross-cutting money-correctness sub-report (critical mode only)
 ├── 03e-gaps-security.md  ← cross-cutting API-security sub-report (critical mode only)
-├── 03-gaps.md            ← merged unified gap report
+├── 03-index.md           ← CP3 index (shell-generated, clickable links + gap counts)
 ├── report.md             ← final scored report
 └── findings.json         ← machine-readable gap list for grade-content.sh / CI
 ```
 
-Per-type sub-files are kept on disk for traceability. The merged `03-gaps.md` is what Step 7-8 consumes. Sub-reports for contract types marked `Not applicable` or `Not detected` are skipped entirely.
+Per-type sub-files are the source of truth for gaps — Step 7-8 reads them directly. `03-index.md` is a tiny shell-generated file that gives Checkpoint 3 a single reviewable artifact with clickable paths into each sub-file; it carries no content the sub-files don't already hold. Sub-reports for contract types marked `Not applicable` or `Not detected` are skipped entirely.
 
 The `unit-slug` is lowercase kebab-case of the unit identifier:
 - `POST /api/v1/transactions` → `post-api-v1-transactions`
@@ -431,7 +431,6 @@ Call multiple times and join with a blank line to concatenate sections into one 
 | `PACK_OUTSHAPE_PERTYPE` | `gap-analysis.md` | `Scenario Enumeration Rules (per-type agents A/B/C)` + `Output File Shape — Per-type Sub-report (A/B/C)` | A, B, C |
 | `PACK_OUTSHAPE_F1` | `gap-analysis.md` | `Output File Shape — F1 Money-Correctness (\`03d-gaps-money.md\`)` | F1 |
 | `PACK_OUTSHAPE_F2` | `gap-analysis.md` | `Output File Shape — F2 API-Security (\`03e-gaps-security.md\`)` | F2 |
-| `PACK_OUTSHAPE_MERGE` | `gap-analysis.md` | `Output File Shape — Merged Report (\`03-gaps.md\`)` | Merge (6c) |
 | `PACK_MODEL` | `test-patterns.md` | `Input/Assertion Model` + `Contract Boundary Rules` | A, B, C |
 | `PACK_MONEY_CHECKS` (critical only) | `money-correctness-checklists.md` | `Gap Analysis Scenario Checklists` | A, B, C |
 | `PACK_MONEY_FULL` (critical only) | `money-correctness-checklists.md` | full file | F1 |
@@ -450,7 +449,7 @@ Call multiple times and join with a blank line to concatenate sections into one 
 
 Pack content is passed through verbatim — do not paraphrase, summarize, or reformat. The agent treats the pack as equivalent to having read that section of the source file directly.
 
-**Revision re-dispatch.** On any specific-feedback revision re-dispatch (per-type agent or merge agent), the orchestrator MUST recompile context packs before re-dispatching. Skill files may have been updated between runs; stale packs defeat the point.
+**Revision re-dispatch.** On any specific-feedback revision re-dispatch of a per-type agent, the orchestrator MUST recompile context packs before re-dispatching. Skill files may have been updated between runs; stale packs defeat the point. (Step 6c is shell-only and has no packs.)
 
 #### Step 6b — Parallel per-type dispatch
 
@@ -579,47 +578,112 @@ Prompt:
 
 **GATE (sub-files shape):** After all per-type agents return, verify each expected sub-file exists and contains both `## Test Structure Tree` and `## Contract Map` (or `## Cross-cutting Money-Correctness Gaps` for F1, `## Cross-cutting API-Security Gaps` for F2). If any required sub-file is missing or malformed, print which one and stop.
 
-#### Step 6c — Merge
+#### Step 6c — Write `03-index.md` (shell, no LLM dispatch)
 
-Dispatch the merge agent:
+Prior versions ran an opus "merge" agent that re-ingested every sub-file and rewrote them as a unified `03-gaps.md` — ~100k tokens/run to re-encode information Step 7-8 re-reads anyway. This step is now shell-only: it computes per-priority and per-type gap counts and writes a small index file with clickable links to each sub-file. Dedupe of overlapping gaps (F1 money ↔ A API; F2 security ↔ A API) now happens inside Step 7 while the final report is written.
 
+**Run this bash block.** `CP1_STATUS__<type>` variables are expected to be set by Step 3 based on the Checkpoint 1 Coverage table (`Extracted` | `Not detected` | `Not applicable`). If you did not capture them earlier, re-parse from `$RUN_DIR/01-extraction.md` now.
+
+```bash
+INDEX="$RUN_DIR/03-index.md"
+
+count_priority() {   # args: file priority
+  [[ -f "$1" ]] || { echo 0; return; }
+  grep -cE "^- \*\*priority\*\*: $2" "$1" || echo 0
+}
+count_gaps() {       # args: file
+  [[ -f "$1" ]] || { echo 0; return; }
+  grep -cE '^- \*\*id\*\*: G' "$1" || echo 0
+}
+
+SUB_FILES=(
+  "$RUN_DIR/03a-gaps-api.md"
+  "$RUN_DIR/03b-gaps-db.md"
+  "$RUN_DIR/03c-gaps-outbound.md"
+  "$RUN_DIR/03d-gaps-money.md"
+  "$RUN_DIR/03e-gaps-security.md"
+)
+
+TOTAL_CRIT=0; TOTAL_HIGH=0; TOTAL_MED=0; TOTAL_LOW=0
+for f in "${SUB_FILES[@]}"; do
+  [[ -f "$f" ]] || continue
+  TOTAL_CRIT=$((TOTAL_CRIT + $(count_priority "$f" CRITICAL)))
+  TOTAL_HIGH=$((TOTAL_HIGH + $(count_priority "$f" HIGH)))
+  TOTAL_MED=$((TOTAL_MED  + $(count_priority "$f" MEDIUM)))
+  TOTAL_LOW=$((TOTAL_LOW  + $(count_priority "$f" LOW)))
+done
+
+API_CT=$(count_gaps   "$RUN_DIR/03a-gaps-api.md")
+DB_CT=$(count_gaps    "$RUN_DIR/03b-gaps-db.md")
+OUT_CT=$(count_gaps   "$RUN_DIR/03c-gaps-outbound.md")
+MONEY_CT=$(count_gaps "$RUN_DIR/03d-gaps-money.md")
+SEC_CT=$(count_gaps   "$RUN_DIR/03e-gaps-security.md")
+
+# Helper: one CP2 Coverage row. `$1`=type label, `$2`=count, `$3`=CP1 status, `$4`=sub-file basename
+cov_row() {
+  local label="$1" ct="$2" cp1="$3" sub="$4"
+  case "$cp1" in
+    Extracted)         echo "| $label | Yes | $ct | see $sub |" ;;
+    "Not detected")    echo "| $label | N/A | 0 | Not detected at CP1 |" ;;
+    "Not applicable")  echo "| $label | N/A | 0 | Not applicable at CP1 |" ;;
+    *)                 echo "| $label | N/A | 0 | unknown CP1 status |" ;;
+  esac
+}
+
+# Write the index
+{
+  echo "# Gap Analysis — $UNIT"
+  echo
+  echo "## Summary"
+  echo
+  echo "Gaps by priority (across all sub-reports):"
+  echo "- CRITICAL: $TOTAL_CRIT"
+  echo "- HIGH: $TOTAL_HIGH"
+  echo "- MEDIUM: $TOTAL_MED"
+  echo "- LOW: $TOTAL_LOW"
+  echo
+  echo "Gaps by contract type:"
+  [[ -f "$RUN_DIR/03a-gaps-api.md"      ]] && echo "- API inbound: $API_CT — [03a-gaps-api.md]($RUN_DIR/03a-gaps-api.md)"
+  [[ -f "$RUN_DIR/03b-gaps-db.md"       ]] && echo "- DB: $DB_CT — [03b-gaps-db.md]($RUN_DIR/03b-gaps-db.md)"
+  [[ -f "$RUN_DIR/03c-gaps-outbound.md" ]] && echo "- Outbound API: $OUT_CT — [03c-gaps-outbound.md]($RUN_DIR/03c-gaps-outbound.md)"
+  [[ -f "$RUN_DIR/03d-gaps-money.md"    ]] && echo "- Money (cross-cutting): $MONEY_CT — [03d-gaps-money.md]($RUN_DIR/03d-gaps-money.md)"
+  [[ -f "$RUN_DIR/03e-gaps-security.md" ]] && echo "- Security (cross-cutting): $SEC_CT — [03e-gaps-security.md]($RUN_DIR/03e-gaps-security.md)"
+  echo
+  echo "Critical mode: $CRITICAL_MODE"
+  echo
+  echo "## Checkpoint 2: Gap Coverage"
+  echo
+  echo "| Contract Type | Gaps Checked | Count | Notes |"
+  echo "|---|---|---|---|"
+  cov_row "API inbound"  "$API_CT" "$CP1_STATUS__API"      "03a-gaps-api.md"
+  cov_row "DB"           "$DB_CT"  "$CP1_STATUS__DB"       "03b-gaps-db.md"
+  cov_row "Outbound API" "$OUT_CT" "$CP1_STATUS__OUTBOUND" "03c-gaps-outbound.md"
+  cov_row "Jobs"         0         "$CP1_STATUS__JOBS"     "(no sub-file — Jobs does not run at CP2)"
+  cov_row "UI Props"     0         "$CP1_STATUS__UIPROPS"  "(no sub-file — UI Props does not run at CP2)"
+} > "$INDEX"
+
+echo "WROTE: $INDEX"
 ```
-Agent:       tdd-contract-review:staff-engineer
-Model:       opus
-Description: Gap merge
-Prompt:
-  "TASK: Merge per-type gap reports into unified $RUN_DIR/03-gaps.md.
-   Run directory: $RUN_DIR
 
-   Read every sub-file that exists: $RUN_DIR/03a-gaps-api.md, $RUN_DIR/03b-gaps-db.md, $RUN_DIR/03c-gaps-outbound.md, $RUN_DIR/03d-gaps-money.md, $RUN_DIR/03e-gaps-security.md.
-   Also read $RUN_DIR/02-audit.md for the anti-patterns section.
-   Skip any sub-file that does not exist.
+The index file is intentionally tiny (<50 lines). It exists for two reasons only: to give Checkpoint 3 a single file to review with clickable paths into the sub-files, and to give the gate below a grep target for the Coverage table. It is NOT consumed by Step 7-8 — the report agent reads the sub-files directly.
 
-   DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers.
+**GATE (Checkpoint 2 shape):** Two checks must pass.
 
-   <<<CONTEXT_PACK:OUTSHAPE:start>>>
-   [orchestrator inlines PACK_OUTSHAPE_MERGE verbatim — 7-section structure, Checkpoint 2 row labels, dedupe rules, hygiene-section copy-forward]
-   <<<CONTEXT_PACK:OUTSHAPE:end>>>
-
-   The orchestrator grep-gates on the Checkpoint 2 row labels (API inbound, DB, Outbound API, Jobs, UI Props).
-
-   WRITE $RUN_DIR/03-gaps.md. Return only 'WROTE: $RUN_DIR/03-gaps.md' when done."
-```
-
-**GATE (Checkpoint 2 shape):** Grep `$RUN_DIR/03-gaps.md` for the 5 Checkpoint 2 rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`). Every type that was `Extracted` in Checkpoint 1 must show `Yes` in Gaps Checked. If any `Extracted` type shows `N/A` or is missing, print which one and stop.
+1. **Sub-file presence.** For every type marked `Extracted` in Checkpoint 1, the corresponding sub-file must exist: `03a-gaps-api.md` for `API inbound`, `03b-gaps-db.md` for `DB`, `03c-gaps-outbound.md` for `Outbound API`. Print which is missing and stop if any is absent.
+2. **Index shape.** Grep `$RUN_DIR/03-index.md` for the 5 Checkpoint 2 Coverage rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`). Every type that was `Extracted` in Checkpoint 1 must show `Yes` in Gaps Checked. If any `Extracted` type shows `N/A` or is missing, print which one and stop — the shell block in Step 6c produced a malformed index.
 
 **PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
 - `<N>` = `3`
-- `<file>` = `03-gaps.md`
+- `<file>` = `03-index.md`
 - `<next step>` = `the final report step (Step 7-8)`
-- Specific-feedback revision target — re-dispatch the Step 6c **Gap merge** agent with the REVISION REQUEST block from the Checkpoint Interaction Pattern appended. If the typed text clearly names a single contract type that needs re-analysis (not just re-merging), you MAY first re-dispatch that single per-type agent from Step 6b, then re-run the merge agent.
+- Specific-feedback revision target — the typed text MUST name a single contract type (API inbound / DB / Outbound API / Money / Security). Re-dispatch **only** the matching per-type agent from Step 6b with the REVISION REQUEST block from the Checkpoint Interaction Pattern appended. After the per-type agent returns and its sub-file GATE passes, re-run the Step 6c shell block to regenerate `03-index.md`. There is no longer a merge agent to re-dispatch. If the typed text does not clearly name a type, ask a one-line clarification before re-dispatching.
 
 **Review Hint (Checkpoint 3):**
 
 ```
-- Priority calibration is the main risk. CRITICAL = data loss, security breach, or money off by a cent. If a CRITICAL gap reads "academic" or a MEDIUM describes a real outage path, type specific re-calibration feedback — the agent will honor typed requests verbatim.
-- Test stubs are executable specs. Read one CRITICAL stub end-to-end — if you can't tell what it asserts, the gap description isn't concrete enough to act on. That's a revision signal, not a Continue signal.
-- Dedupe sanity check. The cross-cutting money (F1) and security (F2) agents overlap with the per-type agents by design. The merge step is supposed to collapse duplicates (same field + same failure mode). Two gaps describing the same failure mean the merge missed — type feedback naming the duplicate pair.
+- Priority calibration is the main risk. CRITICAL = data loss, security breach, or money off by a cent. If a CRITICAL gap reads "academic" or a MEDIUM describes a real outage path, type specific re-calibration feedback naming the sub-file (e.g., "03a-gaps-api.md HIGH #2 is really MEDIUM") — the per-type agent will honor typed requests verbatim.
+- Test stubs are executable specs. Open ONE sub-file (the linked path in Summary) and read ONE CRITICAL stub end-to-end — if you can't tell what it asserts, the gap description isn't concrete enough to act on. That's a revision signal, not a Continue signal.
+- Overlap is expected, not a gap. Cross-cutting F1/F2 agents deliberately overlap with the per-type agents (F1 money ↔ A API on amount fields; F2 security ↔ A API on auth). Dedupe happens in Step 7 while the report is written, not here. Two gaps describing the same failure mode across 03a and 03d is normal — do NOT treat it as a defect at CP3.
 ```
 
 ### Step 7-8: Report + findings.json
@@ -637,13 +701,25 @@ Prompt:
    Unit: [unit identifier]
    Quick mode: [yes/no]
 
-   Read $RUN_DIR/01-extraction.md, $RUN_DIR/02-audit.md, $RUN_DIR/03-gaps.md.
+   Read $RUN_DIR/01-extraction.md and $RUN_DIR/02-audit.md in full.
+   Read every gap sub-file that exists — skip any that are absent:
+     - $RUN_DIR/03a-gaps-api.md        (API inbound per-type gaps)
+     - $RUN_DIR/03b-gaps-db.md         (DB per-type gaps)
+     - $RUN_DIR/03c-gaps-outbound.md   (Outbound API per-type gaps)
+     - $RUN_DIR/03d-gaps-money.md      (cross-cutting money, critical mode only)
+     - $RUN_DIR/03e-gaps-security.md   (cross-cutting security, critical mode only)
+   Do NOT read $RUN_DIR/03-index.md — it is a shell-generated index for CP3 review only and carries no content not already in the sub-files.
+
+   DEDUPE while composing the report. The F1 money and F2 security cross-cutting agents deliberately overlap with the per-type A/B/C agents — e.g., F1 flags amount-precision on the same field A-API flags as missing validation; F2 flags missing auth on the same endpoint A-API flags. When two gaps describe the same (field + failure mode), keep the highest priority, combine the descriptions, and use the richer stub. This dedupe produces report.md's Gap Analysis by Priority and findings.json.
+
    Read [skill dir]/report-template.md in full. It contains:
    - 'Output Instructions' — what to write to report.md vs findings.json, Hygiene section requirement, and the rule that findings.json must include all four priorities (CRITICAL, HIGH, MEDIUM, LOW) and must NOT include hygiene entries.
    - 'findings.json Schema' — exact JSON schema and field rules. CRITICAL+HIGH gaps MUST have a stub; Step 9 gate-checks this.
    - 'Scoring' — 6-category rubric, weights, verdict bands, and calibration anchors.
    - 'report.md Template' — full report structure (default mode).
    - 'Quick Mode Template' — abbreviated form when quick mode is on.
+
+   The Hygiene section in report.md copies the anti-patterns section from $RUN_DIR/02-audit.md directly (not via a merged gaps file).
 
    Return only 'WROTE: report.md, findings.json' when done."
 ```
