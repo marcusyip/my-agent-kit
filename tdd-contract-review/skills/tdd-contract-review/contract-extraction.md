@@ -204,7 +204,7 @@ SCRIPT="<plugin-root>/tdd-contract-review/scripts/lsp_tree.py"
 
 **`--scope local` is the default you want.** Without it, the rendered tree includes every stdlib, gem, or `node_modules` call on the path — `fmt.Sprintf`, `Hash#[]`, `console.log`, React's `useState` — which drowns the unit's real blast radius in noise. The flag trims external edges from the rendered tree only; the LSP `definition` query still runs for each call site and still writes its JSON artifact to `$RUN_DIR/lsp/`. Omit it (`--scope all`, the implicit default) only when you deliberately need to audit a dependency boundary.
 
-Other flags: `--depth N` (cap walk depth, default 5), `--format json` (machine-readable tree in addition to the LSP artifacts).
+Other flags: `--depth N` (cap walk depth, default 7), `--format json` (machine-readable tree in addition to the LSP artifacts).
 
 The walker writes the rendered tree to `$RUN_DIR/tree__<file-slug>__<symbol-slug>.md`. Read it, paste the relevant subtree into the `### Call trees` fenced block of `01-extraction.md`, and proceed with the algorithm below for any parts the walker flagged `[unresolved]` or `[depth-cap]` that need deeper inspection.
 

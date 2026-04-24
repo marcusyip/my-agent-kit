@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.1] - 2026-04-24
+
+### tdd-contract-review
+
+#### Changed
+- **`lsp_tree.py` default `--depth` raised from 5 → 7.** Depth 5 was under-walking real units on larger codebases (the tree capped before reaching the leaf contract-bearing calls). Bumping the default catches the long tail without requiring every invocation to pass `--depth` explicitly. Updated in three spots: the argparse default, the module docstring, and the `contract-extraction.md` Step 3 doc. The regression check `benchmark/check-lsp-tool.sh` still pins `--depth 5` because it tests a specific interface-hop scenario that only needs the shallow walk.
+
 ## [0.47.0] - 2026-04-23
 
 ### tdd-contract-review

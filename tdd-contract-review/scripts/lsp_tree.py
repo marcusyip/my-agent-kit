@@ -47,7 +47,7 @@ languages.
 Own-node lines in the tree are reported as `start-end` (1-indexed) spanning
 the declaration through the closing brace. Recursion / already-visited nodes
 are labelled [seen] and not re-expanded. External / stdlib targets are
-labelled [external]. --depth caps the walk (default 5).
+labelled [external]. --depth caps the walk (default 7).
 """
 import os
 import subprocess
@@ -655,7 +655,7 @@ def main():
     parser.add_argument("--project", required=True)
     parser.add_argument("--file", required=True, help="path relative to --project")
     parser.add_argument("--symbol", required=True, help='(*Type).Method | (Type).Method | Name')
-    parser.add_argument("--depth", type=int, default=5)
+    parser.add_argument("--depth", type=int, default=7)
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
     parser.add_argument("--scope", choices=["all", "local"], default="all",
                         help="local: drop calls that resolve outside the project "
