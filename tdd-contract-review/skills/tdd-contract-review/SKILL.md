@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.47.1
+version: 0.47.2
 ---
 
 # TDD Contract Review
@@ -100,8 +100,8 @@ There is intentionally no `Revise` button. A blind "look harder" re-dispatch cos
 
      Phase 1 — INVESTIGATE (narrow, targeted tools only):
      - Read $RUN_DIR/<file> to understand what's already there.
-     - Then use ONLY: Read on specific source/schema/test files the feedback points at, `scripts/lsp_query.py definition <symbol>` for single call sites, narrow Grep for string-keyed lookups. The native `LSP` tool is allowed for single-symbol queries if available.
-     - BANNED in this phase: full `scripts/lsp_tree.py` walks, re-reading skill reference docs, broad repo sweeps. Your job is to locate the specific gap the user named, not re-do the extraction.
+     - Then use ONLY: Read on specific source/schema/test files the feedback points at, `[plugin root]/tdd-contract-review/scripts/lsp_query.py definition <symbol>` for single call sites, narrow Grep for string-keyed lookups. The native `LSP` tool is allowed for single-symbol queries if available.
+     - BANNED in this phase: full `[plugin root]/tdd-contract-review/scripts/lsp_tree.py` walks, re-reading skill reference docs, broad repo sweeps. Your job is to locate the specific gap the user named, not re-do the extraction.
 
      Phase 2 — PLAN:
      - Produce a 3–10 item diff plan: which sections of $RUN_DIR/<file> change, and what concretely goes in/out. Keep it terse — this is for your own discipline, not a deliverable.

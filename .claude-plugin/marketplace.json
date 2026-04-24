@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "tdd-contract-review",
-      "version": "0.47.1",
+      "version": "0.47.2",
       "description": "Contract-based test quality reviewer with auto-generated test stubs",
       "source": "./tdd-contract-review"
     }

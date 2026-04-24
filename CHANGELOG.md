@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.2] - 2026-04-24
+
+### tdd-contract-review
+
+#### Fixed
+- **REVISION REQUEST block in `SKILL.md` used bare `scripts/lsp_query.py` / `scripts/lsp_tree.py` paths.** At runtime the agent's CWD is the user's target project, not the plugin, so the bare paths would not resolve. Qualified both to `[plugin root]/tdd-contract-review/scripts/...` to match the form already used elsewhere in the same file. Also qualified a stray bare `scripts/...` reference in `benchmark/sample-app-ts/README.md` and `TODOS.md` for consistency (docs-only, not load-bearing).
+
 ## [0.47.1] - 2026-04-24
 
 ### tdd-contract-review

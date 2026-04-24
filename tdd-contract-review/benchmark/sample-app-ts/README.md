@@ -34,9 +34,9 @@ src/
 ## Running the call-tree walker
 
 ```bash
-python scripts/lsp_tree.py \
+python tdd-contract-review/scripts/lsp_tree.py \
   --lang ts \
-  --project benchmark/sample-app-ts \
+  --project tdd-contract-review/benchmark/sample-app-ts \
   --file src/screens/TransactionScreen.tsx \
   --symbol TransactionScreen \
   --depth 4

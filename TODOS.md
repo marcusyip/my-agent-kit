@@ -54,7 +54,7 @@ vs. a static file shipped with the plugin).
 ### TypeScript support in `lsp_tree.py` — landed 2026-04-23
 Shipped `--lang ts` (handles `.ts` and `.tsx`, including React / React
 Native function components, hooks, and class components) via
-`scripts/callsites_ts.py` (tree-sitter-typescript). Symbol grammar mirrors
+`tdd-contract-review/scripts/callsites_ts.py` (tree-sitter-typescript). Symbol grammar mirrors
 the Ruby/Solargraph convention (`Foo#bar`, `Foo.bar`, `Foo`, `bar`).
 Fixture: `benchmark/sample-app-ts/` (screen + hook + service + model, no
 `node_modules` — external hooks deliberately tag as `[external]`).
