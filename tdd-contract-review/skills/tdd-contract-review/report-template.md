@@ -1,4 +1,4 @@
-<!-- version: 0.48.0 -->
+<!-- version: 0.49.0 -->
 # Report Template Reference
 
 Detailed guidance for Step 7-8 of the TDD Contract Review workflow.
@@ -54,11 +54,18 @@ One unit per run, so there is no multi-file summary. `summary.md` does not exist
   "gaps": [
     {
       "id": "G001",
+      "priority": "CRITICAL",
+      "field": "request field: amount",
+      "type": "Money:Precision",
+      "description": "No test that a fractional amount below the smallest unit is rejected; silent rounding would cost money",
+      "stub": "it 'rejects sub-cent amounts' do\n  post '/api/v1/transactions', params: { amount: 0.001 }\n  expect(response.status).to eq(422)\n  expect(Transaction.count).to eq(0)\nend"
+    },
+    {
+      "id": "G002",
       "priority": "HIGH",
       "field": "request field: amount",
       "type": "API inbound",
-      "description": "No test for negative amount (should return 422)",
-      "stub": "it 'returns 422 for negative amount' do\n  post '/api/v1/transactions', params: { amount: -1 }\n  expect(response.status).to eq(422)\n  expect(Transaction.count).to eq(0)\nend"
+      "description": "No test for negative amount (should return 422)"
     }
   ]
 }
@@ -70,9 +77,9 @@ One unit per run, so there is no multi-file summary. `summary.md` does not exist
 - `field`: typed prefix + field name (e.g., `db field: wallets.status`, `outbound response field: Stripe.Charge.status`, or `unit-level` for systemic Money/Security dimensions)
 - `type`: one of `API inbound` | `DB` | `Outbound API` | `Jobs` | `UI Props` | `Money:<dimension>` | `Security:<dimension>`
 - `description`: what's missing, plain English
-- `stub`: test stub code. **REQUIRED for CRITICAL and HIGH gaps.** Optional for MEDIUM/LOW. Use `\n` for newlines in JSON.
+- `stub`: test stub code. **REQUIRED for CRITICAL gaps. OMIT for HIGH/MEDIUM/LOW** — field + description + priority is enough for a developer to write the real test. Use `\n` for newlines in JSON. Emit the `stub` field only when it has a value; do not include empty-string stubs for non-CRITICAL gaps.
 
-Step 9 validates this file; invalid JSON or CRITICAL/HIGH gaps without stubs = FAIL.
+Step 9 validates this file; invalid JSON or a CRITICAL gap without a stub = FAIL. HIGH/MEDIUM/LOW without a stub is fine.
 
 ## Scoring
 
@@ -187,17 +194,19 @@ Every contract field from the extraction summary MUST appear in this table — e
 
   Suggested test:
   ```
-  [auto-generated test stub]
+  [test stub — CRITICAL only]
   ```
 
-**HIGH** (core contract fields with no tests — MUST have stubs in findings.json)
-- [ ] ...
+**HIGH** (core contract fields with no tests)
+- [ ] `[typed prefix]: [field]` — [gap description]
 
 **MEDIUM** (tested but missing scenarios)
-- [ ] ...
+- [ ] `[typed prefix]: [field]` — [gap description]
 
 **LOW** (rare corner cases)
-- [ ] ...
+- [ ] `[typed prefix]: [field]` — [gap description]
+
+No stub blocks for HIGH/MEDIUM/LOW — the field + description is enough for a developer to write the real test, and LLM-generated stubs at lower priorities drift from real code more than they help.
 
 ### Anti-Patterns Detected
 
@@ -238,7 +247,7 @@ When quick mode is enabled (user passed `quick` as an argument), `report.md` is 
 - LOW gaps: [count]
 - Anti-patterns: [count]
 
-Run `/tdd-contract-review [unit]` without `quick` for the full report with auto-generated test stubs.
+Run `/tdd-contract-review [unit]` without `quick` for the full report (includes CRITICAL-only test stubs).
 ```
 
 `findings.json` is STILL written in quick mode — it's the machine-readable output, not a rendering choice.

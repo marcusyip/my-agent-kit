@@ -86,8 +86,8 @@ else
   check B3 "every gap has id, priority, field, type, description" \
     "jq -e '.gaps | all(has(\"id\") and has(\"priority\") and has(\"field\") and has(\"type\") and has(\"description\"))' '$FINDINGS'"
 
-  check B4 "every HIGH gap has a non-empty stub" \
-    "jq -e '[.gaps[] | select(.priority == \"HIGH\") | select((.stub // \"\") == \"\")] | length == 0' '$FINDINGS'"
+  check B4 "every CRITICAL gap has a non-empty stub (HIGH/MEDIUM/LOW do not require one)" \
+    "jq -e '[.gaps[] | select(.priority == \"CRITICAL\") | select((.stub // \"\") == \"\")] | length == 0' '$FINDINGS'"
 
   check B5 "no gap type uses the old 'Fintech:' prefix (schema rename guard)" \
     "jq -e '[.gaps[] | select(.type | startswith(\"Fintech:\"))] | length == 0' '$FINDINGS'"

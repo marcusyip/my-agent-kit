@@ -1,6 +1,6 @@
 # tdd-contract-review
 
-A Claude Code plugin that reviews test quality through **contract-based analysis**, identifies gaps, and auto-generates test stubs for the missing coverage.
+A Claude Code plugin that reviews test quality through **contract-based analysis**, identifies gaps, and auto-generates CRITICAL-only test stubs for the highest-stakes coverage misses.
 
 One run reviews ONE unit -- one HTTP endpoint, one background job, or one queue consumer. The plugin extracts contracts from source (API request/response fields, DB model fields, outbound API call params, UI component props), maps test coverage per field, identifies gaps, and emits a scored report plus a machine-readable `findings.json` for CI grading.
 
@@ -55,7 +55,7 @@ The skill is an orchestrator that dispatches a Staff Engineer agent at each step
 | 6c | **Index (shell, no LLM)** -- `bash` block counts gaps per priority + per sub-file, writes a tiny index with clickable links to every `03*-gaps-*.md` on disk. Dedupe happens in Step 7. | -- (shell) | `03-index.md` |
 |  | **Checkpoint 3** -- user reviews per-type sub-files (03a..03e) directly; the index surfaces counts + coverage |
 | 7-8 | **Report + findings.json** -- scored `report.md` + machine-readable `findings.json`; Step 7 reads per-type sub-files and dedupes F1/F2 overlap with A/B/C | sonnet | `report.md`, `findings.json` |
-| 9 | **Deterministic gate** -- `jq` checks: valid JSON, CRITICAL+HIGH gaps have stubs, all Extracted types represented | -- | -- |
+| 9 | **Deterministic gate** -- `jq` checks: valid JSON, CRITICAL gaps have stubs (HIGH/MEDIUM/LOW do not), all Extracted types represented | -- | -- |
 
 At each checkpoint the user picks **Continue** / **Revise** / **Stop**. Revise auto-dispatches a DEEPEN pass on the responsible agent; free-text feedback re-dispatches with the user's words verbatim. Cap: 3 revises per checkpoint.
 

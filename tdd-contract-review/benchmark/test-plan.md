@@ -73,7 +73,7 @@ misses — e.g. the schema rename or a dropped section. Every case is a grep / j
 | B1    | findings.json is valid JSON                                                               | findings.json   |
 | B2    | findings.json top-level keys: `unit` (string), `critical` (bool), `gaps` (array)          | findings.json   |
 | B3    | Every gap has `id`, `priority`, `field`, `type`, `description`                            | findings.json   |
-| B4    | Every HIGH gap has a non-empty `stub`                                                     | findings.json   |
+| B4    | Every CRITICAL gap has a non-empty `stub`; HIGH/MEDIUM/LOW do NOT require one             | findings.json   |
 | B5    | No gap has `type` starting with `Fintech:` (schema-rename regression guard)               | findings.json   |
 | B6    | No gap description mentions "hygiene" / "anti-pattern" (those live in report.md only)     | findings.json   |
 | B7    | `01-extraction.md` contains `## Summary`, `## Files Examined`, `## Checkpoint 1`          | 01-extraction   |

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.49.0] - 2026-04-24
+
+### tdd-contract-review
+
+#### Changed
+- **Test stubs now CRITICAL-only.** Stubs were previously required for both CRITICAL and HIGH gaps across per-type sub-files, `findings.json`, and `report.md`. In practice LLM-generated stubs drift from the real codebase, developers rewrite them before use, and the forcing function (proving the gap is concrete) only matters at CRITICAL — where a broken money/security gap has the most blast radius. HIGH/MEDIUM/LOW gaps now carry field + description + priority only, which is enough for a developer to write the real test. Per-type sub-file `## Test Stubs` sections still exist (writing `No CRITICAL gaps.` when the section is empty, to preserve grader structure). Step 9's deterministic gate now fails only when a CRITICAL gap lacks a stub; HIGH/MEDIUM/LOW without a stub is acceptable.
+- **`grade-shape.sh` B4 rewired.** Previously asserted every HIGH gap had a non-empty stub; now asserts every CRITICAL gap has a non-empty stub. HIGH/MEDIUM/LOW are no longer graded on stub presence.
+- **`report-template.md` findings.json schema updated.** The schema example now shows a CRITICAL gap with a stub and a HIGH gap without one. Field rules explicitly say: "REQUIRED for CRITICAL gaps. OMIT for HIGH/MEDIUM/LOW — field + description + priority is enough for a developer to write the real test."
+- **`report.md` Gap Analysis by Priority template drops suggested-test blocks below CRITICAL.** HIGH/MEDIUM/LOW now render as a plain `- [ ] typed-prefix: field — description` checkbox with no code block.
+
+#### Rationale
+The CRITICAL + HIGH stub rule was a cost/quality tradeoff that assumed LLM-generated stubs add value at both tiers. Review of real benchmark runs showed HIGH stubs rarely survive developer contact intact — they're read once, mentally discarded, and rewritten. Dropping them cuts the per-type agents' output by a meaningful fraction and shifts reviewer attention to the stubs that matter most (CRITICAL, where "is this gap real and concrete" is a decision that benefits from a stub).
+
 ## [0.48.0] - 2026-04-24
 
 ### tdd-contract-review

@@ -1,4 +1,4 @@
-<!-- version: 0.34.1 -->
+<!-- version: 0.49.0 -->
 # Gap Analysis Reference
 
 Detailed guidance for Step 6 of the TDD Contract Review workflow. Step 6 runs per-type gap agents in parallel (A = API inbound, B = DB, C = Outbound API), plus two cross-cutting agents in critical mode (F1 = money-correctness, F2 = API-security). A final shell-only step (6c) writes a tiny index file (`03-index.md`) with gap counts and clickable links to each sub-file — there is no merge agent. Dedupe of overlapping gaps (F1 ↔ A, F2 ↔ A) happens inside Step 7 while the final report is composed.
@@ -44,7 +44,7 @@ For each gap, write exactly these bullets at the top level (no nesting, no bold-
 - **field**: typed prefix + field name
 - **type**: <CONTRACT_TYPE>
 - **description**: what is missing
-- **stub**: (REQUIRED for CRITICAL and HIGH; omit otherwise)
+- **stub**: (REQUIRED for CRITICAL; omit for HIGH/MEDIUM/LOW)
 ```
 
 - `<TYPE_PREFIX>` is `API`, `DB`, `OUT`, `MONEY`, or `SEC`; gap ids therefore look like `GAPI-001`, `GDB-001`, `GOUT-001`, `GMONEY-001`, `GSEC-001`.
@@ -53,7 +53,7 @@ For each gap, write exactly these bullets at the top level (no nesting, no bold-
 
 ### 4. `## Test Stubs`
 
-Pseudocode in the detected test framework's style, one stub per HIGH/CRITICAL gap.
+Pseudocode in the detected test framework's style, one stub per **CRITICAL** gap. HIGH/MEDIUM/LOW gaps carry no stub — field + description + priority is enough for a developer to write the real test. If there are no CRITICAL gaps in this sub-file, write `No CRITICAL gaps.` under the heading (do not omit the section).
 
 ## Output File Shape — F1 Money-Correctness (`03d-gaps-money.md`)
 
@@ -72,11 +72,11 @@ For each gap:
 - **field**: use `unit-level` for systemic dimensions (Idempotency, StateMachine integrity, Concurrency, multi-step atomicity, Reconciliation, Settlement). Only use a specific field when the gap is genuinely scoped to one field (e.g., Money/Precision on a specific amount field, FX rate on a specific quote field). Do NOT attach a systemic concern to a loosely-related field.
 - **type**: `Money:<dimension>` — examples: `Money:Precision`, `Money:Idempotency`, `Money:StateMachine`, `Money:BalanceLedger`, `Money:PositionInventory`, `Money:Concurrency`, `Money:ExternalIntegration`, `Money:Refunds`, `Money:FeesTax`, `Money:Holds`, `Money:Settlement`, `Money:FX`, `Money:Limits`.
 - **description**: what integrity property is missing
-- **stub**: REQUIRED for CRITICAL and HIGH
+- **stub**: REQUIRED for CRITICAL; omit for HIGH/MEDIUM/LOW
 
 ### 3. `## Test Stubs`
 
-Pseudocode per HIGH/CRITICAL gap.
+Pseudocode per **CRITICAL** gap only. If there are no CRITICAL gaps, write `No CRITICAL gaps.` under the heading (do not omit the section).
 
 ## Output File Shape — F2 API-Security (`03e-gaps-security.md`)
 
@@ -95,11 +95,11 @@ For each gap:
 - **field**: use `unit-level` for systemic dimensions (Auth, AuthZ/IDOR, RateLimit, AuditLog, KYC, Webhook). Only use a specific field when the gap is genuinely scoped to one field (e.g., injection on `request field: description`). Do NOT attach a systemic concern to a loosely-related field (e.g., rate limiting is NOT `request header: Authorization`).
 - **type**: `Security:<dimension>` — examples: `Security:Auth`, `Security:AuthZ`, `Security:RateLimit`, `Security:AuditTrail`, `Security:KYC`, `Security:Webhook`, `Security:DataLeak`, `Security:Injection`, `Security:PCI`, `Security:MFA`.
 - **description**: what integrity property is missing
-- **stub**: REQUIRED for CRITICAL and HIGH
+- **stub**: REQUIRED for CRITICAL; omit for HIGH/MEDIUM/LOW
 
 ### 3. `## Test Stubs`
 
-Pseudocode per HIGH/CRITICAL gap.
+Pseudocode per **CRITICAL** gap only. If there are no CRITICAL gaps, write `No CRITICAL gaps.` under the heading (do not omit the section).
 
 ## Step 6c — Index file shape (`03-index.md`)
 

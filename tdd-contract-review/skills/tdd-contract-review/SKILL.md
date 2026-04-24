@@ -1,9 +1,9 @@
 ---
 name: tdd-contract-review
-description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with test stubs, and emits machine-readable findings.json for CI grading.
+description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with CRITICAL-only test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.48.0
+version: 0.49.0
 ---
 
 # TDD Contract Review
@@ -710,11 +710,11 @@ Prompt:
      - $RUN_DIR/03e-gaps-security.md   (cross-cutting security, critical mode only)
    Do NOT read $RUN_DIR/03-index.md — it is a shell-generated index for CP3 review only and carries no content not already in the sub-files.
 
-   DEDUPE while composing the report. The F1 money and F2 security cross-cutting agents deliberately overlap with the per-type A/B/C agents — e.g., F1 flags amount-precision on the same field A-API flags as missing validation; F2 flags missing auth on the same endpoint A-API flags. When two gaps describe the same (field + failure mode), keep the highest priority, combine the descriptions, and use the richer stub. This dedupe produces report.md's Gap Analysis by Priority and findings.json.
+   DEDUPE while composing the report. The F1 money and F2 security cross-cutting agents deliberately overlap with the per-type A/B/C agents — e.g., F1 flags amount-precision on the same field A-API flags as missing validation; F2 flags missing auth on the same endpoint A-API flags. When two gaps describe the same (field + failure mode), keep the highest priority, combine the descriptions, and use the richer stub (if one is present — only CRITICAL gaps carry stubs). This dedupe produces report.md's Gap Analysis by Priority and findings.json.
 
    Read [skill dir]/report-template.md in full. It contains:
    - 'Output Instructions' — what to write to report.md vs findings.json, Hygiene section requirement, and the rule that findings.json must include all four priorities (CRITICAL, HIGH, MEDIUM, LOW) and must NOT include hygiene entries.
-   - 'findings.json Schema' — exact JSON schema and field rules. CRITICAL+HIGH gaps MUST have a stub; Step 9 gate-checks this.
+   - 'findings.json Schema' — exact JSON schema and field rules. Only CRITICAL gaps MUST have a stub; omit stub for HIGH/MEDIUM/LOW. Step 9 gate-checks this.
    - 'Scoring' — 6-category rubric, weights, verdict bands, and calibration anchors.
    - 'report.md Template' — full report structure (default mode).
    - 'Quick Mode Template' — abbreviated form when quick mode is on.
@@ -729,7 +729,7 @@ Prompt:
 No agent dispatch. Run shell checks on `$RUN_DIR/findings.json`:
 
 1. **Valid JSON:** `jq empty $RUN_DIR/findings.json` (or fallback python3 json parse)
-2. **CRITICAL+HIGH gaps have stubs:** `jq -e '.gaps | map(select((.priority == "CRITICAL" or .priority == "HIGH") and (.stub == null or .stub == ""))) | length == 0' $RUN_DIR/findings.json`
+2. **CRITICAL gaps have stubs:** `jq -e '.gaps | map(select(.priority == "CRITICAL" and (.stub == null or .stub == ""))) | length == 0' $RUN_DIR/findings.json` — HIGH/MEDIUM/LOW gaps do NOT require a stub.
 3. **All Extracted types represented:** for each Checkpoint 1 type with status `Extracted` in `01-extraction.md`, `jq` must find at least one gap OR the report must explicitly note coverage is complete. (Skip this check if the type is `Not detected` or `Not applicable`.)
 
 Print:
