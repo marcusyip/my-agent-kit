@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.0] - 2026-04-23
+
+### tdd-contract-review
+
+#### Changed
+- **Checkpoint free-text revision → INVESTIGATE → PLAN → EXECUTE workflow.** When a user types specific feedback at a checkpoint (e.g. "outbound API contract has some missing"), the re-dispatched agent used to regenerate the file from scratch — re-running the full extraction/audit/merge including every LSP walk and skill-doc re-read. The new REVISION REQUEST block reframes the re-dispatch as a single-pass targeted patch: (1) INVESTIGATE using only Read on specific files, `lsp_query.py definition <symbol>` on single call sites, and narrow Grep — full `lsp_tree.py` walks and skill-doc re-reads are explicitly banned; (2) PLAN a 3–10 item diff; (3) EXECUTE with Edit (preferred) or Write, preserving untouched sections byte-for-byte. The block explicitly supersedes any "LSP IS MANDATORY" / "Read skill docs" language from the original agent prompt. Agent returns three breadcrumbs (`INVESTIGATED:` / `PATCHED:` / `WROTE:`) so the orchestrator can show the user what was investigated and changed. Applies to all three checkpoints; no plan-approval user gate added — feedback from 2026-04-23 review: "I prefer I type a problem, then find out the problem of missing. then execute the plan to fill the gap." Expected token savings: substantial for CP1/CP2 (skipping LSP re-walk) and for CP3 (skipping full per-type re-dispatch).
+- **`staff-engineer` subagent gains the `Edit` tool** so the EXECUTE phase can apply targeted patches instead of rewriting the entire file.
+
 ## [0.46.0] - 2026-04-23
 
 ### tdd-contract-review
