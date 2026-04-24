@@ -1,0 +1,88 @@
+{
+  "unit": "POST /api/v1/transactions",
+  "scope": "API inbound",
+  "gap_prefix": "GAPI",
+  "scope_note_md": "Scope: API inbound contract only — request header, request fields, response fields, error response fields. DB and outbound sections are covered in sibling reports.",
+  "test_tree": {
+    "root": "POST /api/v1/transactions",
+    "fields": [
+      {
+        "field": "request header: Authorization",
+        "status": "PARTIAL",
+        "scenarios": [
+          {"description": "missing token → 401, no DB write, no outbound API call, no data leak", "covered": false},
+          {"description": "malformed token (e.g. \"Bearer notarealjwt\") → 401, no DB write, no data leak", "covered": false},
+          {"description": "expired token → 401, no DB write, no data leak", "covered": false},
+          {"description": "token for deleted/disabled user → 401, no DB write, no data leak", "covered": false}
+        ]
+      },
+      {
+        "field": "request field: transaction.amount",
+        "status": "PARTIAL",
+        "scenarios": [
+          {"description": "nil → 422", "covered": true, "test_ref": {"path": "transactions_spec.rb", "line": 42}, "partial_note": "status only; missing: no DB write / no outbound / no data leak assertions"},
+          {"description": "negative (e.g. -100) → 422", "covered": true, "test_ref": {"path": "transactions_spec.rb", "line": 51}, "partial_note": "status only; missing: no DB write / no outbound / no data leak assertions"},
+          {"description": "zero \"0\" → 422, no DB write, no data leak", "covered": false},
+          {"description": "exceeds max (1_000_000 + 1 sat) → 422, no DB write, no data leak", "covered": false},
+          {"description": "amount == wallet.balance → 201, wallet.balance becomes 0", "covered": false},
+          {"description": "amount > wallet.balance → 422, no DB write, no balance leak", "covered": false}
+        ]
+      },
+      {
+        "field": "response field: error (on 422)",
+        "status": "MISSING",
+        "scenarios": [
+          {"description": "presence + human-readable message + no stack trace leak", "covered": false},
+          {"description": "ChargeError path → 'Payment processing failed' exact message", "covered": false}
+        ]
+      }
+    ]
+  },
+  "contract_map": [
+    {"field_kind": "request header", "field": "Authorization", "role": "Input", "scenarios_needed": "missing, malformed, expired, wrong-user", "current_coverage": "0", "gap_count": "4"},
+    {"field_kind": "request field", "field": "transaction.amount", "role": "Input", "scenarios_needed": "nil, empty string, zero, negative, non-numeric, boundary (min/max), precision, amount==balance, amount>balance, concurrent TOCTOU", "current_coverage": "nil, negative (status only)", "gap_count": "15 (2 PARTIAL upgrade)"},
+    {"field_kind": "response field", "field": "error", "role": "Assertion", "scenarios_needed": "presence on 422, human-readable, no stack trace leak, no balance leak, IDOR non-disclosure, ChargeError exact message", "current_coverage": "0", "gap_count": "1"}
+  ],
+  "gaps": [
+    {
+      "id": "GAPI-001",
+      "priority": "CRITICAL",
+      "field": "response field: details",
+      "type": "API inbound",
+      "description": "Error response `details` array currently includes raw balance in the InsufficientBalanceError path. No test asserts that sensitive financial data is NOT leaked in error responses. This is a FINTECH security gap — error-path contract must forbid balance disclosure.",
+      "stub": "context 'when amount exceeds balance' do\n  let(:amount) { '10000' }\n  it 'returns 422 and does not leak balance' do\n    expect { run_test }.not_to change(Transaction, :count)\n    body = JSON.parse(response.body)\n    expect(body['details'].join(' ')).not_to include(WALLET_BALANCE)\n  end\nend"
+    },
+    {
+      "id": "GAPI-002",
+      "priority": "CRITICAL",
+      "field": "request field: transaction.wallet_id (IDOR)",
+      "type": "API inbound",
+      "description": "No test exercises the IDOR scenario — a valid wallet_id belonging to a different user. Controller uses `current_user.wallets.find_by(...)` but without a test any future refactor would silently permit cross-tenant writes.",
+      "stub": "context 'when wallet_id belongs to another user' do\n  let(:other_user) { create(:user) }\n  let(:wallet_id)  { create(:wallet, user: other_user).id }\n  it 'returns 422 and does not disclose other user wallet' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unprocessable_entity)\n  end\nend"
+    },
+    {
+      "id": "GAPI-003",
+      "priority": "CRITICAL",
+      "field": "request header: Authorization",
+      "type": "API inbound",
+      "description": "No 401 test at all. Every request spec assumes a valid auth header. Missing/malformed/expired tokens must all return 401 with no DB write.",
+      "stub": "context 'without Authorization header' do\n  let(:headers) { {} }\n  it 'returns 401 and writes nothing' do\n    expect { run_test }.not_to change(Transaction, :count)\n    expect(response).to have_http_status(:unauthorized)\n  end\nend"
+    },
+    {
+      "id": "GAPI-007",
+      "priority": "HIGH",
+      "field": "request field: transaction.amount (zero)",
+      "type": "API inbound",
+      "description": "No test for amount=0. `numericality greater_than: 0` means zero must be rejected with 422.",
+      "stub": "context 'when amount is zero' do\n  let(:amount) { '0' }\n  it 'rejects with 422' do\n    expect(response).to have_http_status(:unprocessable_entity)\n  end\nend"
+    },
+    {
+      "id": "GAPI-021",
+      "priority": "MEDIUM",
+      "field": "request field: transaction.description (injection)",
+      "type": "API inbound",
+      "description": "description is a free-text string persisted to DB. SQL/XSS/command/NULL-byte payloads should all be stored verbatim (not executed)."
+    }
+  ],
+  "test_stubs_md": "RSpec pseudocode for HIGH/CRITICAL gaps. Uses the `run_test`/`defaults` foundation the audit recommended.\n\n```ruby\nRSpec.describe 'POST /api/v1/transactions', type: :request do\n  subject(:run_test) do\n    post '/api/v1/transactions', params: { transaction: params }, headers: headers, as: :json\n  end\n  # see per-gap stubs above\nend\n```"
+}

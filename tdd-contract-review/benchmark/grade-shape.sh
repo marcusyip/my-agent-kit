@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# grade-shape.sh — grade Category B (shape) of ONE unit's run via structural invariants.
-# Paired with grade-content.sh (Category A). Both are invoked per unit by run-matrix.sh.
+# grade-shape.sh — grade Category B (shape) of ONE unit's run via structural
+# invariants on the JSON artifacts. Paired with grade-content.sh (Category A).
 #
 # Usage:
 #   ./grade-shape.sh <run-dir>
 #
-# Runs ~20 cheap bash/jq assertions against the files a run produces. Catches
-# regressions that content grading (grade-content.sh) misses — dropped sections,
-# renamed schema keys, missing sub-files, unreconciled counts.
-#
-# See test-plan.md (Category B) for the full assertion catalogue.
+# JSON-first: since v0.50 the source of truth for every numbered artifact is
+# its `.json` file (schema-validated at write time by the renderer). This
+# grader reads those JSONs with jq so the checks are decoupled from MD
+# wording drift. `03-index.md` is still shell-generated MD and is checked
+# directly; `report.md` is checked only for render-smoke (non-empty).
 #
 # Exit codes:
 #   0 — all checks passed
@@ -31,10 +31,11 @@ RUN_DIR="${1%/}"
 [[ -d "$RUN_DIR" ]] || die "run directory not found: $RUN_DIR"
 
 FINDINGS="$RUN_DIR/findings.json"
-EXTRACTION="$RUN_DIR/01-extraction.md"
-AUDIT="$RUN_DIR/02-audit.md"
+EXTRACTION_JSON="$RUN_DIR/01-extraction.json"
+AUDIT_JSON="$RUN_DIR/02-audit.json"
+REPORT_JSON="$RUN_DIR/report.json"
 INDEX="$RUN_DIR/03-index.md"
-REPORT="$RUN_DIR/report.md"
+REPORT_MD="$RUN_DIR/report.md"
 
 PASSED=0
 FAILED=0
@@ -42,7 +43,6 @@ SKIPPED=0
 FAILURES=()
 
 check() {
-  # check "<id>" "<description>" "<shell expression — pass on exit 0>"
   local id="$1" desc="$2" expr="$3"
   if eval "$expr" >/dev/null 2>&1; then
     printf "  \033[32m✓\033[0m %-5s %s\n" "$id" "$desc"
@@ -55,7 +55,6 @@ check() {
 }
 
 skip() {
-  # skip "<id>" "<description>" "<reason>"
   local id="$1" desc="$2" reason="$3"
   printf "  \033[33m-\033[0m %-5s %s  (skipped: %s)\n" "$id" "$desc" "$reason"
   SKIPPED=$((SKIPPED + 1))
@@ -64,15 +63,17 @@ skip() {
 echo "━━━ grade-shape: $RUN_DIR ━━━"
 echo ""
 
+# Shared: known gap type enum (must match _defs.schema.json#/$defs/gapTypeCategory).
+GAP_TYPE_ENUM='["API inbound","DB","Outbound API","Jobs","UI Props","Fintech:Money","Fintech:Idempotency","Fintech:StateMachine","Fintech:BalanceLedger","Fintech:ExternalIntegration","Fintech:Compliance","Fintech:Concurrency","Fintech:Security"]'
+
 # ─────────────────────────────────────────────────────────────────────────────
-# findings.json — schema
+# findings.json — merged gap list (authoritative machine-readable output)
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo "findings.json:"
 
 if [[ ! -f "$FINDINGS" ]]; then
   check B1 "findings.json exists" "false"
-  # The remaining findings checks can't run; skip them loudly so they're visible.
   for id in B2 B3 B4 B5 B6; do
     skip "$id" "(depends on B1)" "findings.json missing"
   done
@@ -80,154 +81,151 @@ else
   check B1 "findings.json is valid JSON" \
     "jq empty '$FINDINGS'"
 
-  check B2 "top-level keys: unit (string), critical (bool), gaps (array)" \
-    "jq -e '(.unit | type == \"string\") and (.critical | type == \"boolean\") and (.gaps | type == \"array\")' '$FINDINGS'"
+  check B2 "top-level keys: unit (string), gaps (array); optional fintech/critical are booleans" \
+    "jq -e '(.unit | type == \"string\") and (.gaps | type == \"array\") and ((.fintech == null) or (.fintech | type == \"boolean\")) and ((.critical == null) or (.critical | type == \"boolean\"))' '$FINDINGS'"
 
-  check B3 "every gap has id, priority, field, type, description" \
-    "jq -e '.gaps | all(has(\"id\") and has(\"priority\") and has(\"field\") and has(\"type\") and has(\"description\"))' '$FINDINGS'"
+  check B3 "every gap has required fields (id, priority, field, type, description) + id matches ^G(API|DB|OUT|MON|SEC|FIN)-\\d{3}$" \
+    "jq -e '.gaps | all(has(\"id\") and has(\"priority\") and has(\"field\") and has(\"type\") and has(\"description\") and (.id | test(\"^G(API|DB|OUT|MON|SEC|FIN)-[0-9]{3}$\")))' '$FINDINGS'"
 
   check B4 "every CRITICAL gap has a non-empty stub (HIGH/MEDIUM/LOW do not require one)" \
     "jq -e '[.gaps[] | select(.priority == \"CRITICAL\") | select((.stub // \"\") == \"\")] | length == 0' '$FINDINGS'"
 
-  check B5 "no gap type uses the old 'Fintech:' prefix (schema rename guard)" \
-    "jq -e '[.gaps[] | select(.type | startswith(\"Fintech:\"))] | length == 0' '$FINDINGS'"
+  check B5 "every gap type is in the _defs enum (gapTypeCategory)" \
+    "jq --argjson enum '$GAP_TYPE_ENUM' -e '[.gaps[] | select((.type as \$t | \$enum | index(\$t)) == null)] | length == 0' '$FINDINGS'"
 
-  check B6 "no gap description mentions hygiene / anti-pattern (those belong in report.md)" \
+  check B6 "no gap description mentions hygiene / anti-pattern (those belong in audit.json)" \
     "jq -e '[.gaps[] | select((.description // \"\") | test(\"hygiene|anti[- ]?pattern\"; \"i\"))] | length == 0' '$FINDINGS'"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 01-extraction.md — Checkpoint 1 shape
+# 01-extraction.json — Checkpoint 1 shape (against schema invariants)
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "01-extraction.md:"
+echo "01-extraction.json:"
 
-if [[ ! -f "$EXTRACTION" ]]; then
-  check B7 "01-extraction.md exists" "false"
+if [[ ! -f "$EXTRACTION_JSON" ]]; then
+  check B7 "01-extraction.json exists" "false"
   for id in B8 B9; do
-    skip "$id" "(depends on B7)" "01-extraction.md missing"
+    skip "$id" "(depends on B7)" "01-extraction.json missing"
   done
 else
-  check B7 "contains ## Summary, ## Files Examined, ## Checkpoint 1" \
-    "grep -qE '^## Summary[[:space:]]*$' '$EXTRACTION' && grep -qE '^## Files Examined[[:space:]]*$' '$EXTRACTION' && grep -qE '^## Checkpoint 1:' '$EXTRACTION'"
+  check B7 "01-extraction.json has required top-level keys (unit, framework, files_examined, coverage_table, contracts)" \
+    "jq -e 'has(\"unit\") and has(\"framework\") and has(\"files_examined\") and has(\"coverage_table\") and has(\"contracts\")' '$EXTRACTION_JSON'"
 
-  # Checkpoint 1 table: 5 exact row labels with a 3-state status.
-  check B8 "Checkpoint 1 table has 5 rows with exact labels + 3-state status" \
-    "grep -qE '^\\| API inbound \\| (Extracted|Not detected|Not applicable) \\|' '$EXTRACTION' && \
-     grep -qE '^\\| DB \\| (Extracted|Not detected|Not applicable) \\|' '$EXTRACTION' && \
-     grep -qE '^\\| Outbound API \\| (Extracted|Not detected|Not applicable) \\|' '$EXTRACTION' && \
-     grep -qE '^\\| Jobs \\| (Extracted|Not detected|Not applicable) \\|' '$EXTRACTION' && \
-     grep -qE '^\\| UI Props \\| (Extracted|Not detected|Not applicable) \\|' '$EXTRACTION'"
+  check B8 "coverage_table has 5 rows with exact contract_type labels + 3-state status" \
+    "jq -e '
+       (.coverage_table | length == 5)
+       and ([.coverage_table[].contract_type] | sort == [\"API inbound\",\"DB\",\"Jobs\",\"Outbound API\",\"UI Props\"])
+       and ([.coverage_table[] | select((.status | IN(\"Extracted\",\"Not detected\",\"Not applicable\")) | not)] | length == 0)
+     ' '$EXTRACTION_JSON'"
 
-  check B9 "Files Examined has ### Call trees and ### Root set subsections" \
-    "grep -qE '^### Call trees[[:space:]]*$' '$EXTRACTION' && \
-     grep -qE '^### Root set[[:space:]]*$' '$EXTRACTION'"
+  check B9 "files_examined.source is a non-empty array (mandatory); other groups (db_schema/outbound_clients/other) are arrays if present" \
+    "jq -e '
+       (.files_examined.source | type == \"array\") and (.files_examined.source | length > 0)
+       and ((.files_examined.db_schema // []) | type == \"array\")
+       and ((.files_examined.outbound_clients // []) | type == \"array\")
+       and ((.files_examined.other // []) | type == \"array\")
+     ' '$EXTRACTION_JSON'"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 02-audit.md — audit sections + reconciliation
+# 02-audit.json — audit sections + reconciliation
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "02-audit.md:"
+echo "02-audit.json:"
 
-if [[ ! -f "$AUDIT" ]]; then
-  check B10 "02-audit.md exists" "false"
+if [[ ! -f "$AUDIT_JSON" ]]; then
+  check B10 "02-audit.json exists" "false"
   for id in B11 B12; do
-    skip "$id" "(depends on B10)" "02-audit.md missing"
+    skip "$id" "(depends on B10)" "02-audit.json missing"
   done
 else
-  check B10 "contains ## Summary, ## Test Inventory, ## Per-Field Coverage Matrix" \
-    "grep -qE '^## Summary' '$AUDIT' && grep -qE '^## Test Inventory' '$AUDIT' && grep -qE '^## Per-Field Coverage Matrix' '$AUDIT'"
+  check B10 "02-audit.json has required top-level keys (unit, files_reviewed, test_inventory, anti_patterns, per_field_coverage)" \
+    "jq -e 'has(\"unit\") and has(\"files_reviewed\") and has(\"test_inventory\") and has(\"anti_patterns\") and has(\"per_field_coverage\")' '$AUDIT_JSON'"
 
-  # Reconciliation: grep count MUST equal Test Inventory count in Summary. Extract both numbers.
-  # COUPLED to the audit-template wording "Test files (grep count): ..., N test" / "Test Inventory (agent count): N".
-  # Source of truth for that wording: skills/tdd-contract-review/SKILL.md and skills/tdd-contract-review/test-patterns.md.
-  # If the template is reworded, update both the regex below and the template in lockstep.
-  check B11 "Test files (grep count) == Test Inventory (agent count) in Summary" \
-    "grep_count=\$(grep -oE 'Test files \\(grep count\\):[^,]*, ([0-9]+) test' '$AUDIT' | grep -oE '[0-9]+ test' | head -1 | grep -oE '[0-9]+'); \
-     inv_count=\$(grep -oE 'Test Inventory \\(agent count\\): ([0-9]+)' '$AUDIT' | head -1 | grep -oE '[0-9]+'); \
-     [[ -n \"\$grep_count\" && -n \"\$inv_count\" && \"\$grep_count\" == \"\$inv_count\" ]]"
+  check B11 "test_inventory.grep_count == test_inventory.agent_count (reconciliation)" \
+    "jq -e '.test_inventory.grep_count == .test_inventory.agent_count' '$AUDIT_JSON'"
 
-  check B12 "02-audit.md does NOT contain ## Gaps or ## Scorecard (belong to later steps)" \
-    "! grep -qE '^## (Gaps|Scorecard)' '$AUDIT'"
+  check B12 "audit.json has no gaps[] or scorecard keys (those belong to findings/report)" \
+    "jq -e '(.gaps == null) and (.scorecard == null)' '$AUDIT_JSON'"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Per-type sub-files — Step 6b output
+# Per-type sub-files — Step 6b output (JSON is source of truth)
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
 echo "per-type gap sub-files:"
 
-# Determine which types are Extracted in Checkpoint 1, then require the matching sub-file.
+# Which types are Extracted at Checkpoint 1? Read from extraction.json.
 extracted_types=""
-if [[ -f "$EXTRACTION" ]]; then
-  # Grep each row; if status is "Extracted", the sub-file must exist.
-  while read -r row_label sub_file expected_prefix; do
-    if grep -qE "^\\| $row_label \\| Extracted \\|" "$EXTRACTION"; then
-      extracted_types+="$row_label|$sub_file|$expected_prefix"$'\n'
-    fi
-  done <<EOF
-API inbound|03a-gaps-api.md|GAPI
-DB|03b-gaps-db.md|GDB
-Outbound API|03c-gaps-outbound.md|GOUT
-EOF
+if [[ -f "$EXTRACTION_JSON" ]]; then
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && extracted_types+="$line"$'\n'
+  done < <(jq -r '
+    .coverage_table[]
+    | select(.status == "Extracted")
+    | .contract_type as $t
+    | (if $t == "API inbound" then "API inbound|03a-gaps-api|GAPI"
+       elif $t == "DB" then "DB|03b-gaps-db|GDB"
+       elif $t == "Outbound API" then "Outbound API|03c-gaps-outbound|GOUT"
+       else empty end)
+  ' "$EXTRACTION_JSON" 2>/dev/null)
 fi
 
 if [[ -z "$extracted_types" ]]; then
-  skip B13 "sub-files exist for each Extracted type" "no Extracted rows detected in Checkpoint 1"
-  skip B15 "sub-files contain Test Structure Tree + Contract Map" "no Extracted rows"
-  skip B16 "gap IDs use right type prefix per sub-file" "no Extracted rows"
+  skip B13 "per-type sub-file .json exists for each Extracted type" "no Extracted rows detected"
+  skip B15 "per-type sub-file matches gaps-per-type.schema shape" "no Extracted rows"
+  skip B16 "gap IDs use the right type prefix per sub-file" "no Extracted rows"
 else
-  missing_files=""
-  while IFS='|' read -r label file _; do
-    [[ -z "$label" ]] && continue
-    [[ -f "$RUN_DIR/$file" ]] || missing_files+="$file "
-  done <<< "$extracted_types"
-
-  check B13 "sub-file exists for each Extracted type from Checkpoint 1" \
-    "[[ -z '$missing_files' ]]"
-
-  # B15: each sub-file has the right section headers.
-  bad_sections=""
-  while IFS='|' read -r label file _; do
-    [[ -z "$label" ]] && continue
-    target="$RUN_DIR/$file"
-    if [[ -f "$target" ]]; then
-      grep -qE "^## Test Structure Tree \\($label\\)" "$target" || bad_sections+="$file:tree "
-      grep -qE "^## Contract Map \\($label\\)" "$target" || bad_sections+="$file:map "
-    fi
-  done <<< "$extracted_types"
-
-  check B15 "per-type sub-files have ## Test Structure Tree (<TYPE>) and ## Contract Map (<TYPE>)" \
-    "[[ -z '$bad_sections' ]]"
-
-  # B16: Gap IDs in each sub-file use the expected prefix. Skip if the sub-file doesn't exist.
-  # Matches the gap-analysis.md grammar: `- **id**: G<PREFIX>-<NNN>`.
+  missing_json=""
+  bad_shape=""
   bad_prefix=""
-  while IFS='|' read -r label file prefix; do
+  while IFS='|' read -r label base prefix; do
     [[ -z "$label" ]] && continue
-    target="$RUN_DIR/$file"
-    if [[ -f "$target" ]]; then
-      # Look for any "- **id**: G<something>-" that is NOT the expected prefix.
-      if grep -oE '^- \*\*id\*\*: G[A-Z]+-[0-9]+' "$target" | grep -v "G${prefix}-" >/dev/null 2>&1; then
-        bad_prefix+="$file "
-      fi
+    sub="$RUN_DIR/${base}.json"
+
+    if [[ ! -f "$sub" ]]; then
+      missing_json+="${base}.json "
+      continue
+    fi
+
+    # Shape: has scope + gap_prefix + test_tree + contract_map + gaps, gap_prefix matches.
+    if ! jq -e --arg p "$prefix" '
+           has("scope") and has("gap_prefix") and has("test_tree") and has("contract_map")
+           and (.gaps | type == "array")
+           and (.gap_prefix == $p)
+         ' "$sub" >/dev/null 2>&1; then
+      bad_shape+="${base}.json "
+    fi
+
+    # Every gap id in this sub-file must use the expected prefix. `prefix` is
+    # already the full literal (GAPI / GDB / GOUT), so concatenate as-is.
+    if jq -e --arg p "$prefix" '
+           [.gaps[] | select(.id | test("^" + $p + "-[0-9]{3}$") | not)] | length > 0
+         ' "$sub" >/dev/null 2>&1; then
+      bad_prefix+="${base}.json "
     fi
   done <<< "$extracted_types"
+
+  check B13 "per-type sub-file .json exists for each Extracted type from Checkpoint 1" \
+    "[[ -z '$missing_json' ]]"
+
+  check B15 "per-type .json has scope + gap_prefix + test_tree + contract_map + gaps[]" \
+    "[[ -z '$bad_shape' ]]"
 
   check B16 "gap IDs use the right type prefix per sub-file (GAPI/GDB/GOUT)" \
     "[[ -z '$bad_prefix' ]]"
 fi
 
-# B14: critical-mode sub-files.
+# B14: critical-mode sub-files exist as JSON when fintech/critical mode is on.
 if [[ -f "$FINDINGS" ]]; then
-  is_critical=$(jq -r '.critical // false' "$FINDINGS")
+  is_critical=$(jq -r '(.critical // .fintech // false)' "$FINDINGS")
   if [[ "$is_critical" == "true" ]]; then
-    check B14 "critical mode: 03d-gaps-money.md and 03e-gaps-security.md exist" \
-      "[[ -f '$RUN_DIR/03d-gaps-money.md' && -f '$RUN_DIR/03e-gaps-security.md' ]]"
+    check B14 "critical mode: 03d-gaps-money.json and 03e-gaps-security.json exist" \
+      "[[ -f '$RUN_DIR/03d-gaps-money.json' && -f '$RUN_DIR/03e-gaps-security.json' ]]"
   else
     skip B14 "critical-mode sub-files present" "unit is not critical mode"
   fi
@@ -236,7 +234,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 03-index.md — shell-generated index + Checkpoint 2
+# 03-index.md — shell-generated index (still MD, not a rendered JSON artifact)
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -244,54 +242,61 @@ echo "03-index.md:"
 
 if [[ ! -f "$INDEX" ]]; then
   check B17 "03-index.md exists" "false"
-  skip B18 "Checkpoint 2: every Extracted type shows Yes in Gaps Checked" "03-index.md missing"
+  skip B18 "Checkpoint 3: every Extracted type shows Yes in Gaps Checked" "03-index.md missing"
 else
-  check B17 "contains ## Summary + ## Checkpoint 2: Gap Coverage" \
+  check B17 "contains ## Summary + ## Checkpoint 3: Gap Coverage" \
     "grep -qE '^## Summary[[:space:]]*$' '$INDEX' && \
-     grep -qE '^## Checkpoint 2: Gap Coverage[[:space:]]*$' '$INDEX'"
+     grep -qE '^## Checkpoint 3: Gap Coverage[[:space:]]*$' '$INDEX'"
 
-  # B18: every Extracted type in Checkpoint 1 must show 'Yes' in the Checkpoint 2 table.
   if [[ -n "${extracted_types:-}" ]]; then
-    bad_cp2=""
+    bad_cp3=""
     while IFS='|' read -r label _ _; do
       [[ -z "$label" ]] && continue
-      grep -qE "^\\| $label \\| Yes \\|" "$INDEX" || bad_cp2+="$label/ "
+      grep -qE "^\\| $label \\| Yes \\|" "$INDEX" || bad_cp3+="$label/ "
     done <<< "$extracted_types"
 
-    check B18 "Checkpoint 2: every Extracted type from Checkpoint 1 shows Yes" \
-      "[[ -z '$bad_cp2' ]]"
+    check B18 "Checkpoint 3: every Extracted type from Checkpoint 1 shows Yes" \
+      "[[ -z '$bad_cp3' ]]"
   else
-    skip B18 "Checkpoint 2 row-for-row check" "no Extracted rows to verify"
+    skip B18 "Checkpoint 3 row-for-row check" "no Extracted rows to verify"
   fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# report.md
+# report.json + report.md (source of truth + render smoke)
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "report.md:"
+echo "report.{json,md}:"
 
-check B19 "report.md exists and is non-empty" \
-  "[[ -s '$REPORT' ]]"
+if [[ ! -f "$REPORT_JSON" ]]; then
+  check B19 "report.json exists and has 6 categories + verdict + overall_score" "false"
+  skip B21 "report.md exists and is non-empty (render smoke)" "report.json missing"
+else
+  check B19 "report.json has 6 categories + overall_score + verdict in enum" \
+    "jq -e '
+       (.categories | type == \"array\") and (.categories | length == 6)
+       and (.overall_score | type == \"number\")
+       and (.overall_score >= 0 and .overall_score <= 10)
+       and (.verdict | IN(\"WEAK\",\"OK\",\"STRONG\"))
+     ' '$REPORT_JSON'"
+
+  check B21 "report.md exists and is non-empty" \
+    "[[ -s '$REPORT_MD' ]]"
+fi
 
 # B20: at least one gap per Extracted type in findings.json.
 if [[ -f "$FINDINGS" && -n "${extracted_types:-}" ]]; then
   missing_coverage=""
   while IFS='|' read -r label _ _; do
     [[ -z "$label" ]] && continue
-    # Case-insensitive substring on the type field.
-    if ! jq -e --arg t "$label" \
-         '.gaps | any(.type | ascii_downcase | contains($t | ascii_downcase))' \
-         "$FINDINGS" >/dev/null 2>&1; then
-      # Allow an explicit coverage note in report.md.
-      if ! grep -qiE "$label.*(covered|no gaps|complete)" "$REPORT" 2>/dev/null; then
-        missing_coverage+="$label "
-      fi
+    # Exact match on the type field; Fintech:* lives in separate sub-files, not A/B/C.
+    if ! jq -e --arg t "$label" '.gaps | any(.type == $t)' "$FINDINGS" >/dev/null 2>&1; then
+      missing_coverage+="$label "
     fi
   done <<< "$extracted_types"
 
-  check B20 "at least one gap per Extracted type (or explicit coverage note in report.md)" \
+  check B20 "at least one gap per Extracted type in findings.json" \
     "[[ -z '$missing_coverage' ]]"
 else
   skip B20 "per-type gap coverage" "findings.json or Extracted types unavailable"

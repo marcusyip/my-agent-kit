@@ -43,4 +43,4 @@ python tdd-contract-review/scripts/lsp_tree.py \
 ```
 
 See `tdd-contract-review/scripts/lsp_tree.py --help` for more options
-(`--format json`, `--scope local`, `--run-dir DIR`).
+(`--format markdown` for the legacy indented-bullet view — json is the default, `--scope local`, `--run-dir DIR`).

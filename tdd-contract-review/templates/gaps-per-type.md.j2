@@ -1,0 +1,92 @@
+{%- set scope_title = {
+  'API inbound': 'API Inbound Gap Analysis',
+  'DB': 'DB Gap Analysis',
+  'Outbound API': 'Outbound API Gap Analysis',
+  'Money': 'Money Gap Analysis',
+  'Security': 'Security Gap Analysis',
+  'Fintech cross-cutting': 'Fintech Cross-cutting Gap Analysis',
+} -%}
+# {{ scope_title.get(doc.scope, doc.scope + ' Gap Analysis') }} — {{ doc.unit }}
+{% if doc.get('scope_note_md') %}
+
+{{ doc.scope_note_md }}
+{% endif %}
+
+---
+
+## Test Structure Tree ({{ doc.scope }})
+
+```
+{{ doc.test_tree.root }}
+│
+{% for fld in doc.test_tree.fields %}
+{%- set is_last_field = loop.last -%}
+{%- set field_prefix = '└──' if is_last_field else '├──' -%}
+{%- set child_indent = '    ' if is_last_field else '│   ' -%}
+{{ field_prefix }} {{ fld.field }} — {{ fld.status }}
+{% for sc in fld.scenarios %}
+{%- set sc_prefix = '└──' if loop.last else '├──' -%}
+{%- set mark = '✓' if sc.covered else '✗' -%}
+{%- set ref_text = '' -%}
+{%- if sc.covered and sc.get('test_ref') -%}
+  {%- set ref_text = ' (' ~ sc.test_ref.path ~ (':' ~ (sc.test_ref.line | string) if sc.test_ref.get('line') else '') ~ ')' -%}
+{%- endif -%}
+{%- set partial_text = ('  [' ~ sc.partial_note ~ ']') if sc.get('partial_note') else '' -%}
+{{ child_indent }}{{ sc_prefix }} {{ mark }} {{ sc.description }}{{ ref_text }}{{ partial_text }}
+{% endfor %}
+{% if not is_last_field %}
+│
+{% endif %}
+{% endfor %}
+```
+
+---
+
+## Contract Map ({{ doc.scope }})
+
+| Typed Prefix | Field | Role | Scenarios Required | Scenarios Covered | Gap Count |
+|---|---|---|---|---|---|
+{% for row in doc.contract_map %}
+| {{ row.get('field_kind', '') }} | {{ row.field }} | {{ row.role }} | {{ row.scenarios_needed }} | {{ row.get('current_coverage', '0') }} | {{ row.gap_count }} |
+{% endfor %}
+
+---
+
+## Gap List
+{% set priorities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] %}
+{% for pri in priorities %}
+{% set bucket = doc.gaps | selectattr('priority', 'equalto', pri) | list %}
+{% if bucket %}
+
+### {{ pri }}
+{% for g in bucket %}
+
+- **{{ g.id }}** — `{{ g.field }}` — **{{ g.type }}**
+  - Priority: {{ g.priority }}
+  - Description: {{ g.description }}
+  - Stub: {{ 'REQUIRED' if g.get('stub') else 'not required' }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% set ns = namespace(has_stubs=false) %}
+{% for g in doc.gaps %}{% if g.get('stub') %}{% set ns.has_stubs = true %}{% endif %}{% endfor %}
+{% if doc.get('test_stubs_md') or ns.has_stubs %}
+
+---
+
+## Test Stubs
+{% if doc.get('test_stubs_md') %}
+
+{{ doc.test_stubs_md }}
+{% endif %}
+{% for g in doc.gaps %}
+{% if g.get('stub') %}
+
+### {{ g.id }} — {{ g.priority }} — `{{ g.field }}`
+
+````
+{{ g.stub }}
+````
+{% endif %}
+{% endfor %}
+{% endif %}

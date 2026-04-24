@@ -1,0 +1,30 @@
+{
+  "unit": "POST /api/v1/transactions",
+  "source_files": [
+    "app/controllers/api/v1/transactions_controller.rb (create action)",
+    "app/services/transaction_service.rb"
+  ],
+  "test_files": [
+    "spec/requests/api/v1/transactions_spec.rb",
+    "spec/services/transaction_service_spec.rb"
+  ],
+  "framework": "Rails / RSpec",
+  "fintech_mode": true,
+  "overall_score": 1.5,
+  "verdict": "WEAK",
+  "categories": [
+    {"name": "Contract Coverage", "score": 1, "weight": 0.25, "weighted": 0.25, "rationale_md": "33 out of 36 contract fields have zero test coverage. The 3 partial fields (amount, currency, wallet_id) assert only status codes."},
+    {"name": "Test Grouping", "score": 2, "weight": 0.15, "weighted": 0.30, "rationale_md": "Request spec groups by param name but groups are shallow; multiple endpoints combined in one file; service spec duplicates concerns as a non-boundary file."},
+    {"name": "Scenario Depth", "score": 1, "weight": 0.20, "weighted": 0.20, "rationale_md": "Meaningful depth exists only for amount (2 of 17 needed) and currency (2 of 15 needed). Zero scenarios for every response field, every DB postcondition, every outbound call."},
+    {"name": "Test Case Quality", "score": 1, "weight": 0.15, "weighted": 0.15, "rationale_md": "Every test asserts only `have_http_status`. No body parsing, no DB assertions, no outbound API assertions."},
+    {"name": "Isolation & Flakiness", "score": 4, "weight": 0.15, "weighted": 0.60, "rationale_md": "Request spec uses a real DB (correct). PaymentGateway is never mocked in the request spec — any network call would be uncontrolled."},
+    {"name": "Anti-Patterns", "score": 0, "weight": 0.10, "weighted": 0.00, "rationale_md": "Seven anti-patterns identified — service spec testing private method dispatch, multiple endpoints in one file, implementation testing, missing shared helper, error tests assert status only, happy path asserts status only."}
+  ],
+  "top_priority_actions": [
+    {"rank": 1, "action": "Fix the double-charge via after_create callback (Transaction#notify_payment_gateway). Move gateway trigger into a single explicit service method and add a contract test that PaymentGateway.charge is invoked exactly once per payment-category transaction.", "related_gaps": ["GFIN-001"]},
+    {"rank": 2, "action": "Add the FINTECH balance-leak test for InsufficientBalanceError — assert error details array does NOT include wallet.balance value.", "related_gaps": ["GAPI-001", "GSEC-001"]},
+    {"rank": 3, "action": "Introduce shared `subject(:run_test)` + `defaults` foundation in request spec and upgrade existing error tests to assert (no DB write, no outbound call, no data leak).", "related_gaps": ["GAPI-020"]},
+    {"rank": 4, "action": "Add happy-path response-body assertions for every response field (id/amount/currency/status/description/category/wallet_id/created_at/updated_at).", "related_gaps": ["GAPI-016"]},
+    {"rank": 5, "action": "Add TOCTOU / concurrent-withdraw test — two concurrent requests each below balance but summing above — must never drive balance negative.", "related_gaps": ["GFIN-003"]}
+  ]
+}

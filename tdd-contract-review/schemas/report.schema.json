@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tdd-contract-review/report.schema.json",
+  "title": "report.json — scorecard + narrative for one unit",
+  "description": "Lean: holds only the score table and narrative fields unique to the report. The rendered report.md is assembled by walking report.json + extraction.json + audit.json + findings.json, so this file does not duplicate contract or gap data.",
+  "type": "object",
+  "required": ["unit", "overall_score", "verdict", "categories", "top_priority_actions"],
+  "properties": {
+    "unit": { "type": "string" },
+    "source_files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Paths rendered in the report header."
+    },
+    "test_files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "framework": { "type": "string" },
+    "fintech_mode": { "type": "boolean" },
+    "overall_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10,
+      "description": "Weighted sum of category scores. Deterministically computed by the scoring script — LLM must not hand-author this number."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["WEAK", "OK", "STRONG"],
+      "description": "Derived from overall_score: WEAK < 4, OK < 7, STRONG >= 7. Also computed by script."
+    },
+    "categories": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["name", "score", "weight", "weighted"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "Contract Coverage",
+              "Test Grouping",
+              "Scenario Depth",
+              "Test Case Quality",
+              "Isolation & Flakiness",
+              "Anti-Patterns"
+            ]
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "weight": {
+            "type": "number",
+            "description": "Fractional weight summing to 1.0 across all 6 categories (0.25, 0.15, 0.20, 0.15, 0.15, 0.10)."
+          },
+          "weighted": {
+            "type": "number",
+            "description": "score * weight — script-computed."
+          },
+          "rationale_md": {
+            "type": "string",
+            "description": "One-sentence rationale for the category score. LLM-authored."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "scoring_rationale_md": {
+      "type": "string",
+      "description": "Overall scoring narrative. LLM-authored."
+    },
+    "top_priority_actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["rank", "action"],
+        "properties": {
+          "rank": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "action": { "type": "string" },
+          "related_gaps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^G(API|DB|OUT|MON|SEC|FIN)-\\d{3}$"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "exec_summary_md": {
+      "type": "string",
+      "description": "Optional 2-3 sentence executive summary shown near the top of the rendered report."
+    },
+    "test_structure_tree_md": {
+      "type": "string",
+      "description": "Optional unified Test Structure Tree rendered as a fenced ASCII tree. Computed by score.py by merging test_tree[] from all 03*-gaps-*.json sub-files (dedupe fields by name, dedupe scenarios by description, prefer covered=true)."
+    },
+    "contract_map_md": {
+      "type": "string",
+      "description": "Optional unified Contract Map rendered as a markdown table. Computed by score.py by merging contract_map[] from all 03*-gaps-*.json sub-files (dedupe by field_kind+field)."
+    },
+    "anti_patterns_md": {
+      "type": "string",
+      "description": "Optional Anti-Patterns table rendered from 02-audit.json.anti_patterns[]. Computed by score.py."
+    },
+    "gap_analysis_md": {
+      "type": "string",
+      "description": "Optional Gap Analysis by Priority section — bulleted list of all gaps grouped by priority. Read from findings.json by score.py."
+    },
+    "hygiene_md": {
+      "type": "string",
+      "description": "Optional Hygiene narrative — rendered per-anti-pattern from 02-audit.json.anti_patterns[] with full rationale_md and recommendation. Computed by score.py."
+    }
+  },
+  "additionalProperties": false
+}

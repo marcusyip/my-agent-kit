@@ -21,7 +21,7 @@ python3 "$PLUGIN/scripts/lsp_tree.py" \
   --project "$PROJECT" \
   --file internal/service/transaction_service.go \
   --symbol '(*TransactionService).chargePaymentGateway' \
-  --depth 5 --scope local --run-dir "$OUT" > /dev/null
+  --depth 5 --scope local --format markdown --run-dir "$OUT" > /dev/null
 
 TREE_FILE="$(ls "$OUT"/tree__*.md 2>/dev/null | head -n1 || true)"
 if [[ -z "$TREE_FILE" ]]; then
