@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tdd-contract-review/findings.schema.json",
+  "title": "findings.json — merged canonical gap list",
+  "description": "Post-merge output of step 4 (gap dedup). Already JSON today; this schema formalizes the shape grader B1-B6 already enforces. Singleton — one findings.json per run.",
+  "type": "object",
+  "required": ["unit", "gaps"],
+  "properties": {
+    "unit": { "type": "string" },
+    "fintech": {
+      "type": "boolean",
+      "description": "True when the unit is in fintech/money-critical mode. Controls whether 03d/e and fintech-cross-cutting files are present."
+    },
+    "critical": {
+      "type": "boolean",
+      "description": "Legacy flag — true when fintech mode forces critical-mode artifacts. Grader B14 reads this."
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "priority", "field", "type", "description"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^G(API|DB|OUT|MON|SEC|FIN)-\\d{3}$"
+          },
+          "priority": { "$ref": "_defs.schema.json#/$defs/gapPriority" },
+          "field": { "type": "string" },
+          "type": { "$ref": "_defs.schema.json#/$defs/gapTypeCategory" },
+          "description": { "type": "string" },
+          "stub": {
+            "type": "string",
+            "description": "Required for CRITICAL gaps (grader B4)."
+          },
+          "merged_from": {
+            "type": "array",
+            "description": "When this gap was merged from multiple per-type findings, lists the original ids.",
+            "items": {
+              "type": "string",
+              "pattern": "^G(API|DB|OUT|MON|SEC|FIN)-\\d{3}$"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

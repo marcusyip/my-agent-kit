@@ -66,34 +66,38 @@ gating (priority drift is information; absence is the failure).
 ### B. Structural Invariants (shape)
 
 Cheap bash checks on a run directory. These catch skill regressions that content grading
-misses — e.g. the schema rename or a dropped section. Every case is a grep / jq one-liner.
+misses — e.g. a dropped field or a renamed schema key. Since v0.50 the numbered
+artifacts are JSON-first: the agent writes `.json` files (schema-validated by
+`scripts/render.py`), which the renderer turns into the `.md` views. Shape checks
+therefore read the JSON directly with `jq` rather than grepping the rendered MD.
 
-| Case  | Assertion                                                                                 | File            |
-|-------|-------------------------------------------------------------------------------------------|-----------------|
-| B1    | findings.json is valid JSON                                                               | findings.json   |
-| B2    | findings.json top-level keys: `unit` (string), `critical` (bool), `gaps` (array)          | findings.json   |
-| B3    | Every gap has `id`, `priority`, `field`, `type`, `description`                            | findings.json   |
-| B4    | Every CRITICAL gap has a non-empty `stub`; HIGH/MEDIUM/LOW do NOT require one             | findings.json   |
-| B5    | No gap has `type` starting with `Fintech:` (schema-rename regression guard)               | findings.json   |
-| B6    | No gap description mentions "hygiene" / "anti-pattern" (those live in report.md only)     | findings.json   |
-| B7    | `01-extraction.md` contains `## Summary`, `## Files Examined`, `## Checkpoint 1`          | 01-extraction   |
-| B8    | Checkpoint 1 table has 5 required rows, exact labels, 3-state status                      | 01-extraction   |
-| B9    | `Files Examined` has `### Call trees` and `### Root set` subsections                       | 01-extraction   |
-| B10   | `02-audit.md` contains `## Summary`, `## Test Inventory`, `## Per-Field Coverage Matrix`  | 02-audit        |
-| B11   | `02-audit.md` grep-count equals Test-Inventory-count (reconciliation line)                | 02-audit        |
-| B12   | `02-audit.md` does NOT contain `## Gaps` or `## Scorecard` (belong to later steps)        | 02-audit        |
-| B13   | Per-type sub-file exists for each Extracted type from Checkpoint 1 (03a/03b/03c)          | run dir         |
-| B14   | In critical mode, 03d-gaps-money.md and 03e-gaps-security.md exist                        | run dir         |
-| B15   | Each per-type sub-file has `## Test Structure Tree (<TYPE>)` and `## Contract Map (<TYPE>)` | 03a/b/c         |
-| B16   | Gap IDs use the right prefix per sub-file (GAPI in 03a, GDB in 03b, GOUT in 03c)          | 03a/b/c         |
-| B17   | `03-index.md` contains `## Summary` and `## Checkpoint 2: Gap Coverage` (shell-generated index, no LLM content) | 03-index       |
-| B18   | Checkpoint 2 table in `03-index.md`: every Extracted type from Checkpoint 1 shows `Yes` in Gaps Checked | 03-index      |
-| B19   | `report.md` exists and is non-empty                                                       | report.md       |
-| B20   | `findings.json` has at least one gap per Extracted type OR explicit coverage note in report.md | cross-file |
+| Case  | Assertion                                                                                 | File                    |
+|-------|-------------------------------------------------------------------------------------------|-------------------------|
+| B1    | findings.json is valid JSON                                                               | findings.json           |
+| B2    | findings.json top-level keys: `unit` (string), `gaps` (array); `fintech`/`critical` bool  | findings.json           |
+| B3    | Every gap has `id` (matching `^G(API|DB|OUT|MON|SEC|FIN)-\d{3}$`), `priority`, `field`, `type`, `description` | findings.json |
+| B4    | Every CRITICAL gap has a non-empty `stub`; HIGH/MEDIUM/LOW do NOT require one             | findings.json           |
+| B5    | Every gap `type` is in the `gapTypeCategory` enum (from `_defs.schema.json`)              | findings.json           |
+| B6    | No gap description mentions "hygiene" / "anti-pattern" (those live in `02-audit.json`)    | findings.json           |
+| B7    | `01-extraction.json` has required top-level keys: `unit`, `framework`, `files_examined`, `coverage_table`, `contracts` | 01-extraction.json |
+| B8    | `coverage_table` has 5 rows with exact `contract_type` labels + 3-state status            | 01-extraction.json      |
+| B9    | `files_examined.source` is a non-empty array; other groups (db_schema/outbound_clients/other) are arrays if present | 01-extraction.json |
+| B10   | `02-audit.json` has required top-level keys: `unit`, `files_reviewed`, `test_inventory`, `anti_patterns`, `per_field_coverage` | 02-audit.json |
+| B11   | `test_inventory.grep_count` equals `test_inventory.agent_count` (reconciliation)          | 02-audit.json           |
+| B12   | `02-audit.json` has no `gaps[]` or `scorecard` keys (belong to findings.json/report.json) | 02-audit.json           |
+| B13   | Per-type sub-file `.json` exists for each Extracted type from Checkpoint 1 (03a/03b/03c)  | run dir                 |
+| B14   | In fintech/critical mode, `03d-gaps-money.json` and `03e-gaps-security.json` exist        | run dir                 |
+| B15   | Each per-type sub-file has `scope` + `gap_prefix` + `test_tree` + `contract_map` + `gaps[]` | 03a/b/c JSON         |
+| B16   | Gap IDs use the right prefix per sub-file (GAPI in 03a, GDB in 03b, GOUT in 03c)          | 03a/b/c JSON            |
+| B17   | `03-index.md` contains `## Summary` and `## Checkpoint 2: Gap Coverage` (shell-generated index) | 03-index.md        |
+| B18   | Checkpoint 2 table in `03-index.md`: every Extracted type from Checkpoint 1 shows `Yes`   | 03-index.md             |
+| B19   | `report.json` has 6 `categories`, numeric `overall_score` in [0, 10], `verdict` in {`WEAK`, `OK`, `STRONG`} | report.json |
+| B20   | `findings.json` has at least one gap per Extracted type                                   | cross-file              |
+| B21   | `report.md` exists and is non-empty (render smoke)                                        | report.md               |
 
-B1–B20 run identically against every A-case run dir. The same run directory is graded
+B1–B21 run identically against every A-case run dir. The same run directory is graded
 by both an A-case (content) and all B-cases (shape). That's why the tests compound: one
-run yields ~21 graded assertions.
+run yields ~22 graded assertions.
 
 ### C. Argument & Discovery (gates) — Phase 2
 

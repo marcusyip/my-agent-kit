@@ -19,5 +19,9 @@ Thumbs.db
 # Python venvs (e.g. tdd-contract-review/scripts/.venv from lsp_query.py bootstrap)
 .venv/
 
+# Python bytecode cache
+__pycache__/
+*.pyc
+
 # Built Go helpers for tdd-contract-review/scripts/lsp_tree.py
 tdd-contract-review/scripts/.bin/

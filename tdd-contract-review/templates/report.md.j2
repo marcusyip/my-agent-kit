@@ -1,0 +1,108 @@
+## TDD Contract Review: {{ doc.unit }}
+
+**Unit:** {{ doc.unit }}
+{% if doc.get('source_files') %}
+**Source file:** {{ doc.source_files | join(' + ') }}
+{% endif %}
+{% if doc.get('test_files') %}
+**Test file(s):** {{ doc.test_files | join(', ') }}
+{% endif %}
+{% if doc.get('framework') %}
+**Framework:** {{ doc.framework }}
+{% endif %}
+{% if doc.fintech_mode is not undefined %}
+**Fintech mode:** {{ 'yes' if doc.fintech_mode else 'no' }}
+{% endif %}
+{% if doc.get('exec_summary_md') %}
+
+### Summary
+
+{{ doc.exec_summary_md }}
+{% endif %}
+
+### How to Read This Report
+
+**What is a contract?** A contract is the agreement between components about data shape, behavior, and error handling. Every endpoint, job, and consumer has contracts: what fields it accepts, what it returns, what happens on invalid input, and what side effects it triggers. A field without tests means changes to it can break things silently.
+
+**Test Structure Tree** shows your test coverage at a glance:
+- `✓` = scenario is tested
+- `✗` = scenario is missing (potential silent breakage)
+- Fields use typed prefixes. **Input** (data sent to the unit): `request header:`, `request field:`, `db field: <name> (input precondition)`, `outbound response field:` (mocked). **Assertion** (verified after the unit runs): `response field:`, `db field: <name> (assertion)`, `outbound request field:`.
+- Each field lists every scenario individually so you can see exactly what's covered and what's not
+
+**Contract boundary:** Tests should verify behavior at the contract boundary (endpoint entry, job entry, consumer entry), not internal implementation. Testing that a service method is called is implementation testing. Testing that POST returns 422 when the wallet is suspended is contract testing.
+
+**Scoring:** The score reflects how well your tests protect against breaking changes, not how many tests you have.
+{% if doc.get('test_structure_tree_md') %}
+
+### Test Structure Tree
+
+{{ doc.test_structure_tree_md }}
+{% endif %}
+{% if doc.get('contract_map_md') %}
+
+### Contract Map
+
+{{ doc.contract_map_md }}
+{% endif %}
+
+### Overall Score: {{ '%.1f' | format(doc.overall_score) }} / 10
+
+| Category | Score | Weight | Weighted |
+|---|---|---|---|
+{% for c in doc.categories %}
+| {{ c.name }} | {{ c.score }}/10 | {{ (c.weight * 100) | int }}% | {{ '%.2f' | format(c.weighted) }} |
+{% endfor %}
+| **Overall** | | | **{{ '%.2f' | format(doc.overall_score) }}** |
+{% if doc.get('scoring_rationale_md') %}
+
+**Scoring rationale:**
+
+{{ doc.scoring_rationale_md }}
+{% else %}
+{% set has_cat_rationale = doc.categories | selectattr('rationale_md') | list %}
+{% if has_cat_rationale %}
+
+**Scoring rationale:**
+
+{% for c in doc.categories %}
+{% if c.get('rationale_md') %}
+- **{{ c.name }} ({{ c.score }}/10):** {{ c.rationale_md }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+### Verdict: {{ doc.verdict }}
+{% if doc.get('gap_analysis_md') %}
+
+---
+
+### Gap Analysis by Priority
+
+{{ doc.gap_analysis_md }}
+{% endif %}
+{% if doc.get('anti_patterns_md') %}
+
+---
+
+### Anti-Patterns Detected
+
+{{ doc.anti_patterns_md }}
+{% endif %}
+{% if doc.get('hygiene_md') %}
+
+---
+
+### Hygiene
+
+{{ doc.hygiene_md }}
+{% endif %}
+
+---
+
+### Top {{ doc.top_priority_actions | length }} Priority Actions
+
+{% for a in doc.top_priority_actions %}
+{{ a.rank }}. {{ a.action }}{% if a.get('related_gaps') %} _(related: {{ a.related_gaps | join(', ') }})_{% endif +%}
+{% endfor %}

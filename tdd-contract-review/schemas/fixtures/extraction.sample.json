@@ -1,0 +1,171 @@
+{
+  "unit": "POST /api/v1/transactions",
+  "framework": "Rails/RSpec",
+  "files_examined": {
+    "source": [
+      { "path": "app/controllers/api/v1/transactions_controller.rb", "note": "primary unit handler (create action)" },
+      { "path": "app/services/transaction_service.rb", "note": "downstream service invoked by handler; contains all business logic, balance validation, and outbound gateway call" }
+    ],
+    "db_schema": [
+      { "path": "db/migrate/001_create_users.rb", "note": "users table: email, name, encrypted_password" },
+      { "path": "db/migrate/002_create_wallets.rb", "note": "wallets table: user_id, currency, name, balance, status" },
+      { "path": "db/migrate/003_create_transactions.rb", "note": "transactions table: user_id, wallet_id, amount, currency, status, description, category" },
+      { "path": "app/models/user.rb", "note": "User model validations and associations" },
+      { "path": "app/models/wallet.rb", "note": "Wallet model: enum status (active/suspended/closed), withdraw!/deposit! methods, with_lock usage" },
+      { "path": "app/models/transaction.rb", "note": "Transaction model: enum status (pending/completed/failed/reversed), enum category (transfer/payment/deposit/withdrawal), validations, after_create callback to PaymentGateway" }
+    ],
+    "outbound_clients": [
+      { "path": "PaymentGateway.charge", "note": "referenced at app/models/transaction.rb:28 (after_create callback) and app/services/transaction_service.rb:78; no HTTP implementation file found in codebase — SDK-level interface is the boundary" }
+    ],
+    "other": []
+  },
+  "coverage_table": [
+    { "contract_type": "API inbound", "status": "Extracted", "field_count": 14, "notes": "5 request params + 1 request header + 9 response fields (including 2 timestamps)" },
+    { "contract_type": "DB", "status": "Extracted", "field_count": 15, "notes": "transactions table (7 fields) + wallets table preconditions (3 fields) + users table (2 FK-relevant fields) + wallet status enum (3 values) + transaction status enum (4 values) from migration + model files" },
+    { "contract_type": "Outbound API", "status": "Extracted", "field_count": 7, "notes": "PaymentGateway.charge SDK interface; no HTTP URL found — SDK is the boundary; 4 request fields + 3 response fields" },
+    { "contract_type": "Jobs", "status": "Not applicable", "field_count": null, "notes": "no async job triggered by this unit; PaymentGateway.charge is called synchronously in-process" },
+    { "contract_type": "UI Props", "status": "Not applicable", "field_count": null, "notes": "server-side API endpoint, no UI component" }
+  ],
+  "contracts": {
+    "api_inbound": {
+      "endpoint": "POST /api/v1/transactions",
+      "input": {
+        "headers": [
+          {
+            "name": "Authorization",
+            "type": "bearer token",
+            "required": true,
+            "priority": "HIGH",
+            "notes": "enforced by before_action :authenticate_user!"
+          }
+        ],
+        "fields": [
+          {
+            "name": "transaction.amount",
+            "type": "decimal string",
+            "required": true,
+            "constraints": "> 0, <= 1_000_000",
+            "priority": "HIGH",
+            "notes": "validated in Transaction model: numericality greater_than: 0, less_than_or_equal_to: 1_000_000\nalso validated against wallet.balance in TransactionService#validate_sufficient_balance!"
+          },
+          {
+            "name": "transaction.currency",
+            "type": "string",
+            "required": true,
+            "constraints": "in: USD/EUR/GBP/BTC/ETH",
+            "priority": "HIGH",
+            "notes": "validated in Transaction model: inclusion in %w[USD EUR GBP BTC ETH]\nalso validated against wallet.currency in TransactionService#validate_currency_match!"
+          },
+          {
+            "name": "transaction.wallet_id",
+            "type": "integer",
+            "required": true,
+            "priority": "HIGH",
+            "notes": "used to scope wallet lookup: current_user.wallets.find_by(id: ...)\nreturns 422 \"Wallet not found\" if not found or not owned by user"
+          },
+          {
+            "name": "transaction.description",
+            "type": "string",
+            "required": false,
+            "constraints": "max: 500 chars",
+            "priority": "HIGH",
+            "notes": "validated in Transaction model: length maximum: 500"
+          },
+          {
+            "name": "transaction.category",
+            "type": "string",
+            "required": false,
+            "constraints": "enum: transfer/payment/deposit/withdrawal",
+            "default": "transfer",
+            "priority": "HIGH",
+            "notes": "default set in TransactionService#build_transaction; payment category triggers PaymentGateway.charge"
+          }
+        ]
+      },
+      "response_fields": [
+        { "name": "transaction.id", "type": "integer", "priority": "HIGH" },
+        { "name": "transaction.amount", "type": "string, decimal-as-string via .to_s", "priority": "HIGH" },
+        { "name": "transaction.currency", "type": "string", "priority": "HIGH" },
+        { "name": "transaction.status", "type": "string, enum: pending/completed/failed/reversed", "priority": "HIGH" },
+        { "name": "transaction.description", "type": "string, nullable", "priority": "HIGH" },
+        { "name": "transaction.category", "type": "string, enum: transfer/payment/deposit/withdrawal", "priority": "HIGH" },
+        { "name": "transaction.wallet_id", "type": "integer", "priority": "HIGH" },
+        { "name": "transaction.created_at", "type": "datetime, ISO8601 via .iso8601", "priority": "HIGH" },
+        { "name": "transaction.updated_at", "type": "datetime, ISO8601 via .iso8601", "priority": "HIGH" }
+      ],
+      "status_codes": [
+        { "code": 201, "meaning": "created" },
+        { "code": 422, "meaning": "validation failed / wallet not found / insufficient balance / currency mismatch / payment gateway error" },
+        { "code": 401, "meaning": "unauthenticated" }
+      ],
+      "error_response": {
+        "status": 422,
+        "fields": [
+          { "name": "error", "type": "string", "constraints": "human-readable message", "priority": "HIGH" },
+          { "name": "details", "type": "array of strings", "priority": "HIGH" }
+        ]
+      }
+    },
+    "db": {
+      "input_preconditions": [
+        {
+          "name": "wallet.status",
+          "constraints": "must be 'active'; enum values: active/suspended/closed",
+          "priority": "HIGH",
+          "notes": "checked in TransactionService#validate_wallet_active! via wallet.active?"
+        },
+        {
+          "name": "wallet.balance",
+          "constraints": "must be >= requested amount; decimal(20,8), NOT NULL, DEFAULT 0",
+          "priority": "HIGH",
+          "notes": "checked in TransactionService#validate_sufficient_balance!"
+        },
+        {
+          "name": "wallet.currency",
+          "constraints": "must match request currency field",
+          "priority": "HIGH",
+          "notes": "checked in TransactionService#validate_currency_match!"
+        }
+      ],
+      "postconditions": [
+        { "name": "transaction.user_id", "type": "integer", "constraints": "NOT NULL, FK → users.id", "priority": "HIGH" },
+        { "name": "transaction.wallet_id", "type": "integer", "constraints": "NOT NULL, FK → wallets.id", "priority": "HIGH" },
+        { "name": "transaction.amount", "type": "decimal precision:20 scale:8", "constraints": "NOT NULL", "priority": "HIGH" },
+        { "name": "transaction.currency", "type": "string", "constraints": "NOT NULL, in: USD/EUR/GBP/BTC/ETH", "priority": "HIGH" },
+        { "name": "transaction.status", "type": "string", "constraints": "NOT NULL, DEFAULT 'pending'; enum: pending/completed/failed/reversed", "priority": "HIGH", "notes": "set to 'pending' on create; updated to 'completed' or 'failed' after PaymentGateway response" },
+        { "name": "transaction.description", "type": "string", "constraints": "nullable, max: 500", "priority": "HIGH" },
+        { "name": "transaction.category", "type": "string", "constraints": "NOT NULL, DEFAULT 'transfer'; enum: transfer/payment/deposit/withdrawal", "priority": "HIGH" },
+        { "name": "transaction.created_at", "type": "datetime", "constraints": "NOT NULL, auto", "priority": "HIGH" },
+        { "name": "transaction.updated_at", "type": "datetime", "constraints": "NOT NULL, auto", "priority": "HIGH" },
+        { "name": "wallet.balance", "constraints": "must be decremented by transaction.amount (except for deposit category)", "priority": "HIGH", "notes": "TransactionService#deduct_balance! calls wallet.withdraw! unless deposit?" }
+      ]
+    },
+    "outbound_api": {
+      "calls": [
+        {
+          "name": "PaymentGateway.charge",
+          "signature": "PaymentGateway.charge(amount:, currency:, user_id:, transaction_id:)",
+          "trigger": "Triggered only when transaction.category == 'payment'",
+          "call_sites": [
+            { "path": "app/services/transaction_service.rb", "line": 78, "note": "TransactionService#charge_payment_gateway" },
+            { "path": "app/models/transaction.rb", "line": 28, "note": "Transaction#notify_payment_gateway after_create callback" }
+          ],
+          "request_fields": [
+            { "name": "amount", "type": "decimal", "constraints": "matches transaction.amount", "priority": "HIGH" },
+            { "name": "currency", "type": "string", "constraints": "matches transaction.currency", "priority": "HIGH" },
+            { "name": "user_id", "type": "integer", "constraints": "matches current_user.id", "priority": "HIGH" },
+            { "name": "transaction_id", "type": "integer", "constraints": "matches transaction.id", "priority": "HIGH" }
+          ],
+          "response_fields": [
+            { "name": "success?", "type": "boolean", "priority": "HIGH", "notes": "true → transaction.status updated to 'completed'\nfalse → transaction.status updated to 'failed'" },
+            { "name": "(implicit: ChargeError exception path)", "priority": "HIGH", "notes": "PaymentGateway::ChargeError rescued → Result with error: 'Payment processing failed'" },
+            { "name": "(no transaction_id/reference in response parsed per source code)", "priority": "MEDIUM", "notes": "source code does not parse an external reference from the gateway response; reconciliation field absent" }
+          ]
+        }
+      ]
+    },
+    "jobs": null,
+    "ui_props": null
+  },
+  "fintech_dimensions_md": "### Money & Precision\n- `transaction.amount` uses `decimal(20,8)` — correct exact type, no float anti-pattern detected.\n- `wallet.balance` uses `decimal(20,8)` — correct.\n- `TransactionService#validate_sufficient_balance!` converts params amount via `BigDecimal(@params[:amount].to_s)` before comparing — correct, avoids float trap.\n- Currency field paired with every amount field in both request and DB.\n\n### Idempotency\n- No idempotency key found in request params or headers.\n- No `X-Idempotency-Key` header handled in controller.\n- No unique constraint on transactions table that would prevent duplicate inserts.\n- This is a state-mutating POST endpoint on a financial resource — **idempotency handling is absent** [FINTECH HIGH gap].\n\n### Transaction State Machine\n- States: `pending`, `completed`, `failed`, `reversed`\n- Transitions observed in code:\n  - `pending` → `completed`: after PaymentGateway.charge returns success\n  - `pending` → `failed`: after PaymentGateway.charge returns failure or raises ChargeError\n  - `reversed`: defined in enum, no transition logic found in this unit\n- Terminal state `reversed` has no transition guard tested in this unit.\n\n### Balance & Ledger Integrity\n- `wallet.withdraw!` uses `with_lock` (pessimistic locking via `SELECT ... FOR UPDATE`) — concurrency control present.\n- Balance check (`validate_sufficient_balance!`) is done outside the lock in TransactionService, before `wallet.withdraw!` is called — classic TOCTOU pattern: check happens without holding the lock, creating a race window between check and deduct [FINTECH HIGH gap].\n- No double-entry ledger pattern — single balance field updated directly.\n- `deduct_balance!` skips withdrawal for `deposit` category — deposit path does not credit balance in this unit (no `wallet.deposit!` call observed for deposit category transactions).\n\n### External Payment Integration\n- `PaymentGateway.charge` called twice for payment category transactions: once via `TransactionService#charge_payment_gateway` at line 78, and once via `Transaction#notify_payment_gateway` after_create callback at line 28 in the model — **double-charge risk** [FINTECH CRITICAL gap].\n- No webhook/callback endpoint for async gateway responses in this unit.\n- No retry or reconciliation pattern for gateway timeouts in this unit.\n\n### Regulatory & Compliance Fields\n- No KYC/AML fields in this unit.\n- Transaction limit: `amount <= 1_000_000` validated at model level [HIGH].\n- No audit trail table or `created_by`/`ip_address` fields found.\n\n### Concurrency & Data Integrity\n- `wallet.withdraw!` uses `with_lock` — pessimistic lock present.\n- Balance read-then-compare in `validate_sufficient_balance!` is outside the lock — TOCTOU race condition possible [FINTECH HIGH gap].\n- No DB transaction wrapping the entire service flow (save! + withdraw! are separate operations — partial failure possible).\n\n### Security & Access Control\n- Authentication: `before_action :authenticate_user!` — all actions protected.\n- Authorization: wallet scoped to `current_user.wallets.find_by(...)` — IDOR protection present for wallet ownership.\n- Transaction responses only expose the creating user's data.\n- Error response for insufficient balance leaks current balance value: `details: [\"Current balance: #{@wallet.balance}, requested: #{@params[:amount]}\"]` — **sensitive data leak in error response** [FINTECH HIGH gap]."
+}

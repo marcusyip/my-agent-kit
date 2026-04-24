@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tdd-contract-review/gaps-per-type.schema.json",
+  "title": "03{a,b,c,d,e,f}-gaps-*.json — per-type gap analysis",
+  "description": "Source of truth for each 03x-gaps-*.md. One file per gap-type agent (A=API, B=DB, C=Outbound, D=Money, E=Security, F=Fintech cross-cutting). Each contains: test structure tree, contract map table, gap list, and optional test stubs narrative.",
+  "type": "object",
+  "required": ["unit", "scope", "gap_prefix", "test_tree", "contract_map", "gaps"],
+  "properties": {
+    "unit": { "type": "string" },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "API inbound",
+        "DB",
+        "Outbound API",
+        "Money",
+        "Security",
+        "Fintech cross-cutting"
+      ],
+      "description": "Which slice of the contract this file analyzes. Drives rendered section titles."
+    },
+    "gap_prefix": {
+      "type": "string",
+      "enum": ["GAPI", "GDB", "GOUT", "GMON", "GSEC", "GFIN"],
+      "description": "Identifier prefix for all gaps in this file. Grader B13 enforces that every gap id starts with this prefix."
+    },
+    "scope_note_md": {
+      "type": "string",
+      "description": "Short preamble (the 'Scope: ...' line under the title). Optional."
+    },
+    "test_tree": {
+      "type": "object",
+      "description": "Nested per-field test scenarios with ✓/✗ status.",
+      "required": ["root", "fields"],
+      "properties": {
+        "root": {
+          "type": "string",
+          "description": "Tree root label, typically the unit id."
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["field", "status", "scenarios"],
+            "properties": {
+              "field": { "type": "string" },
+              "status": {
+                "type": "string",
+                "enum": ["COVERED", "PARTIAL", "MISSING"]
+              },
+              "scenarios": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["description", "covered"],
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Scenario text including expected outcome, e.g. 'nil → 422, no DB write, no data leak'."
+                    },
+                    "covered": { "type": "boolean" },
+                    "test_ref": {
+                      "description": "Pointer to the existing test that covers this scenario (when covered=true).",
+                      "oneOf": [
+                        { "$ref": "_defs.schema.json#/$defs/sourceRef" },
+                        { "type": "null" }
+                      ]
+                    },
+                    "partial_note": {
+                      "type": "string",
+                      "description": "If covered=true but only partially (e.g., status-only), note what's missing."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "contract_map": {
+      "type": "array",
+      "description": "Rendered as a markdown table: field | role | scenarios needed | current coverage | gap count.",
+      "items": {
+        "type": "object",
+        "required": ["field", "role", "scenarios_needed", "gap_count"],
+        "properties": {
+          "field_kind": {
+            "type": "string",
+            "description": "Left-most column in the rendered map, e.g. 'request field', 'response field', 'db field (input)'."
+          },
+          "field": { "type": "string" },
+          "role": {
+            "type": "string",
+            "enum": ["Input", "Assertion"]
+          },
+          "scenarios_needed": {
+            "type": "string",
+            "description": "Comma-separated scenario list (free-form)."
+          },
+          "current_coverage": {
+            "type": "string",
+            "description": "What's already covered (free-form)."
+          },
+          "gap_count": {
+            "type": "string",
+            "description": "Number of gap scenarios, possibly with PARTIAL upgrade note."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "priority", "field", "type", "description"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^G(API|DB|OUT|MON|SEC|FIN)-\\d{3}$"
+          },
+          "priority": { "$ref": "_defs.schema.json#/$defs/gapPriority" },
+          "field": { "type": "string" },
+          "type": { "$ref": "_defs.schema.json#/$defs/gapTypeCategory" },
+          "description": {
+            "type": "string",
+            "description": "Prose gap explanation — what's missing, why it matters, what could regress."
+          },
+          "stub": {
+            "type": "string",
+            "description": "Test stub source code. Required for CRITICAL gaps (grader B4)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "test_stubs_md": {
+      "type": "string",
+      "description": "Optional narrative intro + fenced code block(s) for test stubs. Per-gap `stub` fields can also be aggregated into this section by the renderer."
+    }
+  },
+  "additionalProperties": false
+}

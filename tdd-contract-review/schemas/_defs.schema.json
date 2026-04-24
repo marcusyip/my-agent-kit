@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tdd-contract-review/_defs.schema.json",
+  "title": "Shared definitions",
+  "description": "Shared type definitions reused across tdd-contract-review schemas. Referenced via $ref.",
+  "$defs": {
+    "priority": {
+      "type": "string",
+      "enum": ["HIGH", "MEDIUM", "LOW"]
+    },
+    "gapPriority": {
+      "type": "string",
+      "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+    },
+    "gapTypeCategory": {
+      "type": "string",
+      "description": "High-level gap category. Fintech:* variants are dropped at merge time; keep the specific variant.",
+      "enum": [
+        "API inbound",
+        "DB",
+        "Outbound API",
+        "Jobs",
+        "UI Props",
+        "Fintech:Money",
+        "Fintech:Idempotency",
+        "Fintech:StateMachine",
+        "Fintech:BalanceLedger",
+        "Fintech:ExternalIntegration",
+        "Fintech:Compliance",
+        "Fintech:Concurrency",
+        "Fintech:Security"
+      ]
+    },
+    "contractField": {
+      "type": "object",
+      "description": "One field/header/parameter on a contract boundary. Shared across API, DB, outbound, and jobs contracts.",
+      "required": ["name", "priority"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Field identifier as it appears on the wire / in the DB (e.g., 'transaction.amount', 'Authorization')."
+        },
+        "type": {
+          "type": "string",
+          "description": "Datatype and/or shape (e.g., 'decimal string', 'integer', 'enum: pending/completed')."
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "constraints": {
+          "type": "string",
+          "description": "Free-form constraints: range, length, enum members, uniqueness, nullability."
+        },
+        "priority": { "$ref": "#/$defs/priority" },
+        "default": {
+          "type": "string",
+          "description": "Default value when omitted (as source text)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Source refs, cross-field validation, provenance. Keep concise."
+        }
+      },
+      "additionalProperties": false
+    },
+    "fileRef": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "sourceRef": {
+      "type": "object",
+      "description": "Pointer to a location in source. Used in call_sites and test_refs.",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

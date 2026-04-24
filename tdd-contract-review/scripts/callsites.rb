@@ -79,6 +79,9 @@ def find_namespace(node, target, prefix = [])
     own = const_path_names(node.constant_path)
     full = prefix + own
     return node if full == target
+    # Suffix match: allow unqualified target like `TransactionsController` to
+    # resolve against nested `Api::V1::TransactionsController`.
+    return node if target.length <= full.length && full.last(target.length) == target
     return find_namespace(node.body, target, full)
   end
   if node.respond_to?(:child_nodes)

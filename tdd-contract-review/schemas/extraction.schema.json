@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tdd-contract-review/extraction.schema.json",
+  "title": "01-extraction.json — contract extraction for one unit",
+  "description": "Source of truth for 01-extraction.md. The renderer produces the MD view from this JSON. Matches the sections of the existing hand-authored 01-extraction.md: Files Examined, Checkpoint 1 coverage table, Contract Extraction Summary (per-contract field lists), and optional Fintech Dimensions narrative.",
+  "type": "object",
+  "required": ["unit", "framework", "files_examined", "coverage_table", "contracts"],
+  "properties": {
+    "unit": {
+      "type": "string",
+      "description": "Canonical unit identifier (e.g., 'POST /api/v1/transactions', 'ChargePaymentWorker', 'TransactionCard')."
+    },
+    "framework": {
+      "type": "string",
+      "description": "Test framework tuple (e.g., 'Rails/RSpec', 'Next.js/Vitest')."
+    },
+    "files_examined": {
+      "type": "object",
+      "description": "Files read during extraction, grouped by role. Each group is an array of fileRef.",
+      "required": ["source"],
+      "properties": {
+        "source": { "type": "array", "items": { "$ref": "_defs.schema.json#/$defs/fileRef" } },
+        "db_schema": { "type": "array", "items": { "$ref": "_defs.schema.json#/$defs/fileRef" } },
+        "outbound_clients": { "type": "array", "items": { "$ref": "_defs.schema.json#/$defs/fileRef" } },
+        "other": { "type": "array", "items": { "$ref": "_defs.schema.json#/$defs/fileRef" } }
+      },
+      "additionalProperties": false
+    },
+    "coverage_table": {
+      "type": "array",
+      "description": "Checkpoint 1 table. One row per contract type; exactly these five rows must appear.",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["contract_type", "status"],
+        "properties": {
+          "contract_type": {
+            "type": "string",
+            "enum": ["API inbound", "DB", "Outbound API", "Jobs", "UI Props"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["Extracted", "Not detected", "Not applicable"]
+          },
+          "field_count": {
+            "description": "Number of extracted fields; null or omitted when status is Not applicable / Not detected.",
+            "oneOf": [
+              { "type": "integer", "minimum": 0 },
+              { "type": "null" }
+            ]
+          },
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "description": "Per-type contract extraction. Each key is null when the corresponding coverage_table row is Not applicable / Not detected.",
+      "properties": {
+        "api_inbound": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["endpoint"],
+              "properties": {
+                "endpoint": { "type": "string" },
+                "input": {
+                  "type": "object",
+                  "properties": {
+                    "headers": { "type": "array", "items": { "$ref": "_defs.schema.json#/$defs/contractField" } },
+                    "fields": { "type": "array", "items": { "$ref": "_defs.schema.json#/$defs/contractField" } }
+                  },
+                  "additionalProperties": false
+                },
+                "response_fields": {
+                  "type": "array",
+                  "items": { "$ref": "_defs.schema.json#/$defs/contractField" }
+                },
+                "status_codes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["code"],
+                    "properties": {
+                      "code": { "type": "integer" },
+                      "meaning": { "type": "string" }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "error_response": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "integer" },
+                    "fields": {
+                      "type": "array",
+                      "items": { "$ref": "_defs.schema.json#/$defs/contractField" }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "db": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "properties": {
+                "input_preconditions": {
+                  "type": "array",
+                  "items": { "$ref": "_defs.schema.json#/$defs/contractField" }
+                },
+                "postconditions": {
+                  "type": "array",
+                  "items": { "$ref": "_defs.schema.json#/$defs/contractField" }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "outbound_api": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["calls"],
+              "properties": {
+                "calls": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["name"],
+                    "properties": {
+                      "name": { "type": "string" },
+                      "signature": { "type": "string" },
+                      "trigger": { "type": "string" },
+                      "call_sites": {
+                        "type": "array",
+                        "items": { "$ref": "_defs.schema.json#/$defs/sourceRef" }
+                      },
+                      "request_fields": {
+                        "type": "array",
+                        "items": { "$ref": "_defs.schema.json#/$defs/contractField" }
+                      },
+                      "response_fields": {
+                        "type": "array",
+                        "items": { "$ref": "_defs.schema.json#/$defs/contractField" }
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "jobs": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "trigger": { "type": "string" },
+                "input_fields": {
+                  "type": "array",
+                  "items": { "$ref": "_defs.schema.json#/$defs/contractField" }
+                },
+                "side_effects": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ui_props": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "properties": {
+                "component": { "type": "string" },
+                "props": {
+                  "type": "array",
+                  "items": { "$ref": "_defs.schema.json#/$defs/contractField" }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "fintech_dimensions_md": {
+      "type": "string",
+      "description": "Narrative prose for the Fintech Dimensions section. Authored by the LLM; rendered verbatim. Optional (only when fintech mode is on)."
+    }
+  },
+  "additionalProperties": false
+}

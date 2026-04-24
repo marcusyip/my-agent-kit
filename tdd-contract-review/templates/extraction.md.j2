@@ -1,0 +1,152 @@
+{%- from '_field_line.md.j2' import field_line -%}
+## Summary
+
+{{ summary_md }}
+
+---
+
+## Files Examined
+
+**Source:**
+{% for f in doc.files_examined.source %}
+- `{{ f['path'] }}`{{ (' — ' ~ f['note']) if f.get('note') else '' }}
+{% endfor %}
+
+{% if doc.files_examined.get('db_schema') %}
+**DB schema:**
+{% for f in doc.files_examined['db_schema'] %}
+- `{{ f['path'] }}`{{ (' — ' ~ f['note']) if f.get('note') else '' }}
+{% endfor %}
+
+{% endif %}
+{% if doc.files_examined.get('outbound_clients') %}
+**Outbound clients:**
+{% for f in doc.files_examined['outbound_clients'] %}
+- `{{ f['path'] }}`{{ (' — ' ~ f['note']) if f.get('note') else '' }}
+{% endfor %}
+
+{% endif %}
+**Other:**
+{% if doc.files_examined.get('other') %}
+{% for f in doc.files_examined['other'] %}
+- `{{ f['path'] }}`{{ (' — ' ~ f['note']) if f.get('note') else '' }}
+{% endfor %}
+{% else %}
+- (none)
+{% endif %}
+
+### Call trees
+
+{{ call_trees_md }}
+
+---
+
+## Checkpoint 1: Contract Type Coverage
+
+| Contract Type | Status | Fields | Notes |
+|---|---|---|---|
+{% for row in doc.coverage_table %}
+| {{ row['contract_type'] }} | {{ row['status'] }} | {{ row['field_count'] if row.get('field_count') is not none else '—' }} | {{ row.get('notes', '') }} |
+{% endfor %}
+
+---
+
+## Contract Extraction Summary
+
+```
+CONTRACT EXTRACTION SUMMARY
+============================
+{% set src_files = doc.files_examined.source | map(attribute='path') | list %}
+Source: {{ src_files | join('\n        ') }}
+Framework: {{ doc.framework }}
+
+{% if doc.contracts.get('api_inbound') %}
+{% set api = doc.contracts['api_inbound'] %}
+API Contract (inbound):
+  {{ api['endpoint'] }}
+
+{% if api.get('input') %}
+    Input:
+{% for h in api['input'].get('headers', []) %}
+{{ field_line(h, 'request header', indent='      ') -}}
+{% endfor %}
+{% for f in api['input'].get('fields', []) %}
+{{ field_line(f, 'request field', indent='      ') -}}
+{% endfor %}
+
+{% endif %}
+{% if api.get('response_fields') %}
+    Assertion (verify in happy path):
+{% for f in api['response_fields'] %}
+{{ field_line(f, 'response field', indent='      ') -}}
+{% endfor %}
+
+{% endif %}
+{% if api.get('status_codes') %}
+    Status codes: {% for sc in api['status_codes'] %}{{ sc['code'] }}{{ (' (' ~ sc['meaning'] ~ ')') if sc.get('meaning') else '' }}{{ ', ' if not loop.last else '' }}{% endfor %}
+
+
+{% endif %}
+{% if api.get('error_response') %}
+    Error response shape ({{ api['error_response']['status'] }}):
+{% for f in api['error_response'].get('fields', []) %}
+{{ field_line(f, 'response field', indent='      ') -}}
+{% endfor %}
+
+{% endif %}
+{% endif %}
+{% if doc.contracts.get('db') %}
+{% set db = doc.contracts['db'] %}
+DB Contract:
+{% if db.get('input_preconditions') %}
+  Input (preconditions — set in test setup):
+{% for f in db['input_preconditions'] %}
+{{ field_line(f, 'db field', indent='    ') -}}
+{% endfor %}
+
+{% endif %}
+{% if db.get('postconditions') %}
+  Assertion (postconditions — verify after request):
+{% for f in db['postconditions'] %}
+{{ field_line(f, 'db field', indent='    ') -}}
+{% endfor %}
+
+{% endif %}
+{% endif %}
+{% if doc.contracts.get('outbound_api') %}
+Outbound API:
+{% for call in doc.contracts['outbound_api']['calls'] %}
+  {{ call.get('signature', call['name']) }}
+{% if call.get('trigger') %}
+  {{ call['trigger'] }}
+{% endif %}
+{% if call.get('call_sites') %}
+  Called at: {% for site in call['call_sites'] %}{{ site['path'] }}:{{ site['line'] }}{{ (' (' ~ site['note'] ~ ')') if site.get('note') else '' }}{{ '; ' if not loop.last else '' }}{% endfor %}.
+
+{% endif %}
+{% if call.get('request_fields') %}
+    Assertion (verify correct params sent to {{ call['name'] }}):
+{% for f in call['request_fields'] %}
+{{ field_line(f, 'outbound request field', indent='      ') -}}
+{% endfor %}
+
+{% endif %}
+{% if call.get('response_fields') %}
+    Input (set via mock — upstream untrusted, validate each):
+{% for f in call['response_fields'] %}
+{{ field_line(f, 'outbound response field', indent='      ') -}}
+{% endfor %}
+
+{% endif %}
+{% endfor %}
+{% endif %}
+============================
+```
+{% if doc.get('fintech_dimensions_md') %}
+
+---
+
+## Fintech Dimensions
+
+{{ doc['fintech_dimensions_md'] }}
+{% endif %}

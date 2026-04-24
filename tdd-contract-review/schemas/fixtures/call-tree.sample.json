@@ -1,0 +1,54 @@
+{
+  "call_name": "create",
+  "symbol": "Api::V1::TransactionsController#create",
+  "file": "app/controllers/api/v1/transactions_controller.rb",
+  "start_line": 8,
+  "end_line": 30,
+  "tag": null,
+  "children": [
+    {
+      "call_name": "TransactionService.new",
+      "symbol": "TransactionService#initialize",
+      "file": "app/services/transaction_service.rb",
+      "start_line": 4,
+      "end_line": 7,
+      "tag": null,
+      "children": []
+    },
+    {
+      "call_name": "service.call",
+      "symbol": "TransactionService#call",
+      "file": "app/services/transaction_service.rb",
+      "start_line": 9,
+      "end_line": 45,
+      "tag": null,
+      "children": [
+        {
+          "call_name": "validate_wallet_active!",
+          "symbol": "TransactionService#validate_wallet_active!",
+          "file": "app/services/transaction_service.rb",
+          "start_line": 52,
+          "end_line": 55,
+          "tag": null,
+          "children": []
+        },
+        {
+          "call_name": "charge_payment_gateway",
+          "symbol": "TransactionService#charge_payment_gateway",
+          "file": "app/services/transaction_service.rb",
+          "start_line": 75,
+          "end_line": 90,
+          "tag": null,
+          "children": [
+            {
+              "call_name": "PaymentGateway.charge",
+              "symbol": "PaymentGateway.charge",
+              "tag": "external",
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

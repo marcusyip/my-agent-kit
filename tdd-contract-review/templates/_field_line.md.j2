@@ -1,0 +1,17 @@
+{#
+  Render one contractField as a single line + optional indented notes lines.
+  Usage: {{ field_line(field, kind='request field', indent='      ') }}
+#}
+{%- macro field_line(f, kind, indent='') -%}
+{%- set bits = [] -%}
+{%- if f.get('type') -%}{%- set _ = bits.append(f['type']) -%}{%- endif -%}
+{%- if f.get('required') is not none and f.get('required') is not undefined and 'required' in f -%}{%- set _ = bits.append('required' if f['required'] else 'optional') -%}{%- endif -%}
+{%- if f.get('constraints') -%}{%- set _ = bits.append(f['constraints']) -%}{%- endif -%}
+{%- if f.get('default') -%}{%- set _ = bits.append('default: ' ~ f['default']) -%}{%- endif -%}
+{{ indent }}{{ kind }}: {{ f['name'] }}{% if bits %} ({{ bits | join(', ') }}){% endif %} [{{ f['priority'] }}]
+{% if f.get('notes') %}
+{% for nline in f['notes'].split('\n') if nline.strip() %}
+{{ indent }}  — {{ nline.strip() }}
+{% endfor %}
+{% endif %}
+{%- endmacro -%}

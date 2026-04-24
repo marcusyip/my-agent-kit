@@ -1,0 +1,84 @@
+# Test Audit — {{ doc.unit }}
+
+## Files Reviewed
+
+{% for f in doc.files_reviewed %}
+- `{{ f['path'] }}`{{ (' — ' ~ f['note']) if f.get('note') else '' }}
+{% endfor %}
+
+## Test Inventory
+
+- `it`/`test` block count (grep): {{ doc.test_inventory.grep_count }}
+- enumerated by agent: {{ doc.test_inventory.agent_count }}
+{% if doc.test_inventory.get('files_count') is not none %}
+- files counted: {{ doc.test_inventory.files_count }}
+{% endif %}
+{% if doc.test_inventory.grep_count != doc.test_inventory.agent_count %}
+
+**⚠ reconciliation mismatch** — grep_count ({{ doc.test_inventory.grep_count }}) ≠ agent_count ({{ doc.test_inventory.agent_count }}).
+{% endif %}
+
+---
+
+## Anti-Patterns
+{% if doc.anti_patterns %}
+{% for ap in doc.anti_patterns %}
+
+### {{ ap.id }}: {{ ap.title }}
+{% if ap.get('files') %}
+
+**Files:** {% for fr in ap['files'] %}`{{ fr['path'] }}`{{ (':' ~ (fr['line'] | string) ~ ('-' ~ (fr['end_line'] | string) if fr.get('end_line') else '')) if fr.get('line') else '' }}{{ ', ' if not loop.last else '' }}{% endfor %}
+
+{% endif %}
+
+{{ ap.rationale_md }}
+{% if ap.get('recommendation') %}
+
+**Recommendation:** {{ ap.recommendation }}
+{% endif %}
+
+---
+{% endfor %}
+{% else %}
+
+- (none)
+{% endif %}
+
+## Per-Field Coverage Notes
+{% if doc.per_field_coverage %}
+{% for pf in doc.per_field_coverage %}
+
+### {{ pf.field }}
+
+- **Role:** {{ pf.role }}
+- **Coverage:** {{ pf.coverage_status }}
+{% if pf.get('existing_tests') %}
+- **Existing tests:** {% for t in pf['existing_tests'] %}`{{ t['path'] }}`{{ (':' ~ (t['lines'] if t.get('lines') else t['line'] | string)) if (t.get('line') or t.get('lines')) else '' }}{{ ', ' if not loop.last else '' }}{% endfor %}
+{% endif %}
+{% if pf.get('scenarios') %}
+
+| Scenario | Covered? | Location |
+|---|---|---|
+{% for sc in pf['scenarios'] %}
+| {{ sc['scenario'] }} | {{ 'YES' if sc['covered'] else 'NO' }} | {{ sc.get('location') or '—' }} |
+{% endfor %}
+{% endif %}
+{% if pf.get('notes_md') %}
+
+{{ pf.notes_md }}
+{% endif %}
+
+---
+{% endfor %}
+{% else %}
+
+- (none)
+{% endif %}
+{% if doc.get('coverage_summary_md') %}
+
+---
+
+## Coverage Summary
+
+{{ doc.coverage_summary_md }}
+{% endif %}

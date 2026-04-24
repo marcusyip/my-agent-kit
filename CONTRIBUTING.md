@@ -57,3 +57,26 @@ Your plugin should include:
 - One plugin per directory at the repo root
 - Use [Keep a Changelog](https://keepachangelog.com/) format for changelog entries
 - Be respectful in discussions and reviews
+
+## Working on `tdd-contract-review`
+
+Run artifacts (01-extraction, 02-audit, 03x-gaps-*, report, call trees) are
+JSON-first: the `.json` is the source of truth; the sibling `.md` is a
+rendered view produced by `tdd-contract-review/scripts/render.py`. Never
+hand-edit a generated `.md`. To change what the report says, edit the JSON
+and re-render.
+
+A pre-commit hook catches drift — it re-renders each staged `.json` and
+fails the commit if the on-disk `.md` differs from the render. Install it
+once per clone:
+
+```bash
+tdd-contract-review/scripts/install-pre-commit-hook.sh
+```
+
+To check drift manually (e.g. in CI):
+
+```bash
+python3 tdd-contract-review/scripts/check_rendered_md.py           # all tracked
+python3 tdd-contract-review/scripts/check_rendered_md.py --staged  # pre-commit
+```

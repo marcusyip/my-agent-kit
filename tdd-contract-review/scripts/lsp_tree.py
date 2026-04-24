@@ -656,7 +656,9 @@ def main():
     parser.add_argument("--file", required=True, help="path relative to --project")
     parser.add_argument("--symbol", required=True, help='(*Type).Method | (Type).Method | Name')
     parser.add_argument("--depth", type=int, default=7)
-    parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    parser.add_argument("--format", choices=["markdown", "json"], default="json",
+                        help="Default is json (source of truth). Use markdown for a "
+                             "legacy indented bullet view.")
     parser.add_argument("--scope", choices=["all", "local"], default="all",
                         help="local: drop calls that resolve outside the project "
                              "(stdlib / gems). LSP queries still run so the on-disk "

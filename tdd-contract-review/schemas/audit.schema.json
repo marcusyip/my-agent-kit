@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tdd-contract-review/audit.schema.json",
+  "title": "02-audit.json — test audit for one unit",
+  "description": "Source of truth for 02-audit.md. Captures files reviewed, anti-patterns found, and per-field coverage notes. Anti-pattern bodies are prose stored in rationale_md fields.",
+  "type": "object",
+  "required": ["unit", "files_reviewed", "test_inventory", "anti_patterns", "per_field_coverage"],
+  "properties": {
+    "unit": { "type": "string" },
+    "files_reviewed": {
+      "type": "array",
+      "items": { "$ref": "_defs.schema.json#/$defs/fileRef" },
+      "minItems": 1
+    },
+    "test_inventory": {
+      "type": "object",
+      "description": "Reconciliation numbers — grep_count must equal agent_count (enforced by grader B11).",
+      "required": ["grep_count", "agent_count"],
+      "properties": {
+        "grep_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of `it`/`test` blocks discovered via grep."
+        },
+        "agent_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number the agent enumerated. MUST equal grep_count."
+        },
+        "files_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "anti_patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "rationale_md"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^AP-\\d+$",
+            "description": "Stable identifier: AP-001, AP-002, …"
+          },
+          "title": { "type": "string" },
+          "files": {
+            "type": "array",
+            "items": { "$ref": "_defs.schema.json#/$defs/sourceRef" }
+          },
+          "recommendation": {
+            "type": "string",
+            "description": "One-line actionable fix; full reasoning lives in rationale_md."
+          },
+          "rationale_md": {
+            "type": "string",
+            "description": "Full prose explanation including code snippets in fenced blocks. Rendered verbatim."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "per_field_coverage": {
+      "type": "array",
+      "description": "Per-field notes — one entry per contract field from 01-extraction.json. Used as the audit-side view that feeds per-type gap analysis.",
+      "items": {
+        "type": "object",
+        "required": ["field", "role", "coverage_status"],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Qualified field name, e.g. 'request field: transaction.amount', 'db field: wallet.balance (assertion)', 'outbound request field: amount'."
+          },
+          "role": {
+            "type": "string",
+            "enum": ["Input", "Assertion"]
+          },
+          "coverage_status": {
+            "type": "string",
+            "enum": ["COVERED", "PARTIAL", "MISSING"]
+          },
+          "existing_tests": {
+            "type": "array",
+            "items": { "$ref": "_defs.schema.json#/$defs/sourceRef" }
+          },
+          "scenarios": {
+            "type": "array",
+            "description": "Per-scenario coverage checklist (e.g. for Authorization: 'missing → 401', 'invalid → 401', 'wrong-user → 403'). When present, renders as a table above notes_md. Drives per-type gap punchlists.",
+            "items": {
+              "type": "object",
+              "required": ["scenario", "covered"],
+              "properties": {
+                "scenario": {
+                  "type": "string",
+                  "description": "Scenario description, e.g. 'missing → 401', 'negative amount → 422', 'currency mismatch → 422'."
+                },
+                "covered": { "type": "boolean" },
+                "location": {
+                  "type": "string",
+                  "description": "Test file:line where this scenario is covered, or '—' if missing."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "notes_md": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "coverage_summary_md": {
+      "type": "string",
+      "description": "Optional narrative paragraph summarizing overall audit findings."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,120 @@
+{
+  "unit": "POST /api/v1/transactions",
+  "files_reviewed": [
+    {"path": "spec/requests/api/v1/transactions_spec.rb", "note": "request spec (contract boundary)"},
+    {"path": "spec/services/transaction_service_spec.rb", "note": "service spec (NON-boundary, see anti-patterns)"}
+  ],
+  "test_inventory": {
+    "grep_count": 14,
+    "agent_count": 14,
+    "files_count": 2
+  },
+  "anti_patterns": [
+    {
+      "id": "AP-001",
+      "title": "Service spec is not a contract boundary",
+      "files": [{"path": "spec/services/transaction_service_spec.rb"}],
+      "recommendation": "Delete `spec/services/transaction_service_spec.rb` — test through `POST /api/v1/transactions` instead.",
+      "rationale_md": "`TransactionService` is an internal implementation detail of the `POST /api/v1/transactions` endpoint. It is not consumed by other teams or systems. This spec should be deleted and its behavioral coverage moved into the request spec."
+    },
+    {
+      "id": "AP-002",
+      "title": "Multiple endpoints in one request spec file",
+      "files": [{"path": "spec/requests/api/v1/transactions_spec.rb"}],
+      "recommendation": "Split into `post_transactions_spec.rb`, `get_transaction_spec.rb`, and `get_transactions_spec.rb`.",
+      "rationale_md": "The file contains three `describe` blocks covering three separate endpoints:\n- `POST /api/v1/transactions` (line 21)\n- `GET /api/v1/transactions/:id` (line 100)\n- `GET /api/v1/transactions` (line 119)\n\nEach endpoint must have its own file so gaps are immediately visible per endpoint."
+    },
+    {
+      "id": "AP-003",
+      "title": "Implementation testing in service spec",
+      "files": [{"path": "spec/services/transaction_service_spec.rb", "line": 12, "end_line": 25}],
+      "rationale_md": "Three tests (`calls build_transaction`, `calls validate_wallet_active!`, `calls validate_currency_match!`) verify that private methods are called, not what behavior is produced. These are implementation tests, not contract tests.\n\n```ruby\n# lines 12–25\nit 'calls build_transaction' do\n  expect(service).to receive(:build_transaction).and_call_original\n  service.call\nend\nit 'calls validate_wallet_active!' do\n  expect(service).to receive(:validate_wallet_active!).and_call_original\n  service.call\nend\nit 'calls validate_currency_match!' do\n  expect(service).to receive(:validate_currency_match!).and_call_original\n  service.call\nend\n```"
+    },
+    {
+      "id": "AP-004",
+      "title": "Implementation testing — gateway method call instead of behavior",
+      "files": [{"path": "spec/services/transaction_service_spec.rb", "line": 47, "end_line": 51}],
+      "rationale_md": "The test asserts that `charge_payment_gateway` (an internal private method) is called, not that the correct params were sent to `PaymentGateway.charge` or that the transaction status was updated correctly.\n\n```ruby\n# lines 47–51\nit 'calls charge_payment_gateway' do\n  allow(PaymentGateway).to receive(:charge).and_return(double(success?: true))\n  expect(service).to receive(:charge_payment_gateway).and_call_original\n  service.call\nend\n```"
+    },
+    {
+      "id": "AP-005",
+      "title": "Missing test foundation (no subject / no shared run_test helper)",
+      "files": [{"path": "spec/requests/api/v1/transactions_spec.rb"}],
+      "rationale_md": "Each test manually calls `post '/api/v1/transactions', params: params, headers: headers` inline (e.g. lines 37, 46, 54, 63, 72, 90). There is no shared `subject` or `run_test` helper that all scenarios share. This means override-one-field isolation is not enforced and the structure is harder to audit."
+    },
+    {
+      "id": "AP-006",
+      "title": "Error scenario tests assert only status code — no negative assertions",
+      "files": [{"path": "spec/requests/api/v1/transactions_spec.rb", "line": 42, "end_line": 93}],
+      "rationale_md": "Every error scenario (`amount nil`, `amount negative`, `currency nil`, `currency invalid`, `wallet not found`) asserts only `have_http_status`. None asserts:\n- No DB record was created\n- No outbound `PaymentGateway.charge` call was made\n- No sensitive data leaked in the error response body"
+    },
+    {
+      "id": "AP-007",
+      "title": "Happy path asserts only status code",
+      "files": [{"path": "spec/requests/api/v1/transactions_spec.rb", "line": 35, "end_line": 40}],
+      "rationale_md": "```ruby\ncontext 'with valid params' do\n  it 'returns 201' do\n    post '/api/v1/transactions', params: params, headers: headers\n    expect(response).to have_http_status(:created)\n  end\nend\n```\n\nNo response body fields, no DB assertions, no outbound API call assertions."
+    }
+  ],
+  "per_field_coverage": [
+    {
+      "field": "request header: Authorization",
+      "role": "Input",
+      "coverage_status": "MISSING",
+      "notes_md": "No test sends a request without the `Authorization` header. No 401 scenario exists anywhere in the request spec."
+    },
+    {
+      "field": "request field: transaction.amount",
+      "role": "Input",
+      "coverage_status": "PARTIAL",
+      "existing_tests": [
+        {"path": "spec/requests/api/v1/transactions_spec.rb", "line": 42, "note": "nil → 422"},
+        {"path": "spec/requests/api/v1/transactions_spec.rb", "line": 51, "note": "negative → 422"}
+      ],
+      "notes_md": "`nil` and negative are covered. Zero, above-max, non-numeric string, boundary balance (exact match, overdraft) are all missing."
+    },
+    {
+      "field": "request field: transaction.currency",
+      "role": "Input",
+      "coverage_status": "PARTIAL",
+      "existing_tests": [
+        {"path": "spec/requests/api/v1/transactions_spec.rb", "line": 60, "note": "nil → 422"},
+        {"path": "spec/requests/api/v1/transactions_spec.rb", "line": 69, "note": "invalid → 422"}
+      ],
+      "notes_md": "`nil` and invalid string covered. Empty string missing. Only USD exercised in happy path; other valid currencies not tested."
+    },
+    {
+      "field": "request field: transaction.wallet_id",
+      "role": "Input",
+      "coverage_status": "PARTIAL",
+      "existing_tests": [
+        {"path": "spec/requests/api/v1/transactions_spec.rb", "line": 78, "note": "not-found → 422"}
+      ],
+      "notes_md": "Non-existent wallet_id covered. IDOR scenario (wallet owned by different user) and nil wallet_id are missing."
+    },
+    {
+      "field": "request field: transaction.description",
+      "role": "Input",
+      "coverage_status": "MISSING",
+      "notes_md": "No tests for the `description` field at all. The default happy-path params do not include `description`."
+    },
+    {
+      "field": "request field: transaction.category",
+      "role": "Input",
+      "coverage_status": "MISSING",
+      "notes_md": "No tests for the `category` field whatsoever in the request spec. The service spec touches `category: 'payment'` but on a non-boundary file and only asserts internal method dispatch."
+    },
+    {
+      "field": "db field: wallet.balance (assertion)",
+      "role": "Assertion",
+      "coverage_status": "MISSING",
+      "notes_md": "No test verifies that the wallet balance was decremented by the transaction amount (or unchanged for deposit category)."
+    },
+    {
+      "field": "outbound request field: amount",
+      "role": "Assertion",
+      "coverage_status": "MISSING",
+      "notes_md": "No request spec test verifies what params are sent to `PaymentGateway.charge`."
+    }
+  ],
+  "coverage_summary_md": "**Total fields:** 36  \n**Fields with at least one covered scenario:** 3 (transaction.amount — partial, transaction.currency — partial, transaction.wallet_id — partial)  \n**Fields with zero coverage:** 33"
+}

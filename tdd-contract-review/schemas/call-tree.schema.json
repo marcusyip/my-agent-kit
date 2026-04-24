@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tdd-contract-review/call-tree.schema.json",
+  "title": "tree__*.json — nested call tree emitted by lsp_tree.py --format json",
+  "description": "Lifted verbatim from the in-memory `node` shape in scripts/lsp_tree.py (see TreeWalker.walk, lines 433-620). `tag` values are the exact terminal states the walker emits when it cannot recurse.",
+  "$ref": "#/$defs/treeNode",
+  "$defs": {
+    "treeNode": {
+      "type": "object",
+      "required": ["call_name", "children"],
+      "properties": {
+        "call_name": {
+          "type": "string",
+          "description": "Name of the call as it appears at the call site."
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Resolved symbol (e.g., '(*TransactionService).charge_payment_gateway'). May equal call_name for root nodes."
+        },
+        "file": {
+          "type": "string",
+          "description": "Project-relative path to the definition. Absent on the root before LSP resolution."
+        },
+        "start_line": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ],
+          "description": "1-indexed start line of the symbol definition."
+        },
+        "end_line": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        },
+        "tag": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "description": "Terminal-state label. Common values: 'depth-cap', 'symbol-not-found', 'unreadable', 'unreadable (missing)', 'external', 'seen', 'no-path', 'unresolved', 'interface', 'interface (no impls)', 'lsp-error (...)', 'extract-error (...)'."
+            }
+          ]
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/treeNode" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with CRITICAL-only test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.49.0
+version: 0.50.0
 ---
 
 # TDD Contract Review
@@ -16,19 +16,29 @@ Every run writes to a flat, unit-scoped directory:
 
 ```
 tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/
-├── 01-extraction.md      ← contract extracted from source
-├── 02-audit.md           ← test structure + quality findings
-├── 03a-gaps-api.md       ← per-type gap sub-report (API inbound)
-├── 03b-gaps-db.md        ← per-type gap sub-report (DB)
-├── 03c-gaps-outbound.md  ← per-type gap sub-report (Outbound API)
-├── 03d-gaps-money.md     ← cross-cutting money-correctness sub-report (critical mode only)
-├── 03e-gaps-security.md  ← cross-cutting API-security sub-report (critical mode only)
+├── 01-extraction.json    ← contract extracted from source (source of truth)
+├── 01-extraction.md      ← rendered MD view of 01-extraction.json
+├── 02-audit.json         ← test structure + quality findings (source of truth)
+├── 02-audit.md           ← rendered MD view of 02-audit.json
+├── 03a-gaps-api.json     ← per-type gap JSON (API inbound, source of truth)
+├── 03a-gaps-api.md       ← rendered MD view
+├── 03b-gaps-db.json      ← per-type gap JSON (DB)
+├── 03b-gaps-db.md        ← rendered MD view
+├── 03c-gaps-outbound.json ← per-type gap JSON (Outbound API)
+├── 03c-gaps-outbound.md  ← rendered MD view
+├── 03d-gaps-money.json   ← cross-cutting money-correctness JSON (critical mode only)
+├── 03d-gaps-money.md     ← rendered MD view
+├── 03e-gaps-security.json ← cross-cutting API-security JSON (critical mode only)
+├── 03e-gaps-security.md  ← rendered MD view
 ├── 03-index.md           ← CP3 index (shell-generated, clickable links + gap counts)
-├── report.md             ← final scored report
-└── findings.json         ← machine-readable gap list for grade-content.sh / CI
+├── findings.json         ← merged + deduped gap list (machine-readable; CI/grader read this)
+├── report.json           ← scorecard + narrative (source of truth)
+└── report.md             ← rendered MD view of report.json
 ```
 
-Per-type sub-files are the source of truth for gaps — Step 7-8 reads them directly. `03-index.md` is a tiny shell-generated file that gives Checkpoint 3 a single reviewable artifact with clickable paths into each sub-file; it carries no content the sub-files don't already hold. Sub-reports for contract types marked `Not applicable` or `Not detected` are skipped entirely.
+**JSON is the source of truth; MD is a rendered view.** Every numbered artifact is emitted as JSON by the agent (schema-validated against `[plugin root]/tdd-contract-review/schemas/<kind>.schema.json`), then re-rendered to Markdown by `[plugin root]/tdd-contract-review/scripts/render.py`. Humans read the MD; tooling reads the JSON. Hand-editing a generated `.md` is a correctness bug — edit the JSON and re-render.
+
+Per-type sub-files are the source of truth for gaps — Step 7-8 reads the `.json` variants directly. `03-index.md` is a tiny shell-generated file that gives Checkpoint 3 a single reviewable artifact with clickable paths into each sub-file; it carries no content the sub-files don't already hold. Sub-reports for contract types marked `Not applicable` or `Not detected` are skipped entirely.
 
 The `unit-slug` is lowercase kebab-case of the unit identifier:
 - `POST /api/v1/transactions` → `post-api-v1-transactions`
@@ -302,7 +312,9 @@ Free-text fallback (user typed something instead of picking): treat affirmative-
 
 ### Step 3: Contract Extraction
 
-Determine the skill directory and plugin root. Dispatch the Staff Engineer agent. The file-shape spec for `01-extraction.md` lives in `contract-extraction.md` under "Output File Shape" — the orchestrator gate below greps for the literal row labels that spec mandates, so the agent must follow it verbatim.
+Determine the skill directory and plugin root. Dispatch the Staff Engineer agent. **The source of truth is `01-extraction.json`**, validated against `[plugin root]/tdd-contract-review/schemas/extraction.schema.json`. After the agent returns, the orchestrator re-renders the JSON to `01-extraction.md` via `scripts/render.py --kind extraction` — humans read the MD, tooling reads the JSON. Hand-editing the MD is a correctness bug; fix in JSON and re-render.
+
+The field vocabulary, tree grammar, and row labels still come from `contract-extraction.md` under "Output File Shape" — those rules describe the JSON structure (since the MD is just a rendering of it).
 
 ```
 Agent:       tdd-contract-review:staff-engineer
@@ -334,10 +346,19 @@ Prompt:
 
    LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py --lang <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name> --scope local --run-dir $RUN_DIR` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$RUN_DIR/lsp/`. **Always pass `--scope local`** so the rendered tree drops stdlib / gem / `node_modules` edges (only the rendered tree is trimmed — every LSP query still runs). For other languages: if `Native LSP tool available: yes`, use the native `LSP` tool's `definition` / `implementations` / `references` on EVERY call site in EVERY own-node; if `Native LSP tool available: no`, fall back to `lsp_query.py definition --run-dir $RUN_DIR <file> <line> <col>` on every call site instead. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
 
-   WRITE the full output to $RUN_DIR/01-extraction.md. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.md' when done."
+   WRITE `$RUN_DIR/01-extraction.json` matching `[plugin root]/tdd-contract-review/schemas/extraction.schema.json`. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.json' when done."
 ```
 
-**GATE (Checkpoint 1 shape):** Grep `$RUN_DIR/01-extraction.md` for exactly 5 Checkpoint 1 rows: `API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`. Each row must have a three-state status: `Extracted` | `Not detected` | `Not applicable`. If any row is missing, print which one and stop with a specific error (do not silently re-dispatch).
+**Orchestrator renders MD view.** After the agent returns, run:
+```bash
+[plugin root]/tdd-contract-review/scripts/render.py \
+  --kind extraction \
+  --input $RUN_DIR/01-extraction.json \
+  --output $RUN_DIR/01-extraction.md
+```
+The renderer schema-validates the JSON before rendering and exits non-zero with a diagnostic if validation fails. Treat render failure as a GATE failure — do not proceed.
+
+**GATE (Checkpoint 1 shape):** The renderer enforces schema shape (5 coverage_table rows with `Extracted` | `Not detected` | `Not applicable` statuses). The legacy grep gate on `$RUN_DIR/01-extraction.md` remains as a backstop but should never fail when JSON validation passes.
 
 **PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
 - `<N>` = `1`
@@ -355,7 +376,7 @@ Prompt:
 
 ### Step 4-5: Test Audit
 
-Dispatch the Staff Engineer agent. The read protocol and `02-audit.md` file-shape spec live in `test-patterns.md`.
+Dispatch the Staff Engineer agent. The source of truth is `02-audit.json` (schema: `[plugin root]/tdd-contract-review/schemas/audit.schema.json`). The orchestrator re-renders to `02-audit.md` via `scripts/render.py --kind audit`. The read protocol and field vocabulary still live in `test-patterns.md`.
 
 ```
 Agent:       tdd-contract-review:staff-engineer
@@ -367,14 +388,26 @@ Prompt:
    Run directory: $RUN_DIR
    Test files for this unit: [list]
 
-   Read $RUN_DIR/01-extraction.md for the contract (produced by Step 3).
+   Read $RUN_DIR/01-extraction.json for the contract (produced by Step 3). The
+   rendered MD view at $RUN_DIR/01-extraction.md is also available for human-
+   readable browsing but the JSON is authoritative.
    Read [skill dir]/test-patterns.md in full. It contains:
    - 'Read Protocol (Test Audit)' — non-negotiable 3-step protocol: (1) framework-pattern grep count, (2) chunked read-to-EOF, (3) reconcile grep count against Test Inventory before writing. Skip any step and the audit is rejected.
-   - 'Output File Shape (02-audit.md)' — mandatory `## Summary` preamble plus 5 sections in order: Test Inventory, Scenario Inventory, Per-Field Coverage Matrix, Assertion Depth, Anti-Patterns. Follow headings verbatim.
    - Input/Assertion Model, sessions pattern, anti-patterns to flag, quality checklists.
 
-   WRITE the full output to $RUN_DIR/02-audit.md. Return only 'WROTE: $RUN_DIR/02-audit.md' when done."
+   WRITE $RUN_DIR/02-audit.json matching [plugin root]/tdd-contract-review/schemas/audit.schema.json. Required top-level fields: unit, files_reviewed, test_inventory {grep_count, agent_count}, anti_patterns, per_field_coverage. test_inventory.grep_count MUST equal test_inventory.agent_count.
+
+   Return only 'WROTE: $RUN_DIR/02-audit.json' when done."
 ```
+
+**Orchestrator renders MD view:**
+```bash
+[plugin root]/tdd-contract-review/scripts/render.py \
+  --kind audit \
+  --input $RUN_DIR/02-audit.json \
+  --output $RUN_DIR/02-audit.md
+```
+Render failure (schema mismatch or grep/agent count mismatch) is a GATE failure.
 
 **PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
 - `<N>` = `2`
@@ -470,6 +503,8 @@ Dispatch all per-type agents in a single orchestrator message (parallel tool cal
 
 After all agents return, print one `✓ <sub-file> (<N> gaps)` line per produced sub-file before proceeding to Step 6c.
 
+**Source of truth:** `$RUN_DIR/<OUTPUT_FILE>.json` matching `[plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json`. After each agent returns, the orchestrator re-renders the JSON to `<OUTPUT_FILE>.md` via `scripts/render.py --kind gaps-per-type`. Same pattern applies to F1 (Money), F2 (API-security), and the 6c merge agent (emits `findings.json` matching `findings.schema.json`).
+
 **Prompt template — per-type agent (used for A/B/C):**
 
 ```
@@ -481,8 +516,8 @@ Prompt:
    Run directory: $RUN_DIR
    Critical mode: [yes/no]
 
-   Read $RUN_DIR/01-extraction.md — focus ONLY on the <CONTRACT_TYPE> section. Ignore other contract types.
-   Read $RUN_DIR/02-audit.md — identify existing test coverage for <CONTRACT_TYPE> fields.
+   Read $RUN_DIR/01-extraction.json — focus ONLY on the <CONTRACT_TYPE> slice under contracts.
+   Read $RUN_DIR/02-audit.json — identify existing test coverage for <CONTRACT_TYPE> fields.
 
    DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers. Treat each pack as equivalent to having read that section of the source file.
 
@@ -511,16 +546,24 @@ Prompt:
    [orchestrator inlines PACK_SECURITY_CHECKS verbatim]
    <<<CONTEXT_PACK:SECURITY_CHECKS:end>>>
 
-   WRITE the full output to $RUN_DIR/<OUTPUT_FILE>. Return only 'WROTE: $RUN_DIR/<OUTPUT_FILE>' when done."
+   WRITE the full output to $RUN_DIR/<OUTPUT_FILE>.json matching [plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json. Use scope=<SCOPE_ENUM> and gap_prefix=<GAP_PREFIX_ENUM> (see substitution table). Return only 'WROTE: $RUN_DIR/<OUTPUT_FILE>.json' when done."
 ```
 
-**Substitute per agent:**
+**Substitute per agent (`<OUTPUT_FILE>` is the base name; orchestrator writes `.json` and renders `.md`):**
 
-| Agent | `<CONTRACT_TYPE>` | `<OUTPUT_FILE>` | `<TYPE_PREFIX>` |
-|---|---|---|---|
-| A | API inbound | 03a-gaps-api.md | API |
-| B | DB | 03b-gaps-db.md | DB |
-| C | Outbound API | 03c-gaps-outbound.md | OUT |
+| Agent | `<CONTRACT_TYPE>` | `<OUTPUT_FILE>` | `<TYPE_PREFIX>` | `<SCOPE_ENUM>` | `<GAP_PREFIX_ENUM>` |
+|---|---|---|---|---|---|
+| A | API inbound | 03a-gaps-api | API | `API inbound` | `GAPI` |
+| B | DB | 03b-gaps-db | DB | `DB` | `GDB` |
+| C | Outbound API | 03c-gaps-outbound | OUT | `Outbound API` | `GOUT` |
+
+**Orchestrator renders MD view after each agent:**
+```bash
+[plugin root]/tdd-contract-review/scripts/render.py \
+  --kind gaps-per-type \
+  --input $RUN_DIR/<OUTPUT_FILE>.json \
+  --output $RUN_DIR/<OUTPUT_FILE>.md
+```
 
 **Prompt template — F1 money-correctness cross-cutting agent:**
 
@@ -532,7 +575,7 @@ Prompt:
   "TASK: Cross-cutting money-correctness gap analysis for this unit.
    Run directory: $RUN_DIR
 
-   Read $RUN_DIR/01-extraction.md (full file) and $RUN_DIR/02-audit.md (full file).
+   Read $RUN_DIR/01-extraction.json (full file) and $RUN_DIR/02-audit.json (full file). MD views at .md counterparts are available for human browsing; the JSON is authoritative.
 
    DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers.
 
@@ -546,7 +589,7 @@ Prompt:
 
    Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level integrity only.
 
-   WRITE to $RUN_DIR/03d-gaps-money.md. Return only 'WROTE: $RUN_DIR/03d-gaps-money.md' when done."
+   WRITE $RUN_DIR/03d-gaps-money.json matching [plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json (scope=Money, gap_prefix=GMON). Return only 'WROTE: $RUN_DIR/03d-gaps-money.json' when done."
 ```
 
 **Prompt template — F2 API-security cross-cutting agent:**
@@ -559,7 +602,7 @@ Prompt:
   "TASK: Cross-cutting API-security gap analysis for this unit.
    Run directory: $RUN_DIR
 
-   Read $RUN_DIR/01-extraction.md (full file) and $RUN_DIR/02-audit.md (full file).
+   Read $RUN_DIR/01-extraction.json (full file) and $RUN_DIR/02-audit.json (full file). MD views at .md counterparts are available for human browsing; the JSON is authoritative.
 
    DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers.
 
@@ -573,7 +616,7 @@ Prompt:
 
    Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level security integrity only.
 
-   WRITE to $RUN_DIR/03e-gaps-security.md. Return only 'WROTE: $RUN_DIR/03e-gaps-security.md' when done."
+   WRITE $RUN_DIR/03e-gaps-security.json matching [plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json (scope=Security, gap_prefix=GSEC). Return only 'WROTE: $RUN_DIR/03e-gaps-security.json' when done."
 ```
 
 **GATE (sub-files shape):** After all per-type agents return, verify each expected sub-file exists and contains both `## Test Structure Tree` and `## Contract Map` (or `## Cross-cutting Money-Correctness Gaps` for F1, `## Cross-cutting API-Security Gaps` for F2). If any required sub-file is missing or malformed, print which one and stop.
@@ -619,7 +662,7 @@ OUT_CT=$(count_gaps   "$RUN_DIR/03c-gaps-outbound.md")
 MONEY_CT=$(count_gaps "$RUN_DIR/03d-gaps-money.md")
 SEC_CT=$(count_gaps   "$RUN_DIR/03e-gaps-security.md")
 
-# Helper: one CP2 Coverage row. `$1`=type label, `$2`=count, `$3`=CP1 status, `$4`=sub-file basename
+# Helper: one CP3 Coverage row. `$1`=type label, `$2`=count, `$3`=CP1 status, `$4`=sub-file basename
 cov_row() {
   local label="$1" ct="$2" cp1="$3" sub="$4"
   case "$cp1" in
@@ -651,15 +694,15 @@ cov_row() {
   echo
   echo "Critical mode: $CRITICAL_MODE"
   echo
-  echo "## Checkpoint 2: Gap Coverage"
+  echo "## Checkpoint 3: Gap Coverage"
   echo
   echo "| Contract Type | Gaps Checked | Count | Notes |"
   echo "|---|---|---|---|"
   cov_row "API inbound"  "$API_CT" "$CP1_STATUS__API"      "03a-gaps-api.md"
   cov_row "DB"           "$DB_CT"  "$CP1_STATUS__DB"       "03b-gaps-db.md"
   cov_row "Outbound API" "$OUT_CT" "$CP1_STATUS__OUTBOUND" "03c-gaps-outbound.md"
-  cov_row "Jobs"         0         "$CP1_STATUS__JOBS"     "(no sub-file — Jobs does not run at CP2)"
-  cov_row "UI Props"     0         "$CP1_STATUS__UIPROPS"  "(no sub-file — UI Props does not run at CP2)"
+  cov_row "Jobs"         0         "$CP1_STATUS__JOBS"     "(no sub-file — Jobs does not run at CP3)"
+  cov_row "UI Props"     0         "$CP1_STATUS__UIPROPS"  "(no sub-file — UI Props does not run at CP3)"
 } > "$INDEX"
 
 echo "WROTE: $INDEX"
@@ -667,10 +710,10 @@ echo "WROTE: $INDEX"
 
 The index file is intentionally tiny (<50 lines). It exists for two reasons only: to give Checkpoint 3 a single file to review with clickable paths into the sub-files, and to give the gate below a grep target for the Coverage table. It is NOT consumed by Step 7-8 — the report agent reads the sub-files directly.
 
-**GATE (Checkpoint 2 shape):** Two checks must pass.
+**GATE (Checkpoint 3 shape):** Two checks must pass.
 
 1. **Sub-file presence.** For every type marked `Extracted` in Checkpoint 1, the corresponding sub-file must exist: `03a-gaps-api.md` for `API inbound`, `03b-gaps-db.md` for `DB`, `03c-gaps-outbound.md` for `Outbound API`. Print which is missing and stop if any is absent.
-2. **Index shape.** Grep `$RUN_DIR/03-index.md` for the 5 Checkpoint 2 Coverage rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`). Every type that was `Extracted` in Checkpoint 1 must show `Yes` in Gaps Checked. If any `Extracted` type shows `N/A` or is missing, print which one and stop — the shell block in Step 6c produced a malformed index.
+2. **Index shape.** Grep `$RUN_DIR/03-index.md` for the 5 Checkpoint 3 Coverage rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`). Every type that was `Extracted` in Checkpoint 1 must show `Yes` in Gaps Checked. If any `Extracted` type shows `N/A` or is missing, print which one and stop — the shell block in Step 6c produced a malformed index.
 
 **PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
 - `<N>` = `3`
@@ -688,6 +731,8 @@ The index file is intentionally tiny (<50 lines). It exists for two reasons only
 
 ### Step 7-8: Report + findings.json
 
+**Split:** `findings.json` (all gaps, merged + deduped) and `report.json` (scorecard + narrative) are the canonical structured artifacts. The orchestrator re-renders `report.md` from `report.json` via `scripts/render.py --kind report` (MD view). `findings.json` remains the machine-readable contract grading depends on — no MD render; downstream readers use jq/python. `report.json` holds only the 6-category score table, verdict, top priority actions, and a short `rationale_md` per category (LLM-authored). The numbers (score, verdict, weighted subtotals) are computed by a deterministic scoring helper the agent must run before emitting — this keeps the grader and the narrative from drifting.
+
 Dispatch the Staff Engineer agent. The report template, findings.json schema, scoring rubric, and output rules all live in `report-template.md`.
 
 ```
@@ -695,34 +740,52 @@ Agent:       tdd-contract-review:staff-engineer
 Model:       sonnet
 Description: Report writing
 Prompt:
-  "TASK: Write the final report and findings.json.
+  "TASK: Write findings.json (merged gap list) and report.json (scorecard + rationale).
    Skill directory: [path]
    Run directory: $RUN_DIR
    Unit: [unit identifier]
    Quick mode: [yes/no]
 
-   Read $RUN_DIR/01-extraction.md and $RUN_DIR/02-audit.md in full.
-   Read every gap sub-file that exists — skip any that are absent:
-     - $RUN_DIR/03a-gaps-api.md        (API inbound per-type gaps)
-     - $RUN_DIR/03b-gaps-db.md         (DB per-type gaps)
-     - $RUN_DIR/03c-gaps-outbound.md   (Outbound API per-type gaps)
-     - $RUN_DIR/03d-gaps-money.md      (cross-cutting money, critical mode only)
-     - $RUN_DIR/03e-gaps-security.md   (cross-cutting security, critical mode only)
+   Read $RUN_DIR/01-extraction.json and $RUN_DIR/02-audit.json in full.
+   Read every gap sub-file JSON that exists — skip any that are absent:
+     - $RUN_DIR/03a-gaps-api.json        (API inbound per-type gaps)
+     - $RUN_DIR/03b-gaps-db.json         (DB per-type gaps)
+     - $RUN_DIR/03c-gaps-outbound.json   (Outbound API per-type gaps)
+     - $RUN_DIR/03d-gaps-money.json      (cross-cutting money, critical mode only)
+     - $RUN_DIR/03e-gaps-security.json   (cross-cutting security, critical mode only)
    Do NOT read $RUN_DIR/03-index.md — it is a shell-generated index for CP3 review only and carries no content not already in the sub-files.
 
-   DEDUPE while composing the report. The F1 money and F2 security cross-cutting agents deliberately overlap with the per-type A/B/C agents — e.g., F1 flags amount-precision on the same field A-API flags as missing validation; F2 flags missing auth on the same endpoint A-API flags. When two gaps describe the same (field + failure mode), keep the highest priority, combine the descriptions, and use the richer stub (if one is present — only CRITICAL gaps carry stubs). This dedupe produces report.md's Gap Analysis by Priority and findings.json.
+   DEDUPE while composing findings.json. The F1 money and F2 security cross-cutting agents deliberately overlap with the per-type A/B/C agents — e.g., F1 flags amount-precision on the same field A-API flags as missing validation; F2 flags missing auth on the same endpoint A-API flags. When two gaps describe the same (field + failure mode), keep the highest priority, combine the descriptions, and use the richer stub. This dedupe produces the final findings.json.
 
    Read [skill dir]/report-template.md in full. It contains:
-   - 'Output Instructions' — what to write to report.md vs findings.json, Hygiene section requirement, and the rule that findings.json must include all four priorities (CRITICAL, HIGH, MEDIUM, LOW) and must NOT include hygiene entries.
-   - 'findings.json Schema' — exact JSON schema and field rules. Only CRITICAL gaps MUST have a stub; omit stub for HIGH/MEDIUM/LOW. Step 9 gate-checks this.
+   - 'Output Instructions' — what to write to findings.json vs report.json, and the rule that findings.json must include all four priorities (CRITICAL, HIGH, MEDIUM, LOW).
+   - 'findings.json Schema' — exact JSON schema and field rules. Only CRITICAL gaps MUST have a stub; omit stub for HIGH/MEDIUM/LOW.
    - 'Scoring' — 6-category rubric, weights, verdict bands, and calibration anchors.
-   - 'report.md Template' — full report structure (default mode).
-   - 'Quick Mode Template' — abbreviated form when quick mode is on.
+   - 'report.json Fields' — overall_score, verdict, categories[6], top_priority_actions, per-category rationale_md, optional exec_summary_md.
 
-   The Hygiene section in report.md copies the anti-patterns section from $RUN_DIR/02-audit.md directly (not via a merged gaps file).
+   WRITE $RUN_DIR/findings.json matching [plugin root]/tdd-contract-review/schemas/findings.schema.json.
 
-   Return only 'WROTE: report.md, findings.json' when done."
+   WRITE $RUN_DIR/report.draft.json — a DRAFT containing unit, source_files,
+   test_files, framework, fintech_mode, categories[{name, score, rationale_md}]
+   (all 6 categories in the fixed order), top_priority_actions, and optional
+   exec_summary_md / scoring_rationale_md. Omit overall_score, verdict,
+   per-category weight, per-category weighted — the scoring helper computes
+   those deterministically so the number and narrative cannot drift.
+
+   Return only 'WROTE: findings.json, report.draft.json' when done."
 ```
+
+**Orchestrator scores + renders MD view.** The scoring helper fills in overall_score, verdict, weight, and weighted; the renderer then schema-validates and emits the MD view:
+```bash
+[plugin root]/tdd-contract-review/scripts/score.py \
+  --input $RUN_DIR/report.draft.json \
+  --output $RUN_DIR/report.json
+[plugin root]/tdd-contract-review/scripts/render.py \
+  --kind report \
+  --input $RUN_DIR/report.json \
+  --output $RUN_DIR/report.md
+```
+`score.py` failure (missing category, score out of range) or `render.py` schema-validation failure is a GATE failure — stop and surface the diagnostic. The intermediate `report.draft.json` is an ephemeral artifact and may be deleted after `report.json` lands.
 
 ### Step 9: Deterministic Check
 
