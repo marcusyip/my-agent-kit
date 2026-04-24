@@ -91,9 +91,29 @@ There is intentionally no `Revise` button. A blind "look harder" re-dispatch cos
    - Anything else → treat as **specific-feedback revision**: re-dispatch the same agent that produced the current file (the target is specified per checkpoint in that step's PAUSE reference) with this block appended verbatim to the agent's original prompt:
 
      ```
-     REVISION REQUEST: The user reviewed $RUN_DIR/<file> and asked for changes. Regenerate the file, addressing this feedback verbatim:
+     REVISION REQUEST — INVESTIGATE → PLAN → EXECUTE (single pass, no user gate).
+
+     The user reviewed $RUN_DIR/<file> and typed this feedback verbatim:
      <paste the user's typed text here verbatim>
-     Overwrite $RUN_DIR/<file>. Return only 'WROTE: $RUN_DIR/<file>' when done.
+
+     IMPORTANT: this revision SUPERSEDES any "LSP IS MANDATORY", "walk every call site", or "Read [skill dir]/*.md" language from your original prompt. You already produced $RUN_DIR/<file> in this run — treat it as your baseline and patch it, do not regenerate from scratch. Skill docs and project conventions are already reflected in the file; do not re-read them.
+
+     Phase 1 — INVESTIGATE (narrow, targeted tools only):
+     - Read $RUN_DIR/<file> to understand what's already there.
+     - Then use ONLY: Read on specific source/schema/test files the feedback points at, `scripts/lsp_query.py definition <symbol>` for single call sites, narrow Grep for string-keyed lookups. The native `LSP` tool is allowed for single-symbol queries if available.
+     - BANNED in this phase: full `scripts/lsp_tree.py` walks, re-reading skill reference docs, broad repo sweeps. Your job is to locate the specific gap the user named, not re-do the extraction.
+
+     Phase 2 — PLAN:
+     - Produce a 3–10 item diff plan: which sections of $RUN_DIR/<file> change, and what concretely goes in/out. Keep it terse — this is for your own discipline, not a deliverable.
+
+     Phase 3 — EXECUTE:
+     - Apply the plan with Edit (preferred — targeted in-place patch) or Write (full rewrite) on $RUN_DIR/<file>.
+     - Preserve every untouched section byte-for-byte. Do not reorder, reformat, or rewrite content unrelated to the user's feedback.
+
+     Return exactly three lines to the terminal, in this order:
+     INVESTIGATED: <one sentence — what you found the gap to be>
+     PATCHED: <one sentence — what sections you changed>
+     WROTE: $RUN_DIR/<file>
      ```
 
      After re-dispatch, re-run the GATE check for this step. If the GATE fails, surface the failure and stop — do NOT loop on a failing gate. If the GATE passes, loop back to Step A (re-echo the updated Summary) and Step B (re-ask the checkpoint question). The typed text is passed through verbatim — the agent sees the user's own words, not a paraphrase.

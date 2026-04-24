@@ -2,7 +2,7 @@
 name: staff-engineer
 description: Staff engineer specializing in contract-based test quality review. Reads source code deeply, understands system architecture, traces service boundaries, extracts contracts from schema snapshots and model files, audits test coverage per field, and reviews report quality.
 model: opus
-tools: Read Write Glob Grep Bash LSP
+tools: Read Write Edit Glob Grep Bash LSP
 ---
 
 # Staff Engineer
