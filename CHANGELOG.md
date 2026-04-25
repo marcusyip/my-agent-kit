@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.1] - 2026-04-25
+
+### tdd-contract-review
+
+#### Changed
+- **`02-audit.md` Coverage Summary moved to top.** The reviewer now sees the one-paragraph coverage narrative immediately under the title, before scrolling through Files Reviewed, Test Inventory, the anti-pattern list, and the per-field coverage tables. Pure template-order change in `templates/audit.md.j2` — the `coverage_summary_md` field on `02-audit.json` is unchanged, only its render position moves.
+- **`01-extraction.md` Summary now lists every examined file by name, grouped by contract type.** The previous Summary line collapsed files to counts (`5 source, 1 db_schema, 1 outbound_clients`), which was useless for the Checkpoint 1 echo step (the orchestrator awk-extracts the `## Summary` section verbatim — counts alone did not let the reviewer judge whether the right files were examined). `render.py` now emits one bullet per file path under sub-grouped `Source (N):` / `DB schema (N):` / `Outbound clients (N):` headings inside the Summary block. The standalone `## Files Examined` section is preserved for per-file notes.
+
+#### Rationale
+Both changes target the Checkpoint Interaction Pattern's Step A "echo Summary first" — a reviewer cannot make a one-minute Continue/Stop call when the echoed Summary doesn't actually summarize. CP1 needed the file list (extraction got the right scope?), CP2 needed the coverage narrative (audit found enough?). Both were one section away in the rendered MD; this patch moves them into the Summary echo path.
+
 ## [0.50.0] - 2026-04-24
 
 ### tdd-contract-review

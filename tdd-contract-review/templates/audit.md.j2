@@ -1,4 +1,10 @@
 # Test Audit — {{ doc.unit }}
+{% if doc.get('coverage_summary_md') %}
+
+## Coverage Summary
+
+{{ doc.coverage_summary_md }}
+{% endif %}
 
 ## Files Reviewed
 
@@ -73,12 +79,4 @@
 {% else %}
 
 - (none)
-{% endif %}
-{% if doc.get('coverage_summary_md') %}
-
----
-
-## Coverage Summary
-
-{{ doc.coverage_summary_md }}
 {% endif %}

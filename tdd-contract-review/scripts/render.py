@@ -150,16 +150,21 @@ def _compose_extraction_extras(input_path: Path, doc: dict, env: Environment) ->
                 ref_ct += 1
 
     critical_mode = "ON" if (doc.get("fintech_dimensions_md") or "").strip() else "OFF"
-    files_src_n = len(doc.get("files_examined", {}).get("source", []) or [])
-    files_db_n = len(doc.get("files_examined", {}).get("db_schema", []) or [])
-    files_out_n = len(doc.get("files_examined", {}).get("outbound_clients", []) or [])
+    files_examined = doc.get("files_examined", {}) or {}
+    src_files = files_examined.get("source", []) or []
+    db_files = files_examined.get("db_schema", []) or []
+    out_files = files_examined.get("outbound_clients", []) or []
 
     summary_lines = [
         f"- Framework: {doc.get('framework', '(unknown)')}",
         f"- Critical mode: {critical_mode}",
         f"- LSP calls: {doc_sym} document_symbols, {def_ct} definitions, {ref_ct} references",
-        f"- Files examined: {files_src_n} source, {files_db_n} db_schema, {files_out_n} outbound_clients",
+        "- Files examined:",
     ]
+    for label, group in (("Source", src_files), ("DB schema", db_files), ("Outbound clients", out_files)):
+        summary_lines.append(f"  - {label} ({len(group)}):")
+        for f in group:
+            summary_lines.append(f"    - `{f['path']}`")
     summary_md = "\n".join(summary_lines)
 
     tree_files = sorted(run_dir.glob("tree__*.json"))
