@@ -1,9 +1,30 @@
-<!-- version: 0.49.0 -->
+<!-- version: 0.50.1 -->
 # Gap Analysis Reference
 
 Detailed guidance for Step 6 of the TDD Contract Review workflow. Step 6 runs per-type gap agents in parallel (A = API inbound, B = DB, C = Outbound API), plus two cross-cutting agents in critical mode (F1 = money-correctness, F2 = API-security). A final shell-only step (6c) writes a tiny index file (`03-index.md`) with gap counts and clickable links to each sub-file — there is no merge agent. Dedupe of overlapping gaps (F1 ↔ A, F2 ↔ A) happens inside Step 7 while the final report is composed.
 
 ## Scenario Enumeration Rules (per-type agents A/B/C)
+
+**JSON schema field names (mandatory — wrong names cause render failure).** The renderer validates `$RUN_DIR/03[a-e]-gaps-*.json` against `[plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json` with `additionalProperties: false` everywhere. Use these exact field names.
+
+**`test_tree.fields[].scenarios[]`** entries:
+- REQUIRED: `description` (string — scenario text including expected outcome, e.g., `"nil → 422, no DB write, no data leak"`), `covered` (boolean — `true` / `false`, NEVER a string like `"✓"` / `"✗"` / `"covered"` / `"missing"`)
+- OPTIONAL: `test_ref` (object `{path, line?, end_line?, note?}` or `null` — never a plain `"path:line"` string. Only `path` is required inside the object; omit `line` if not precisely known.), `partial_note` (string — only when `covered: true` but the assertion is weak)
+- BANNED: `scenario`, `status`, `name`, `file`, `check`. Use `description` instead of `scenario`/`name`; use `covered: true|false` instead of `status: "covered"`/`"missing"`.
+
+**`test_tree.fields[]`** entries:
+- REQUIRED:
+  - `field` (string — MUST include the typed prefix: `"request header: <name>"`, `"request field: <name>"`, `"response field: <name>"`, `"db field: <name>"`, `"outbound request field: <name>"`, `"outbound response field: <name>"`. NEVER a bare name like `"amount"` or `"status"` — without the prefix the reader cannot tell whether the field is set in the request or asserted on the response, and the tree loses most of its diagnostic value.)
+  - `status` (enum: `"COVERED"` | `"PARTIAL"` | `"MISSING"`)
+  - `scenarios` (array of scenario objects above)
+- BANNED extras: `typed_prefix` (the prefix is INSIDE `field`, not a separate key), `role`, `type`, `constraints`, `notes`. These belong on `contract_map` rows, not on `test_tree.fields[]`.
+
+**`contract_map`** rows:
+- REQUIRED: `field` (string), `role` (enum: `"Input"` | `"Assertion"` — exactly these two strings. NEVER `"input"`, `"assertion"`, `"Both"`, `"N/A"`, or anything else; pick the dominant role per row), `scenarios_needed` (string — comma-separated free-form list), `gap_count` (string, NOT integer — e.g., `"0"`, `"2"`, `"3 (1 PARTIAL)"`)
+- OPTIONAL: `field_kind` (string — left-most column in the rendered map, e.g., `"request field"`, `"response field"`, `"db field (input)"`), `current_coverage` (string)
+- BANNED extras: `typed_prefix`, `scenarios_required`, `scenarios_covered`, `status`, `confidence`.
+
+---
 
 Every contract field produces a tree branch. The scenarios under it are derived from `scenario-checklist.md`, applied to the field's type and constraints.
 

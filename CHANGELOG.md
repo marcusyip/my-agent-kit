@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.2] - 2026-04-25
+
+### tdd-contract-review
+
+#### Changed
+- **`contract-extraction.md` adds a `## JSON Schema Field Names` section.** Lists the exact required / optional / banned key names for `contractField`, `fileRef`, and `sourceRef` — the three reusable shapes the agent emits most. Empirically, agents on prior runs invented synonyms (`confidence` for `priority`, `validation` for `constraints`, `description` / `possible_values` for `notes`, plain `"path:line"` strings for `sourceRef`), each of which trips `additionalProperties: false` and forces a render abort. Documenting the names inline next to the extraction guidance is cheaper than relying on the schema error to teach the agent post-hoc.
+- **`gap-analysis.md` adds a JSON-field-names block at the top of `## Scenario Enumeration Rules`.** Covers `test_tree.fields[].scenarios[]` (`description` not `scenario`, `covered: bool` not `status: string`), `test_tree.fields[]` (the `field` value MUST carry the typed prefix — `"request field: amount"`, not bare `"amount"` — otherwise the rendered tree loses its input-vs-assertion diagnostic value), and `contract_map` rows (`role` strictly `"Input"` | `"Assertion"`, `gap_count` is a string not an integer).
+
+#### Rationale
+Schema validation fires *after* the agent finishes; an `additionalProperties: false` failure tells the orchestrator the JSON is invalid but doesn't tell the agent which key was wrong without re-dispatch. Putting the field names directly in the reference docs the agent reads at dispatch time turns a feedback-loop failure into a first-pass success — and removes the temptation to add a transformer that silently rewrites the agent's output (which masks the real cost of the misnamed-fields class of bug).
+
 ## [0.50.1] - 2026-04-25
 
 ### tdd-contract-review

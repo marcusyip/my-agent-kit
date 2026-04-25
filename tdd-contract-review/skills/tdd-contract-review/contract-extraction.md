@@ -1,7 +1,25 @@
-<!-- version: 0.37.0 -->
+<!-- version: 0.50.1 -->
 # Contract Extraction Reference
 
 Detailed guidance for Step 3 of the TDD Contract Review workflow.
+
+## JSON Schema Field Names (mandatory — wrong names cause render failure)
+
+The agent writes `$RUN_DIR/01-extraction.json`. The orchestrator schema-validates it against `[plugin root]/tdd-contract-review/schemas/extraction.schema.json` (which `$ref`s shared definitions in `_defs.schema.json`) before rendering. Every object has `additionalProperties: false` — invented synonyms cause validation to fail and the render aborts. Use these exact names.
+
+**`contractField`** (request headers, request fields, response fields, db fields, outbound request / response fields):
+- REQUIRED: `name` (string), `priority` (enum: `"HIGH"` | `"MEDIUM"` | `"LOW"` — note: NOT `"CRITICAL"`; that enum is for gap priority, not field priority)
+- OPTIONAL: `type` (string), `required` (boolean — omit entirely if conditional rather than writing `"conditional"`), `constraints` (string — put validation rules here, NOT a key called `validation`), `default` (string), `notes` (string — put description / provenance / source refs here, NOT keys called `description` or `possible_values`)
+- BANNED key names: `confidence`, `validation`, `description`, `possible_values`. Fold `confidence` into `priority`, `validation` into `constraints`, and `description` / `possible_values` into `notes`.
+
+**`fileRef`** (`files_examined.source` / `db_schema` / `outbound_clients` / `other`):
+- ALLOWED: `path` (string, REQUIRED), `note` (string, optional)
+- BANNED: `lines`, `role`, `purpose`, anything else. Fold extra context into `note`.
+
+**`sourceRef`** (`outbound_api.calls[].call_sites` entries, plus `test_ref` inside `test_tree.fields[].scenarios[]` in gap files):
+- REQUIRED: `path` (string)
+- OPTIONAL: `line` (integer ≥ 1) — OMIT this key entirely if you do not have a precise line. Do NOT substitute a placeholder like `1` or `0`; the schema accepts the object with just `path`. `end_line` (integer ≥ 1), `note` (string).
+- BANNED: plain-string entries (`"path:line"`). Always emit an object.
 
 ## Output File Shape (01-extraction.md)
 
