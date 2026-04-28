@@ -38,9 +38,18 @@ in this repo.
   not use it.
 - **Benchmark**: `tdd-contract-review/benchmark/`. `run-matrix.sh` grades every unit
   (via `grade-content.sh` for Category A content + `grade-shape.sh` for Category B
-  shape). See `benchmark/test-plan.md` for the matrix contract. Run artifacts land in
-  `benchmark/sample-app/tdd-contract-review/YYYYMMDD-HHMM-<unit-slug>/` — the directory
-  name is load-bearing (Step 2 previous-extraction discovery globs on it).
+  shape). See `benchmark/test-plan.md` for the matrix contract. Since v0.51, run
+  artifacts split between two directories sharing the same `RUN_ID` basename
+  (`YYYYMMDD-HHMM-<unit-slug>`):
+  - `~/.claude/tdd-contract-review/runs/<RUN_ID>/` — every intermediate
+    (01-extraction.*, 02-audit.*, 03*-gaps-*, 03-index.md, lsp/, tree__*.json,
+    report.draft.json, report.json). Persistent, ephemeral, kept out of PRs.
+    The previous-extraction discovery glob (Step 2) and grade-shape.sh both
+    read intermediates from here — the basename is load-bearing.
+  - `tdd-contract-review/<RUN_ID>/` (in-repo) — only the two committable
+    deliverables, `report.md` and `findings.json`. CI grading reads
+    `findings.json` from this path. For the benchmark, this resolves under
+    `benchmark/sample-app/tdd-contract-review/<RUN_ID>/`.
 - **Deferred work**: see [TODOS.md](./TODOS.md) before proposing new scope.
 
 ## Routing

@@ -3,13 +3,21 @@
 # invariants on the JSON artifacts. Paired with grade-content.sh (Category A).
 #
 # Usage:
-#   ./grade-shape.sh <run-dir>
+#   ./grade-shape.sh <work-dir> <out-dir>
 #
-# JSON-first: since v0.50 the source of truth for every numbered artifact is
-# its `.json` file (schema-validated at write time by the renderer). This
-# grader reads those JSONs with jq so the checks are decoupled from MD
-# wording drift. `03-index.md` is still shell-generated MD and is checked
-# directly; `report.md` is checked only for render-smoke (non-empty).
+# Since v0.51 the skill writes intermediates to $WORK_DIR
+# (~/.claude/tdd-contract-review/runs/{RUN_ID}/) and only the two committable
+# deliverables (report.md, findings.json) to $OUT_DIR
+# (tdd-contract-review/{RUN_ID}/). This grader reads from both:
+#   - WORK_DIR  → 01-extraction.json, 02-audit.json, 03*-gaps-*.json,
+#                 03-index.md, report.json
+#   - OUT_DIR   → findings.json, report.md
+#
+# JSON-first: the source of truth for every numbered artifact is its `.json`
+# file (schema-validated at write time by the renderer). This grader reads
+# those JSONs with jq so the checks are decoupled from MD wording drift.
+# `03-index.md` is still shell-generated MD and is checked directly;
+# `report.md` is checked only for render-smoke (non-empty).
 #
 # Exit codes:
 #   0 — all checks passed
@@ -22,20 +30,26 @@ die() { echo "✗ $*" >&2; exit 2; }
 
 command -v jq >/dev/null 2>&1 || die "jq is required but not installed"
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <run-dir>" >&2
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 <work-dir> <out-dir>" >&2
+  echo "  work-dir: ~/.claude/tdd-contract-review/runs/{RUN_ID}/ (intermediates)" >&2
+  echo "  out-dir:  tdd-contract-review/{RUN_ID}/                (deliverables)" >&2
   exit 2
 fi
 
-RUN_DIR="${1%/}"
-[[ -d "$RUN_DIR" ]] || die "run directory not found: $RUN_DIR"
+WORK_DIR="${1%/}"
+OUT_DIR="${2%/}"
+[[ -d "$WORK_DIR" ]] || die "work directory not found: $WORK_DIR"
+[[ -d "$OUT_DIR" ]]  || die "out directory not found: $OUT_DIR"
 
-FINDINGS="$RUN_DIR/findings.json"
-EXTRACTION_JSON="$RUN_DIR/01-extraction.json"
-AUDIT_JSON="$RUN_DIR/02-audit.json"
-REPORT_JSON="$RUN_DIR/report.json"
-INDEX="$RUN_DIR/03-index.md"
-REPORT_MD="$RUN_DIR/report.md"
+# Deliverables (committable, in-repo)
+FINDINGS="$OUT_DIR/findings.json"
+REPORT_MD="$OUT_DIR/report.md"
+# Intermediates (~/.claude, not committed)
+EXTRACTION_JSON="$WORK_DIR/01-extraction.json"
+AUDIT_JSON="$WORK_DIR/02-audit.json"
+REPORT_JSON="$WORK_DIR/report.json"
+INDEX="$WORK_DIR/03-index.md"
 
 PASSED=0
 FAILED=0
@@ -60,7 +74,7 @@ skip() {
   SKIPPED=$((SKIPPED + 1))
 }
 
-echo "━━━ grade-shape: $RUN_DIR ━━━"
+echo "━━━ grade-shape: $OUT_DIR (intermediates: $WORK_DIR) ━━━"
 echo ""
 
 # Shared: known gap type enum (must match _defs.schema.json#/$defs/gapTypeCategory).
@@ -185,7 +199,7 @@ else
   bad_prefix=""
   while IFS='|' read -r label base prefix; do
     [[ -z "$label" ]] && continue
-    sub="$RUN_DIR/${base}.json"
+    sub="$WORK_DIR/${base}.json"
 
     if [[ ! -f "$sub" ]]; then
       missing_json+="${base}.json "
@@ -225,7 +239,7 @@ if [[ -f "$FINDINGS" ]]; then
   is_critical=$(jq -r '(.critical // .fintech // false)' "$FINDINGS")
   if [[ "$is_critical" == "true" ]]; then
     check B14 "critical mode: 03d-gaps-money.json and 03e-gaps-security.json exist" \
-      "[[ -f '$RUN_DIR/03d-gaps-money.json' && -f '$RUN_DIR/03e-gaps-security.json' ]]"
+      "[[ -f '$WORK_DIR/03d-gaps-money.json' && -f '$WORK_DIR/03e-gaps-security.json' ]]"
   else
     skip B14 "critical-mode sub-files present" "unit is not critical mode"
   fi

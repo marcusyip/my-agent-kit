@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.51.0] - 2026-04-28
+
+### tdd-contract-review
+
+#### Changed
+- **Run artifacts split into `$WORK_DIR` (ephemeral, outside repo) and `$OUT_DIR` (committable, in-repo).** Every run now writes intermediates (`01-extraction.*`, `02-audit.*`, `03*-gaps-*`, `03-index.md`, `lsp/`, `tree__*.json`, `report.draft.json`, `report.json`) under `~/.claude/tdd-contract-review/runs/{RUN_ID}/`, and only the two committable deliverables (`report.md`, `findings.json`) under `tdd-contract-review/{RUN_ID}/`. Both directories share the same `RUN_ID` basename so they remain trivially correlatable. The legacy `$RUN_DIR` variable is retired across SKILL.md.
+- **`$OUT_DIR` is `mkdir`'d lazily in Step 7-8.** Step 2 only creates `$WORK_DIR` up front; deferring `$OUT_DIR` creation until the first deliverable write means a Stop at Checkpoint 1, 2, or 3 leaves no empty in-repo folder behind.
+- **Step 2 previous-extraction discovery globs `~/.claude/tdd-contract-review/runs/`.** The reuse path at Step 2.6 still copies into the new run's `$WORK_DIR`. Older runs that wrote intermediates into the in-repo `tdd-contract-review/*-{slug}/` are not auto-discovered — one fresh extraction migrates the unit forward.
+- **Benchmark scripts split signatures.** `grade-content.sh <unit-slug> <out-dir>` (only reads `findings.json`). `grade-shape.sh <work-dir> <out-dir>` (intermediates from WORK, deliverables from OUT). `run-matrix.sh` discovers the in-repo OUT_DIR, derives the matching WORK_DIR from the RUN_ID basename, and passes both to graders.
+- **`run-matrix.sh --prune-old N`.** Optional flag that keeps the latest N work dirs per unit-slug under `WORK_DIRS_ROOT` and removes older ones. Off by default. Touches only ephemeral intermediates; never the in-repo deliverables.
+
+#### Rationale
+The single-directory layout from earlier versions forced ~17 intermediate files into every PR. Splitting deliverables from process artifacts solves that without losing debug context (the intermediates are still on disk, just out of the repo) or breaking previous-run reuse (Step 2's glob follows the relocation). `~/.claude/` is persistent across reboots, which `/tmp` is not — so iterating on the same unit doesn't pay a re-extraction cost just because the OS cleared `/tmp`. The benchmark harness was updated in the same change so the new layout is verifiable end-to-end on day one (Category B shape: 21/21 PASS against the relocated 2026-04-24 sample).
+
 ## [0.50.2] - 2026-04-25
 
 ### tdd-contract-review

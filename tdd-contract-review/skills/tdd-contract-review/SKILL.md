@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with CRITICAL-only test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.50.2
+version: 0.51.0
 ---
 
 # TDD Contract Review
@@ -12,10 +12,14 @@ Contract-based test quality review. **Reviews ONE unit per run.** A unit is one 
 
 ## Output Layout
 
-Every run writes to a flat, unit-scoped directory:
+Every run writes to TWO unit-scoped directories sharing the same `RUN_ID = {YYYYMMDD-HHMM}-{unit-slug}`. Intermediates live outside the project (so they don't pollute PRs); only the two committable deliverables land in the working tree.
 
 ```
-tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/
+$OUT_DIR  = tdd-contract-review/{RUN_ID}/                       ← in-repo, committed
+├── report.md                ← rendered MD view of report.json (the deliverable)
+└── findings.json            ← merged + deduped gap list (machine-readable; CI/grader read this)
+
+$WORK_DIR = ~/.claude/tdd-contract-review/runs/{RUN_ID}/        ← user home, ephemeral
 ├── 01-extraction.json    ← contract extracted from source (source of truth)
 ├── 01-extraction.md      ← rendered MD view of 01-extraction.json
 ├── 02-audit.json         ← test structure + quality findings (source of truth)
@@ -31,9 +35,10 @@ tdd-contract-review/{YYYYMMDD-HHMM}-{unit-slug}/
 ├── 03e-gaps-security.json ← cross-cutting API-security JSON (critical mode only)
 ├── 03e-gaps-security.md  ← rendered MD view
 ├── 03-index.md           ← CP3 index (shell-generated, clickable links + gap counts)
-├── findings.json         ← merged + deduped gap list (machine-readable; CI/grader read this)
-├── report.json           ← scorecard + narrative (source of truth)
-└── report.md             ← rendered MD view of report.json
+├── report.draft.json     ← LLM-authored draft (pre-scoring; ephemeral)
+├── report.json           ← scorecard + narrative after deterministic scoring
+├── lsp/                  ← persisted LSP query JSON for auditability
+└── tree__*.json          ← lsp_tree.py call-tree dumps
 ```
 
 **JSON is the source of truth; MD is a rendered view.** Every numbered artifact is emitted as JSON by the agent (schema-validated against `[plugin root]/tdd-contract-review/schemas/<kind>.schema.json`), then re-rendered to Markdown by `[plugin root]/tdd-contract-review/scripts/render.py`. Humans read the MD; tooling reads the JSON. Hand-editing a generated `.md` is a correctness bug — edit the JSON and re-render.
@@ -45,21 +50,23 @@ The `unit-slug` is lowercase kebab-case of the unit identifier:
 - `ProcessPaymentJob` → `process-payment-job`
 - `WithdrawalConsumer` → `withdrawal-consumer`
 
+**Why split.** Earlier versions wrote everything under `tdd-contract-review/{RUN_ID}/`, which forced ~17 intermediate files into PRs. Splitting keeps the repo clean (only `report.md` + `findings.json` are committed) while preserving every intermediate for debugging and previous-run reuse. `~/.claude/` is persistent across reboots; `/tmp` would lose intermediates between sessions.
+
 ## Checkpoint Interaction Pattern
 
 At each of the 3 review checkpoints, the orchestrator runs a three-step interaction: echo the agent's Summary so the user has something to review, ask the checkpoint question with `AskUserQuestion`, then branch on the selection.
 
 ### Step A — Echo Summary first
 
-Read `$RUN_DIR/<file>` and print its `## Summary` section to the terminal. Grep the file for the literal heading `## Summary` and print every line after it up to (but not including) the next `## ` heading. Format:
+Read `$WORK_DIR/<file>` and print its `## Summary` section to the terminal. Grep the file for the literal heading `## Summary` and print every line after it up to (but not including) the next `## ` heading. Format:
 
 ```
-=== Checkpoint <N> summary ($RUN_DIR/<file>) ===
+=== Checkpoint <N> summary ($WORK_DIR/<file>) ===
 <verbatim Summary section body>
 ==============================================
 ```
 
-If no `## Summary` section is found (agent deviation), print `(Summary section missing in $RUN_DIR/<file> — open the file to review)` and proceed anyway. The step's GATE check already validates file shape; the Summary echo is a UX affordance, not a gate.
+If no `## Summary` section is found (agent deviation), print `(Summary section missing in $WORK_DIR/<file> — open the file to review)` and proceed anyway. The step's GATE check already validates file shape; the Summary echo is a UX affordance, not a gate.
 
 After the Summary block, print the checkpoint-specific **Review Hint** defined in that checkpoint's PAUSE section below. Format:
 
@@ -77,24 +84,24 @@ Then print the full report path on its own line as a **clickable markdown link**
 Open to review: [<ABS_PATH>](<ABS_PATH>)
 ```
 
-Resolve `$RUN_DIR/<file>` to an absolute filesystem path first, then substitute that same absolute path into BOTH the link label and the link target — Claude Code renders `[label](target)` as a clickable link in the terminal, and plain text (or an unresolved `$RUN_DIR`) is not clickable. Keep the line on its own with nothing trailing.
+Resolve `$WORK_DIR/<file>` to an absolute filesystem path first, then substitute that same absolute path into BOTH the link label and the link target — Claude Code renders `[label](target)` as a clickable link in the terminal, and plain text (or an unresolved `$WORK_DIR`) is not clickable. Keep the line on its own with nothing trailing.
 
 ### Step B — Ask the checkpoint question
 
 Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
 
-- question: `Review checkpoint <N> of 3 — proceed to <next step>? To revise, pick 'Type something else' and describe the gap.` (the clickable path is already printed in Step A; do NOT repeat `$RUN_DIR/<file>` here — `AskUserQuestion` does not render markdown, so an inline path would show as unclickable duplicate noise)
+- question: `Review checkpoint <N> of 3 — proceed to <next step>? To revise, pick 'Type something else' and describe the gap.` (the clickable path is already printed in Step A; do NOT repeat `$WORK_DIR/<file>` here — `AskUserQuestion` does not render markdown, so an inline path would show as unclickable duplicate noise)
 - header: `Checkpoint <N>/3`
 - options (exactly these two, in this order):
   - label `Continue` — description: `Proceed to <next step>. Artifacts up to this checkpoint are final.`
-  - label `Stop` — description: `Exit without proceeding. All files in $RUN_DIR are preserved.`
+  - label `Stop` — description: `Exit without proceeding. All files in $WORK_DIR are preserved.`
 
 There is intentionally no `Revise` button. A blind "look harder" re-dispatch costs tokens without telling the agent *what* is wrong; specific typed feedback produces sharper revisions. The free-text path (below) is the only revision channel.
 
 ### Step C — Branch on selection
 
 1. **Continue** → proceed to the next step.
-2. **Stop** → preserve every file in `$RUN_DIR` and exit without proceeding. Print one line: `Stopped at checkpoint <N>. Files preserved in $RUN_DIR`.
+2. **Stop** → preserve every file in `$WORK_DIR` and exit without proceeding. Print one line: `Stopped at checkpoint <N>. Files preserved in $WORK_DIR`.
 3. **Type something else** (user picked the auto-provided free-text option — rendered as `Type something else` in the CLI) → interpret the typed text:
    - Affirmative words (`go`, `yes`, `ok`, `continue`, `proceed`) → treat as Continue.
    - Stop intent (`stop`, `quit`, `abort`, `cancel`, `no`) → treat as Stop.
@@ -103,27 +110,27 @@ There is intentionally no `Revise` button. A blind "look harder" re-dispatch cos
      ```
      REVISION REQUEST — INVESTIGATE → PLAN → EXECUTE (single pass, no user gate).
 
-     The user reviewed $RUN_DIR/<file> and typed this feedback verbatim:
+     The user reviewed $WORK_DIR/<file> and typed this feedback verbatim:
      <paste the user's typed text here verbatim>
 
-     IMPORTANT: this revision SUPERSEDES any "LSP IS MANDATORY", "walk every call site", or "Read [skill dir]/*.md" language from your original prompt. You already produced $RUN_DIR/<file> in this run — treat it as your baseline and patch it, do not regenerate from scratch. Skill docs and project conventions are already reflected in the file; do not re-read them.
+     IMPORTANT: this revision SUPERSEDES any "LSP IS MANDATORY", "walk every call site", or "Read [skill dir]/*.md" language from your original prompt. You already produced $WORK_DIR/<file> in this run — treat it as your baseline and patch it, do not regenerate from scratch. Skill docs and project conventions are already reflected in the file; do not re-read them.
 
      Phase 1 — INVESTIGATE (narrow, targeted tools only):
-     - Read $RUN_DIR/<file> to understand what's already there.
+     - Read $WORK_DIR/<file> to understand what's already there.
      - Then use ONLY: Read on specific source/schema/test files the feedback points at, `[plugin root]/tdd-contract-review/scripts/lsp_query.py definition <symbol>` for single call sites, narrow Grep for string-keyed lookups. The native `LSP` tool is allowed for single-symbol queries if available.
      - BANNED in this phase: full `[plugin root]/tdd-contract-review/scripts/lsp_tree.py` walks, re-reading skill reference docs, broad repo sweeps. Your job is to locate the specific gap the user named, not re-do the extraction.
 
      Phase 2 — PLAN:
-     - Produce a 3–10 item diff plan: which sections of $RUN_DIR/<file> change, and what concretely goes in/out. Keep it terse — this is for your own discipline, not a deliverable.
+     - Produce a 3–10 item diff plan: which sections of $WORK_DIR/<file> change, and what concretely goes in/out. Keep it terse — this is for your own discipline, not a deliverable.
 
      Phase 3 — EXECUTE:
-     - Apply the plan with Edit (preferred — targeted in-place patch) or Write (full rewrite) on $RUN_DIR/<file>.
+     - Apply the plan with Edit (preferred — targeted in-place patch) or Write (full rewrite) on $WORK_DIR/<file>.
      - Preserve every untouched section byte-for-byte. Do not reorder, reformat, or rewrite content unrelated to the user's feedback.
 
      Return exactly three lines to the terminal, in this order:
      INVESTIGATED: <one sentence — what you found the gap to be>
      PATCHED: <one sentence — what sections you changed>
-     WROTE: $RUN_DIR/<file>
+     WROTE: $WORK_DIR/<file>
      ```
 
      After re-dispatch, re-run the GATE check for this step. If the GATE fails, surface the failure and stop — do NOT loop on a failing gate. If the GATE passes, loop back to Step A (re-echo the updated Summary) and Step B (re-ask the checkpoint question). The typed text is passed through verbatim — the agent sees the user's own words, not a paraphrase.
@@ -196,9 +203,21 @@ This step is a fast preliminary survey from test files and known-location files.
 - **>1 matches**: print `ERROR: unit '<arg>' ambiguous. Candidates:` followed by a numbered list, then stop.
 - **1 match**: proceed.
 
-**Compute unit-slug** from the identifier. Compute run directory: `tdd-contract-review/$(date +%Y%m%d-%H%M)-{unit-slug}/`. Create the directory. Store path as `$RUN_DIR`.
+**Compute unit-slug** from the identifier. Compute the shared run id and both directories:
 
-**Look for a previous extraction for this unit.** Glob `tdd-contract-review/*-{unit-slug}/01-extraction.md`, exclude `$RUN_DIR` itself, sort results by the `YYYYMMDD-HHMM` timestamp prefix in the directory name (lexicographic order works), pick the most recent. Store its path as `$PREV_EXTRACTION` (empty string if no match). This drives the optional reuse ask in Step 2.6.
+```bash
+RUN_ID="$(date +%Y%m%d-%H%M)-{unit-slug}"
+WORK_DIR="$HOME/.claude/tdd-contract-review/runs/$RUN_ID"
+OUT_DIR="tdd-contract-review/$RUN_ID"
+mkdir -p "$WORK_DIR"
+# OUT_DIR is created lazily in Step 7-8, just before the first deliverable
+# writes — this avoids leaving an empty in-repo folder behind when the user
+# Stops at Checkpoint 1, 2, or 3.
+```
+
+`$WORK_DIR` holds every intermediate (01-extraction.*, 02-audit.*, 03*-gaps-*, 03-index.md, lsp/, tree__*.json, report.draft.json, report.json). `$OUT_DIR` holds only the two committable deliverables (`report.md`, `findings.json`) and is what lands in the PR. The legacy single-directory name from earlier versions is retired — every step below uses one of the two new variables.
+
+**Look for a previous extraction for this unit.** Glob `$HOME/.claude/tdd-contract-review/runs/*-{unit-slug}/01-extraction.md`, exclude `$WORK_DIR` itself, sort results by the `YYYYMMDD-HHMM` timestamp prefix in the directory name (lexicographic order works), pick the most recent. Store its path as `$PREV_EXTRACTION` (empty string if no match). This drives the optional reuse ask in Step 2.6. (Older runs that wrote intermediates into `tdd-contract-review/*-{unit-slug}/01-extraction.md` are not auto-discovered — one fresh extraction migrates the unit forward.)
 
 **Run preview.** Before proceeding to Step 3, print this 1-screen summary so the user can interrupt before the first agent dispatch:
 
@@ -212,7 +231,8 @@ Critical mode:       ON (reason: <one-line signal that triggered it, e.g., "test
 Previous extraction: found at <$PREV_EXTRACTION> (<YYYY-MM-DD HH:MM from dir prefix>)
                      OR "none found (skip reuse ask)"
 Pipeline:            <N> agent dispatches, 3 checkpoints
-Run dir:             $RUN_DIR
+Work dir:            $WORK_DIR        (intermediates — ~/.claude, not committed)
+Out dir:             $OUT_DIR         (deliverables — in repo, committed)
 Note: DB model files and outbound API clients are discovered by Step 3's LSP walk, not here.
 ```
 
@@ -294,7 +314,7 @@ Question:
    Reuse it as this run's 01-extraction.md, or run a fresh extraction?
    <critical-mode mismatch warning line if applicable>"
 Options:
-  A) Reuse       — copy into $RUN_DIR and go straight to Checkpoint 1
+  A) Reuse       — copy into $WORK_DIR and go straight to Checkpoint 1
   B) Extract fresh — run the Step 3 extraction agent as normal
 Multi-select: false
 ```
@@ -303,10 +323,10 @@ Free-text fallback (user typed something instead of picking): treat affirmative-
 
 **Branch — Reuse:**
 
-1. Copy the file: `cp "$PREV_EXTRACTION" "$RUN_DIR/01-extraction.md"` via Bash.
+1. Copy the file: `cp "$PREV_EXTRACTION" "$WORK_DIR/01-extraction.md"` via Bash.
 2. Run the **Checkpoint 1 shape GATE** (same grep used in Step 3, described under "GATE (Checkpoint 1 shape)" below): verify all 5 required rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`) appear with a valid three-state status (`Extracted` | `Not detected` | `Not applicable`).
 3. If GATE passes: jump directly to the **Checkpoint 1 PAUSE** in Step 3 — apply the Checkpoint Interaction Pattern with `<N>` = `1`, `<file>` = `01-extraction.md`, `<next step>` = `the test audit step`. Specific-feedback revision re-dispatches the Step 3 Contract extraction agent, overwriting the reused file.
-4. If GATE fails: print `GATE FAILED on reused $PREV_EXTRACTION (file is malformed or from an older skill version) — falling through to fresh extraction`, then proceed to Step 3 normally. Do not leave the malformed copy in `$RUN_DIR` — either remove it first (`rm "$RUN_DIR/01-extraction.md"`) or let Step 3's agent overwrite it.
+4. If GATE fails: print `GATE FAILED on reused $PREV_EXTRACTION (file is malformed or from an older skill version) — falling through to fresh extraction`, then proceed to Step 3 normally. Do not leave the malformed copy in `$WORK_DIR` — either remove it first (`rm "$WORK_DIR/01-extraction.md"`) or let Step 3's agent overwrite it.
 
 **Branch — Extract fresh:** proceed to Step 3 directly with no file copy.
 
@@ -323,7 +343,7 @@ Description: Contract extraction
 Prompt:
   "TASK: Extract contracts for ONE unit and write to disk.
    Skill directory: [path]
-   Run directory: $RUN_DIR
+   Run directory: $WORK_DIR
    Unit: [unit identifier]
    Source file: [resolved path]
    DB schema snapshot: [path, or "not found — discover via LSP walk + known-location glob"]
@@ -335,30 +355,30 @@ Prompt:
    Read [skill dir]/contract-extraction.md in full. It contains:
    - 'Output File Shape (01-extraction.md)' — follow the ordered sections, row labels, tree grammar, and root-set tag vocabulary verbatim; the orchestrator grep-gates on them. See benchmark/fixtures/v2-example/01-extraction.md for a worked example.
    - 'LSP-assisted call-tree construction (mandatory algorithm)' — execute the algorithm step by step. Three tool paths are available:
-     - `[plugin root]/tdd-contract-review/scripts/lsp_tree.py` — preferred for Go, Ruby, and TypeScript/TSX (including React / React Native). Walks the full call tree in one invocation and persists every underlying LSP query under `$RUN_DIR/lsp/`.
+     - `[plugin root]/tdd-contract-review/scripts/lsp_tree.py` — preferred for Go, Ruby, and TypeScript/TSX (including React / React Native). Walks the full call tree in one invocation and persists every underlying LSP query under `$WORK_DIR/lsp/`.
      - Native `LSP` tool — for other languages (Python, Rust, Java, C#, Kotlin, Dart) when `Native LSP tool available: yes` above. Use its `definition` / `implementations` / `references` operations directly; no scripted wrapper needed.
      - `[plugin root]/tdd-contract-review/scripts/lsp_query.py` — two roles: (a) resolve a single ambiguous dispatch mid-walk when `lsp_tree.py` under-resolves a call site, or (b) last-resort fallback for non-lsp_tree languages when `Native LSP tool available: no`.
-     For scripted tools, pass `--run-dir $RUN_DIR` to every invocation so each query's JSON is persisted under `$RUN_DIR/lsp/` for auditability. See `contract-extraction.md` for the exact CLIs and routing rules.
+     For scripted tools, pass `--run-dir $WORK_DIR` to every invocation so each query's JSON is persisted under `$WORK_DIR/lsp/` for auditability. See `contract-extraction.md` for the exact CLIs and routing rules.
    - Per-framework extraction guidance for API / DB / Jobs / Outbound / UI Props.
    - 'Contract Extraction Summary Example' — the typed-prefix format for fields following the mandatory sections.
 
    If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md, and append the Money-correctness + API-security dimension tables after the Contract Extraction Summary.
 
-   LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py --lang <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name> --scope local --run-dir $RUN_DIR` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$RUN_DIR/lsp/`. **Always pass `--scope local`** so the rendered tree drops stdlib / gem / `node_modules` edges (only the rendered tree is trimmed — every LSP query still runs). For other languages: if `Native LSP tool available: yes`, use the native `LSP` tool's `definition` / `implementations` / `references` on EVERY call site in EVERY own-node; if `Native LSP tool available: no`, fall back to `lsp_query.py definition --run-dir $RUN_DIR <file> <line> <col>` on every call site instead. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
+   LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py --lang <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name> --scope local --run-dir $WORK_DIR` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$WORK_DIR/lsp/`. **Always pass `--scope local`** so the rendered tree drops stdlib / gem / `node_modules` edges (only the rendered tree is trimmed — every LSP query still runs). For other languages: if `Native LSP tool available: yes`, use the native `LSP` tool's `definition` / `implementations` / `references` on EVERY call site in EVERY own-node; if `Native LSP tool available: no`, fall back to `lsp_query.py definition --run-dir $WORK_DIR <file> <line> <col>` on every call site instead. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
 
-   WRITE `$RUN_DIR/01-extraction.json` matching `[plugin root]/tdd-contract-review/schemas/extraction.schema.json`. Do NOT return the content in your response body; return only 'WROTE: $RUN_DIR/01-extraction.json' when done."
+   WRITE `$WORK_DIR/01-extraction.json` matching `[plugin root]/tdd-contract-review/schemas/extraction.schema.json`. Do NOT return the content in your response body; return only 'WROTE: $WORK_DIR/01-extraction.json' when done."
 ```
 
 **Orchestrator renders MD view.** After the agent returns, run:
 ```bash
 [plugin root]/tdd-contract-review/scripts/render.py \
   --kind extraction \
-  --input $RUN_DIR/01-extraction.json \
-  --output $RUN_DIR/01-extraction.md
+  --input $WORK_DIR/01-extraction.json \
+  --output $WORK_DIR/01-extraction.md
 ```
 The renderer schema-validates the JSON before rendering and exits non-zero with a diagnostic if validation fails. Treat render failure as a GATE failure — do not proceed.
 
-**GATE (Checkpoint 1 shape):** The renderer enforces schema shape (5 coverage_table rows with `Extracted` | `Not detected` | `Not applicable` statuses). The legacy grep gate on `$RUN_DIR/01-extraction.md` remains as a backstop but should never fail when JSON validation passes.
+**GATE (Checkpoint 1 shape):** The renderer enforces schema shape (5 coverage_table rows with `Extracted` | `Not detected` | `Not applicable` statuses). The legacy grep gate on `$WORK_DIR/01-extraction.md` remains as a backstop but should never fail when JSON validation passes.
 
 **PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
 - `<N>` = `1`
@@ -385,27 +405,27 @@ Description: Test structure audit
 Prompt:
   "TASK: Audit test files against the contract extraction.
    Skill directory: [path]
-   Run directory: $RUN_DIR
+   Run directory: $WORK_DIR
    Test files for this unit: [list]
 
-   Read $RUN_DIR/01-extraction.json for the contract (produced by Step 3). The
-   rendered MD view at $RUN_DIR/01-extraction.md is also available for human-
+   Read $WORK_DIR/01-extraction.json for the contract (produced by Step 3). The
+   rendered MD view at $WORK_DIR/01-extraction.md is also available for human-
    readable browsing but the JSON is authoritative.
    Read [skill dir]/test-patterns.md in full. It contains:
    - 'Read Protocol (Test Audit)' — non-negotiable 3-step protocol: (1) framework-pattern grep count, (2) chunked read-to-EOF, (3) reconcile grep count against Test Inventory before writing. Skip any step and the audit is rejected.
    - Input/Assertion Model, sessions pattern, anti-patterns to flag, quality checklists.
 
-   WRITE $RUN_DIR/02-audit.json matching [plugin root]/tdd-contract-review/schemas/audit.schema.json. Required top-level fields: unit, files_reviewed, test_inventory {grep_count, agent_count}, anti_patterns, per_field_coverage. test_inventory.grep_count MUST equal test_inventory.agent_count.
+   WRITE $WORK_DIR/02-audit.json matching [plugin root]/tdd-contract-review/schemas/audit.schema.json. Required top-level fields: unit, files_reviewed, test_inventory {grep_count, agent_count}, anti_patterns, per_field_coverage. test_inventory.grep_count MUST equal test_inventory.agent_count.
 
-   Return only 'WROTE: $RUN_DIR/02-audit.json' when done."
+   Return only 'WROTE: $WORK_DIR/02-audit.json' when done."
 ```
 
 **Orchestrator renders MD view:**
 ```bash
 [plugin root]/tdd-contract-review/scripts/render.py \
   --kind audit \
-  --input $RUN_DIR/02-audit.json \
-  --output $RUN_DIR/02-audit.md
+  --input $WORK_DIR/02-audit.json \
+  --output $WORK_DIR/02-audit.md
 ```
 Render failure (schema mismatch or grep/agent count mismatch) is a GATE failure.
 
@@ -429,7 +449,7 @@ Gap analysis runs as **parallel per-type sub-dispatches** followed by a single *
 
 #### Step 6a — Determine which types to dispatch
 
-Read `$RUN_DIR/01-extraction.md`. For each Checkpoint 1 row, look at the Status column:
+Read `$WORK_DIR/01-extraction.md`. For each Checkpoint 1 row, look at the Status column:
 - `Extracted` → dispatch a per-type agent for this type
 - `Not detected` or `Not applicable` → skip this type (no sub-file produced)
 
@@ -503,7 +523,7 @@ Dispatch all per-type agents in a single orchestrator message (parallel tool cal
 
 After all agents return, print one `✓ <sub-file> (<N> gaps)` line per produced sub-file before proceeding to Step 6c.
 
-**Source of truth:** `$RUN_DIR/<OUTPUT_FILE>.json` matching `[plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json`. After each agent returns, the orchestrator re-renders the JSON to `<OUTPUT_FILE>.md` via `scripts/render.py --kind gaps-per-type`. Same pattern applies to F1 (Money), F2 (API-security), and the 6c merge agent (emits `findings.json` matching `findings.schema.json`).
+**Source of truth:** `$WORK_DIR/<OUTPUT_FILE>.json` matching `[plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json`. After each agent returns, the orchestrator re-renders the JSON to `<OUTPUT_FILE>.md` via `scripts/render.py --kind gaps-per-type`. Same pattern applies to F1 (Money), F2 (API-security), and the 6c merge agent (emits `findings.json` matching `findings.schema.json`).
 
 **Prompt template — per-type agent (used for A/B/C):**
 
@@ -513,11 +533,11 @@ Model:       sonnet
 Description: Gap analysis — <CONTRACT_TYPE>
 Prompt:
   "TASK: Exhaustive per-field gap analysis for CONTRACT TYPE: <CONTRACT_TYPE>
-   Run directory: $RUN_DIR
+   Run directory: $WORK_DIR
    Critical mode: [yes/no]
 
-   Read $RUN_DIR/01-extraction.json — focus ONLY on the <CONTRACT_TYPE> slice under contracts.
-   Read $RUN_DIR/02-audit.json — identify existing test coverage for <CONTRACT_TYPE> fields.
+   Read $WORK_DIR/01-extraction.json — focus ONLY on the <CONTRACT_TYPE> slice under contracts.
+   Read $WORK_DIR/02-audit.json — identify existing test coverage for <CONTRACT_TYPE> fields.
 
    DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers. Treat each pack as equivalent to having read that section of the source file.
 
@@ -546,7 +566,7 @@ Prompt:
    [orchestrator inlines PACK_SECURITY_CHECKS verbatim]
    <<<CONTEXT_PACK:SECURITY_CHECKS:end>>>
 
-   WRITE the full output to $RUN_DIR/<OUTPUT_FILE>.json matching [plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json. Use scope=<SCOPE_ENUM> and gap_prefix=<GAP_PREFIX_ENUM> (see substitution table). Return only 'WROTE: $RUN_DIR/<OUTPUT_FILE>.json' when done."
+   WRITE the full output to $WORK_DIR/<OUTPUT_FILE>.json matching [plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json. Use scope=<SCOPE_ENUM> and gap_prefix=<GAP_PREFIX_ENUM> (see substitution table). Return only 'WROTE: $WORK_DIR/<OUTPUT_FILE>.json' when done."
 ```
 
 **Substitute per agent (`<OUTPUT_FILE>` is the base name; orchestrator writes `.json` and renders `.md`):**
@@ -561,8 +581,8 @@ Prompt:
 ```bash
 [plugin root]/tdd-contract-review/scripts/render.py \
   --kind gaps-per-type \
-  --input $RUN_DIR/<OUTPUT_FILE>.json \
-  --output $RUN_DIR/<OUTPUT_FILE>.md
+  --input $WORK_DIR/<OUTPUT_FILE>.json \
+  --output $WORK_DIR/<OUTPUT_FILE>.md
 ```
 
 **Prompt template — F1 money-correctness cross-cutting agent:**
@@ -573,9 +593,9 @@ Model:       opus
 Description: Gap analysis — money-correctness cross-cutting
 Prompt:
   "TASK: Cross-cutting money-correctness gap analysis for this unit.
-   Run directory: $RUN_DIR
+   Run directory: $WORK_DIR
 
-   Read $RUN_DIR/01-extraction.json (full file) and $RUN_DIR/02-audit.json (full file). MD views at .md counterparts are available for human browsing; the JSON is authoritative.
+   Read $WORK_DIR/01-extraction.json (full file) and $WORK_DIR/02-audit.json (full file). MD views at .md counterparts are available for human browsing; the JSON is authoritative.
 
    DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers.
 
@@ -589,7 +609,7 @@ Prompt:
 
    Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level integrity only.
 
-   WRITE $RUN_DIR/03d-gaps-money.json matching [plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json (scope=Money, gap_prefix=GMON). Return only 'WROTE: $RUN_DIR/03d-gaps-money.json' when done."
+   WRITE $WORK_DIR/03d-gaps-money.json matching [plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json (scope=Money, gap_prefix=GMON). Return only 'WROTE: $WORK_DIR/03d-gaps-money.json' when done."
 ```
 
 **Prompt template — F2 API-security cross-cutting agent:**
@@ -600,9 +620,9 @@ Model:       opus
 Description: Gap analysis — API-security cross-cutting
 Prompt:
   "TASK: Cross-cutting API-security gap analysis for this unit.
-   Run directory: $RUN_DIR
+   Run directory: $WORK_DIR
 
-   Read $RUN_DIR/01-extraction.json (full file) and $RUN_DIR/02-audit.json (full file). MD views at .md counterparts are available for human browsing; the JSON is authoritative.
+   Read $WORK_DIR/01-extraction.json (full file) and $WORK_DIR/02-audit.json (full file). MD views at .md counterparts are available for human browsing; the JSON is authoritative.
 
    DO NOT read any [skill dir]/*.md files. The skill-file content you need is embedded below under <<<CONTEXT_PACK:*>>> markers.
 
@@ -616,7 +636,7 @@ Prompt:
 
    Do NOT duplicate per-field gaps that the per-type agents will find — systemic, unit-level security integrity only.
 
-   WRITE $RUN_DIR/03e-gaps-security.json matching [plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json (scope=Security, gap_prefix=GSEC). Return only 'WROTE: $RUN_DIR/03e-gaps-security.json' when done."
+   WRITE $WORK_DIR/03e-gaps-security.json matching [plugin root]/tdd-contract-review/schemas/gaps-per-type.schema.json (scope=Security, gap_prefix=GSEC). Return only 'WROTE: $WORK_DIR/03e-gaps-security.json' when done."
 ```
 
 **GATE (sub-files shape):** After all per-type agents return, verify each expected sub-file exists and contains both `## Test Structure Tree` and `## Contract Map` (or `## Cross-cutting Money-Correctness Gaps` for F1, `## Cross-cutting API-Security Gaps` for F2). If any required sub-file is missing or malformed, print which one and stop.
@@ -625,10 +645,10 @@ Prompt:
 
 Prior versions ran an opus "merge" agent that re-ingested every sub-file and rewrote them as a unified `03-gaps.md` — ~100k tokens/run to re-encode information Step 7-8 re-reads anyway. This step is now shell-only: it computes per-priority and per-type gap counts and writes a small index file with clickable links to each sub-file. Dedupe of overlapping gaps (F1 money ↔ A API; F2 security ↔ A API) now happens inside Step 7 while the final report is written.
 
-**Run this bash block.** `CP1_STATUS__<type>` variables are expected to be set by Step 3 based on the Checkpoint 1 Coverage table (`Extracted` | `Not detected` | `Not applicable`). If you did not capture them earlier, re-parse from `$RUN_DIR/01-extraction.md` now.
+**Run this bash block.** `CP1_STATUS__<type>` variables are expected to be set by Step 3 based on the Checkpoint 1 Coverage table (`Extracted` | `Not detected` | `Not applicable`). If you did not capture them earlier, re-parse from `$WORK_DIR/01-extraction.md` now.
 
 ```bash
-INDEX="$RUN_DIR/03-index.md"
+INDEX="$WORK_DIR/03-index.md"
 
 count_priority() {   # args: file priority
   [[ -f "$1" ]] || { echo 0; return; }
@@ -640,11 +660,11 @@ count_gaps() {       # args: file
 }
 
 SUB_FILES=(
-  "$RUN_DIR/03a-gaps-api.md"
-  "$RUN_DIR/03b-gaps-db.md"
-  "$RUN_DIR/03c-gaps-outbound.md"
-  "$RUN_DIR/03d-gaps-money.md"
-  "$RUN_DIR/03e-gaps-security.md"
+  "$WORK_DIR/03a-gaps-api.md"
+  "$WORK_DIR/03b-gaps-db.md"
+  "$WORK_DIR/03c-gaps-outbound.md"
+  "$WORK_DIR/03d-gaps-money.md"
+  "$WORK_DIR/03e-gaps-security.md"
 )
 
 TOTAL_CRIT=0; TOTAL_HIGH=0; TOTAL_MED=0; TOTAL_LOW=0
@@ -656,11 +676,11 @@ for f in "${SUB_FILES[@]}"; do
   TOTAL_LOW=$((TOTAL_LOW  + $(count_priority "$f" LOW)))
 done
 
-API_CT=$(count_gaps   "$RUN_DIR/03a-gaps-api.md")
-DB_CT=$(count_gaps    "$RUN_DIR/03b-gaps-db.md")
-OUT_CT=$(count_gaps   "$RUN_DIR/03c-gaps-outbound.md")
-MONEY_CT=$(count_gaps "$RUN_DIR/03d-gaps-money.md")
-SEC_CT=$(count_gaps   "$RUN_DIR/03e-gaps-security.md")
+API_CT=$(count_gaps   "$WORK_DIR/03a-gaps-api.md")
+DB_CT=$(count_gaps    "$WORK_DIR/03b-gaps-db.md")
+OUT_CT=$(count_gaps   "$WORK_DIR/03c-gaps-outbound.md")
+MONEY_CT=$(count_gaps "$WORK_DIR/03d-gaps-money.md")
+SEC_CT=$(count_gaps   "$WORK_DIR/03e-gaps-security.md")
 
 # Helper: one CP3 Coverage row. `$1`=type label, `$2`=count, `$3`=CP1 status, `$4`=sub-file basename
 cov_row() {
@@ -686,11 +706,11 @@ cov_row() {
   echo "- LOW: $TOTAL_LOW"
   echo
   echo "Gaps by contract type:"
-  [[ -f "$RUN_DIR/03a-gaps-api.md"      ]] && echo "- API inbound: $API_CT — [03a-gaps-api.md]($RUN_DIR/03a-gaps-api.md)"
-  [[ -f "$RUN_DIR/03b-gaps-db.md"       ]] && echo "- DB: $DB_CT — [03b-gaps-db.md]($RUN_DIR/03b-gaps-db.md)"
-  [[ -f "$RUN_DIR/03c-gaps-outbound.md" ]] && echo "- Outbound API: $OUT_CT — [03c-gaps-outbound.md]($RUN_DIR/03c-gaps-outbound.md)"
-  [[ -f "$RUN_DIR/03d-gaps-money.md"    ]] && echo "- Money (cross-cutting): $MONEY_CT — [03d-gaps-money.md]($RUN_DIR/03d-gaps-money.md)"
-  [[ -f "$RUN_DIR/03e-gaps-security.md" ]] && echo "- Security (cross-cutting): $SEC_CT — [03e-gaps-security.md]($RUN_DIR/03e-gaps-security.md)"
+  [[ -f "$WORK_DIR/03a-gaps-api.md"      ]] && echo "- API inbound: $API_CT — [03a-gaps-api.md]($WORK_DIR/03a-gaps-api.md)"
+  [[ -f "$WORK_DIR/03b-gaps-db.md"       ]] && echo "- DB: $DB_CT — [03b-gaps-db.md]($WORK_DIR/03b-gaps-db.md)"
+  [[ -f "$WORK_DIR/03c-gaps-outbound.md" ]] && echo "- Outbound API: $OUT_CT — [03c-gaps-outbound.md]($WORK_DIR/03c-gaps-outbound.md)"
+  [[ -f "$WORK_DIR/03d-gaps-money.md"    ]] && echo "- Money (cross-cutting): $MONEY_CT — [03d-gaps-money.md]($WORK_DIR/03d-gaps-money.md)"
+  [[ -f "$WORK_DIR/03e-gaps-security.md" ]] && echo "- Security (cross-cutting): $SEC_CT — [03e-gaps-security.md]($WORK_DIR/03e-gaps-security.md)"
   echo
   echo "Critical mode: $CRITICAL_MODE"
   echo
@@ -713,7 +733,7 @@ The index file is intentionally tiny (<50 lines). It exists for two reasons only
 **GATE (Checkpoint 3 shape):** Two checks must pass.
 
 1. **Sub-file presence.** For every type marked `Extracted` in Checkpoint 1, the corresponding sub-file must exist: `03a-gaps-api.md` for `API inbound`, `03b-gaps-db.md` for `DB`, `03c-gaps-outbound.md` for `Outbound API`. Print which is missing and stop if any is absent.
-2. **Index shape.** Grep `$RUN_DIR/03-index.md` for the 5 Checkpoint 3 Coverage rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`). Every type that was `Extracted` in Checkpoint 1 must show `Yes` in Gaps Checked. If any `Extracted` type shows `N/A` or is missing, print which one and stop — the shell block in Step 6c produced a malformed index.
+2. **Index shape.** Grep `$WORK_DIR/03-index.md` for the 5 Checkpoint 3 Coverage rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`). Every type that was `Extracted` in Checkpoint 1 must show `Yes` in Gaps Checked. If any `Extracted` type shows `N/A` or is missing, print which one and stop — the shell block in Step 6c produced a malformed index.
 
 **PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
 - `<N>` = `3`
@@ -733,6 +753,14 @@ The index file is intentionally tiny (<50 lines). It exists for two reasons only
 
 **Split:** `findings.json` (all gaps, merged + deduped) and `report.json` (scorecard + narrative) are the canonical structured artifacts. The orchestrator re-renders `report.md` from `report.json` via `scripts/render.py --kind report` (MD view). `findings.json` remains the machine-readable contract grading depends on — no MD render; downstream readers use jq/python. `report.json` holds only the 6-category score table, verdict, top priority actions, and a short `rationale_md` per category (LLM-authored). The numbers (score, verdict, weighted subtotals) are computed by a deterministic scoring helper the agent must run before emitting — this keeps the grader and the narrative from drifting.
 
+**Output split.** Of these artifacts, only two get committed to the repo: `findings.json` (CI/grader machine-readable contract) and `report.md` (the human deliverable). They land in `$OUT_DIR`. Every other artifact in this step (`report.draft.json`, `report.json`) stays in `$WORK_DIR`.
+
+**Create `$OUT_DIR` now** (deferred from Step 2 so a CP-stop doesn't leave an empty folder):
+
+```bash
+mkdir -p "$OUT_DIR"
+```
+
 Dispatch the Staff Engineer agent. The report template, findings.json schema, scoring rubric, and output rules all live in `report-template.md`.
 
 ```
@@ -740,20 +768,21 @@ Agent:       tdd-contract-review:staff-engineer
 Model:       sonnet
 Description: Report writing
 Prompt:
-  "TASK: Write findings.json (merged gap list) and report.json (scorecard + rationale).
+  "TASK: Write findings.json (merged gap list — to OUT_DIR) and report.draft.json (scorecard + rationale — to WORK_DIR).
    Skill directory: [path]
-   Run directory: $RUN_DIR
+   Work directory (intermediates): $WORK_DIR
+   Output directory (deliverables): $OUT_DIR
    Unit: [unit identifier]
    Quick mode: [yes/no]
 
-   Read $RUN_DIR/01-extraction.json and $RUN_DIR/02-audit.json in full.
+   Read $WORK_DIR/01-extraction.json and $WORK_DIR/02-audit.json in full.
    Read every gap sub-file JSON that exists — skip any that are absent:
-     - $RUN_DIR/03a-gaps-api.json        (API inbound per-type gaps)
-     - $RUN_DIR/03b-gaps-db.json         (DB per-type gaps)
-     - $RUN_DIR/03c-gaps-outbound.json   (Outbound API per-type gaps)
-     - $RUN_DIR/03d-gaps-money.json      (cross-cutting money, critical mode only)
-     - $RUN_DIR/03e-gaps-security.json   (cross-cutting security, critical mode only)
-   Do NOT read $RUN_DIR/03-index.md — it is a shell-generated index for CP3 review only and carries no content not already in the sub-files.
+     - $WORK_DIR/03a-gaps-api.json        (API inbound per-type gaps)
+     - $WORK_DIR/03b-gaps-db.json         (DB per-type gaps)
+     - $WORK_DIR/03c-gaps-outbound.json   (Outbound API per-type gaps)
+     - $WORK_DIR/03d-gaps-money.json      (cross-cutting money, critical mode only)
+     - $WORK_DIR/03e-gaps-security.json   (cross-cutting security, critical mode only)
+   Do NOT read $WORK_DIR/03-index.md — it is a shell-generated index for CP3 review only and carries no content not already in the sub-files.
 
    DEDUPE while composing findings.json. The F1 money and F2 security cross-cutting agents deliberately overlap with the per-type A/B/C agents — e.g., F1 flags amount-precision on the same field A-API flags as missing validation; F2 flags missing auth on the same endpoint A-API flags. When two gaps describe the same (field + failure mode), keep the highest priority, combine the descriptions, and use the richer stub. This dedupe produces the final findings.json.
 
@@ -763,40 +792,41 @@ Prompt:
    - 'Scoring' — 6-category rubric, weights, verdict bands, and calibration anchors.
    - 'report.json Fields' — overall_score, verdict, categories[6], top_priority_actions, per-category rationale_md, optional exec_summary_md.
 
-   WRITE $RUN_DIR/findings.json matching [plugin root]/tdd-contract-review/schemas/findings.schema.json.
+   WRITE $OUT_DIR/findings.json matching [plugin root]/tdd-contract-review/schemas/findings.schema.json.
+   (findings.json is a committable deliverable — note the OUT_DIR prefix, NOT WORK_DIR.)
 
-   WRITE $RUN_DIR/report.draft.json — a DRAFT containing unit, source_files,
+   WRITE $WORK_DIR/report.draft.json — a DRAFT containing unit, source_files,
    test_files, framework, fintech_mode, categories[{name, score, rationale_md}]
    (all 6 categories in the fixed order), top_priority_actions, and optional
    exec_summary_md / scoring_rationale_md. Omit overall_score, verdict,
    per-category weight, per-category weighted — the scoring helper computes
    those deterministically so the number and narrative cannot drift.
 
-   Return only 'WROTE: findings.json, report.draft.json' when done."
+   Return only 'WROTE: $OUT_DIR/findings.json, $WORK_DIR/report.draft.json' when done."
 ```
 
-**Orchestrator scores + renders MD view.** The scoring helper fills in overall_score, verdict, weight, and weighted; the renderer then schema-validates and emits the MD view:
+**Orchestrator scores + renders MD view.** The scoring helper fills in overall_score, verdict, weight, and weighted (output stays in `$WORK_DIR`); the renderer then schema-validates and emits the MD view to `$OUT_DIR`:
 ```bash
 [plugin root]/tdd-contract-review/scripts/score.py \
-  --input $RUN_DIR/report.draft.json \
-  --output $RUN_DIR/report.json
+  --input $WORK_DIR/report.draft.json \
+  --output $WORK_DIR/report.json
 [plugin root]/tdd-contract-review/scripts/render.py \
   --kind report \
-  --input $RUN_DIR/report.json \
-  --output $RUN_DIR/report.md
+  --input $WORK_DIR/report.json \
+  --output $OUT_DIR/report.md
 ```
 `score.py` failure (missing category, score out of range) or `render.py` schema-validation failure is a GATE failure — stop and surface the diagnostic. The intermediate `report.draft.json` is an ephemeral artifact and may be deleted after `report.json` lands.
 
 ### Step 9: Deterministic Check
 
-No agent dispatch. Run shell checks on `$RUN_DIR/findings.json`:
+No agent dispatch. Run shell checks on `$OUT_DIR/findings.json` (the committable copy):
 
-1. **Valid JSON:** `jq empty $RUN_DIR/findings.json` (or fallback python3 json parse)
-2. **CRITICAL gaps have stubs:** `jq -e '.gaps | map(select(.priority == "CRITICAL" and (.stub == null or .stub == ""))) | length == 0' $RUN_DIR/findings.json` — HIGH/MEDIUM/LOW gaps do NOT require a stub.
-3. **All Extracted types represented:** for each Checkpoint 1 type with status `Extracted` in `01-extraction.md`, `jq` must find at least one gap OR the report must explicitly note coverage is complete. (Skip this check if the type is `Not detected` or `Not applicable`.)
+1. **Valid JSON:** `jq empty $OUT_DIR/findings.json` (or fallback python3 json parse)
+2. **CRITICAL gaps have stubs:** `jq -e '.gaps | map(select(.priority == "CRITICAL" and (.stub == null or .stub == ""))) | length == 0' $OUT_DIR/findings.json` — HIGH/MEDIUM/LOW gaps do NOT require a stub.
+3. **All Extracted types represented:** for each Checkpoint 1 type with status `Extracted` in `$WORK_DIR/01-extraction.md`, `jq` must find at least one gap in `$OUT_DIR/findings.json` OR the report must explicitly note coverage is complete. (Skip this check if the type is `Not detected` or `Not applicable`.)
 
 Print:
-- **PASS:** `✓ Step 9 checks passed. Report: [<ABS_PATH>](<ABS_PATH>)` — resolve `$RUN_DIR/report.md` to an absolute filesystem path and substitute it into BOTH the link label and target so Claude Code renders a clickable link.
+- **PASS:** `✓ Step 9 checks passed. Report: [<ABS_PATH>](<ABS_PATH>)` — resolve `$OUT_DIR/report.md` to an absolute filesystem path and substitute it into BOTH the link label and target so Claude Code renders a clickable link.
 - **FAIL:** `✗ Step 9 check failed: <which check, what's wrong>`. Do not re-dispatch. Surface the failure so a human can inspect.
 
 ## Review Principles
