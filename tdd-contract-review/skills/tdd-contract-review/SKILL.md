@@ -3,7 +3,7 @@ name: tdd-contract-review
 description: Contract-based test quality review. Reviews ONE unit per run (one HTTP endpoint, one background job, or one queue consumer). Extracts contracts, audits tests, identifies gaps, produces a scored report with CRITICAL-only test stubs, and emits machine-readable findings.json for CI grading.
 argument-hint: "<unit: 'POST /path' | 'JobClass' | file.rb> [quick] [critical|no-critical]"
 allowed-tools: [Read, Write, Glob, Grep, Bash, Agent]
-version: 0.51.0
+version: 0.52.0
 ---
 
 # TDD Contract Review
@@ -261,6 +261,15 @@ Determine the skill directory and plugin root. Dispatch the Staff Engineer agent
 
 The field vocabulary, tree grammar, and row labels still come from `contract-extraction.md` under "Output File Shape" — those rules describe the JSON structure (since the MD is just a rendering of it).
 
+**Critical-mode pack compilation (skip entirely when critical mode is OFF).** Reuse the same `extract_section` helper defined under Step 6a.1. The Step 3 agent only needs the dimension headings + checklist bullets from each critical-mode reference file — the `## Gap Analysis Scenario Checklists` half is for Step 6 and is delivered there via separate packs:
+
+| Pack | Source file | Section to extract | Used by |
+|---|---|---|---|
+| `PACK_EXTRACTION_MONEY` (critical only) | `money-correctness-checklists.md` | `Contract Extraction Details` | Step 3 agent |
+| `PACK_EXTRACTION_SECURITY` (critical only) | `api-security-checklists.md` | `Contract Extraction Details` | Step 3 agent |
+
+Same fallback rule: if `extract_section` returns empty, inline the full file and print `(splice fallback: 'Contract Extraction Details' not found in <file>, inlining full file)`. Same revision rule: re-compile on any specific-feedback revision re-dispatch.
+
 ```
 Agent:       tdd-contract-review:staff-engineer
 Model:       sonnet
@@ -287,7 +296,15 @@ Prompt:
    - Per-framework extraction guidance for API / DB / Jobs / Outbound / UI Props.
    - 'Contract Extraction Summary Example' — the typed-prefix format for fields following the mandatory sections.
 
-   If critical mode: also read [skill dir]/money-correctness-checklists.md and [skill dir]/api-security-checklists.md, and append the Money-correctness + API-security dimension tables after the Contract Extraction Summary.
+   [IF critical mode: do NOT read money-correctness-checklists.md or api-security-checklists.md — their extraction-relevant content is embedded below. Append the Money-correctness + API-security dimension tables after the Contract Extraction Summary, using the dimension headings from the packs as the table sections.]
+
+   <<<CONTEXT_PACK:EXTRACTION_MONEY:start>>>
+   [orchestrator inlines PACK_EXTRACTION_MONEY verbatim — Contract Extraction Details section of money-correctness-checklists.md]
+   <<<CONTEXT_PACK:EXTRACTION_MONEY:end>>>
+
+   <<<CONTEXT_PACK:EXTRACTION_SECURITY:start>>>
+   [orchestrator inlines PACK_EXTRACTION_SECURITY verbatim — Contract Extraction Details section of api-security-checklists.md]
+   <<<CONTEXT_PACK:EXTRACTION_SECURITY:end>>>
 
    LSP IS MANDATORY, NOT OPTIONAL. For Go/Ruby/TS, run `lsp_tree.py --lang <go|ruby|ts> --project <project-root> --file <rel-path> --symbol <name> --scope local --run-dir $WORK_DIR` once per root-set entry — it walks the full call tree and writes every underlying `definition` query to `$WORK_DIR/lsp/`. **Always pass `--scope local`** so the rendered tree drops stdlib / gem / `node_modules` edges (only the rendered tree is trimmed — every LSP query still runs). For other languages: if `Native LSP tool available: yes`, use the native `LSP` tool's `definition` / `implementations` / `references` on EVERY call site in EVERY own-node; if `Native LSP tool available: no`, fall back to `lsp_query.py definition --run-dir $WORK_DIR <file> <line> <col>` on every call site instead. Read+Grep is NOT a substitute. If `definition` returns empty, mark the node `[unresolved]` in the tree — do NOT silently use Grep to fill the gap. Report LSP call counts in the `## Summary` section using the line shape mandated in contract-extraction.md (`LSP calls: <D> document_symbols, <F> definitions, <R> references`).
 

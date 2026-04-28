@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.52.0] - 2026-04-28
+
+### tdd-contract-review
+
+#### Changed
+- **Step 3 critical-mode reads slimmed to `Contract Extraction Details` only.** Previously the extraction agent read `money-correctness-checklists.md` (~25k bytes) and `api-security-checklists.md` (~9.8k bytes) in full. Of that, only the `## Contract Extraction Details` section is needed at extraction time — the `## Gap Analysis Scenario Checklists` half is for Step 6 and is already delivered there via `PACK_MONEY_CHECKS` / `PACK_SECURITY_CHECKS` / `PACK_MONEY_FULL` / `PACK_SECURITY_FULL`. The orchestrator now compiles two new packs (`PACK_EXTRACTION_MONEY`, `PACK_EXTRACTION_SECURITY`) using the same `extract_section` helper Step 6a.1 uses, and embeds them inline in the Step 3 dispatch prompt under `<<<CONTEXT_PACK>>>` markers. The agent no longer reads the source files.
+
+#### Rationale
+Saves ~6k tokens per critical-mode Step 3 run with zero quality risk: the extracted section contains every dimension heading and bullet the agent needs to write the Money-correctness + API-security dimension tables. The Gap Analysis half was redundant context the agent had to skim past — embedding it twice (Step 3 and Step 6) was the same defect the per-type packs eliminated for Step 6 in v0.42.0.
+
 ## [0.51.0] - 2026-04-28
 
 ### tdd-contract-review
