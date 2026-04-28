@@ -50,92 +50,9 @@ The `unit-slug` is lowercase kebab-case of the unit identifier:
 - `ProcessPaymentJob` → `process-payment-job`
 - `WithdrawalConsumer` → `withdrawal-consumer`
 
-**Why split.** Earlier versions wrote everything under `tdd-contract-review/{RUN_ID}/`, which forced ~17 intermediate files into PRs. Splitting keeps the repo clean (only `report.md` + `findings.json` are committed) while preserving every intermediate for debugging and previous-run reuse. `~/.claude/` is persistent across reboots; `/tmp` would lose intermediates between sessions.
-
 ## Checkpoint Interaction Pattern
 
-At each of the 3 review checkpoints, the orchestrator runs a three-step interaction: echo the agent's Summary so the user has something to review, ask the checkpoint question with `AskUserQuestion`, then branch on the selection.
-
-### Step A — Echo Summary first
-
-Read `$WORK_DIR/<file>` and print its `## Summary` section to the terminal. Grep the file for the literal heading `## Summary` and print every line after it up to (but not including) the next `## ` heading. Format:
-
-```
-=== Checkpoint <N> summary ($WORK_DIR/<file>) ===
-<verbatim Summary section body>
-==============================================
-```
-
-If no `## Summary` section is found (agent deviation), print `(Summary section missing in $WORK_DIR/<file> — open the file to review)` and proceed anyway. The step's GATE check already validates file shape; the Summary echo is a UX affordance, not a gate.
-
-After the Summary block, print the checkpoint-specific **Review Hint** defined in that checkpoint's PAUSE section below. Format:
-
-```
---- What to look for at Checkpoint <N> ---
-<verbatim hint bullets>
--------------------------------------------
-```
-
-The hint names the two or three things most likely to matter at this checkpoint. Its job is to turn a rubber-stamp Continue into a one-minute review — especially for reviewers who don't yet have the vocabulary to spot a weak extraction or a miscalibrated gap. Print verbatim; do not paraphrase.
-
-Then print the full report path on its own line as a **clickable markdown link** so the user can open the file before deciding:
-
-```
-Open to review: [<ABS_PATH>](<ABS_PATH>)
-```
-
-Resolve `$WORK_DIR/<file>` to an absolute filesystem path first, then substitute that same absolute path into BOTH the link label and the link target — Claude Code renders `[label](target)` as a clickable link in the terminal, and plain text (or an unresolved `$WORK_DIR`) is not clickable. Keep the line on its own with nothing trailing.
-
-### Step B — Ask the checkpoint question
-
-Use the `AskUserQuestion` tool — do NOT ask for free-text confirmation.
-
-- question: `Review checkpoint <N> of 3 — proceed to <next step>? To revise, pick 'Type something else' and describe the gap.` (the clickable path is already printed in Step A; do NOT repeat `$WORK_DIR/<file>` here — `AskUserQuestion` does not render markdown, so an inline path would show as unclickable duplicate noise)
-- header: `Checkpoint <N>/3`
-- options (exactly these two, in this order):
-  - label `Continue` — description: `Proceed to <next step>. Artifacts up to this checkpoint are final.`
-  - label `Stop` — description: `Exit without proceeding. All files in $WORK_DIR are preserved.`
-
-There is intentionally no `Revise` button. A blind "look harder" re-dispatch costs tokens without telling the agent *what* is wrong; specific typed feedback produces sharper revisions. The free-text path (below) is the only revision channel.
-
-### Step C — Branch on selection
-
-1. **Continue** → proceed to the next step.
-2. **Stop** → preserve every file in `$WORK_DIR` and exit without proceeding. Print one line: `Stopped at checkpoint <N>. Files preserved in $WORK_DIR`.
-3. **Type something else** (user picked the auto-provided free-text option — rendered as `Type something else` in the CLI) → interpret the typed text:
-   - Affirmative words (`go`, `yes`, `ok`, `continue`, `proceed`) → treat as Continue.
-   - Stop intent (`stop`, `quit`, `abort`, `cancel`, `no`) → treat as Stop.
-   - Anything else → treat as **specific-feedback revision**: re-dispatch the same agent that produced the current file (the target is specified per checkpoint in that step's PAUSE reference) with this block appended verbatim to the agent's original prompt:
-
-     ```
-     REVISION REQUEST — INVESTIGATE → PLAN → EXECUTE (single pass, no user gate).
-
-     The user reviewed $WORK_DIR/<file> and typed this feedback verbatim:
-     <paste the user's typed text here verbatim>
-
-     IMPORTANT: this revision SUPERSEDES any "LSP IS MANDATORY", "walk every call site", or "Read [skill dir]/*.md" language from your original prompt. You already produced $WORK_DIR/<file> in this run — treat it as your baseline and patch it, do not regenerate from scratch. Skill docs and project conventions are already reflected in the file; do not re-read them.
-
-     Phase 1 — INVESTIGATE (narrow, targeted tools only):
-     - Read $WORK_DIR/<file> to understand what's already there.
-     - Then use ONLY: Read on specific source/schema/test files the feedback points at, `[plugin root]/tdd-contract-review/scripts/lsp_query.py definition <symbol>` for single call sites, narrow Grep for string-keyed lookups. The native `LSP` tool is allowed for single-symbol queries if available.
-     - BANNED in this phase: full `[plugin root]/tdd-contract-review/scripts/lsp_tree.py` walks, re-reading skill reference docs, broad repo sweeps. Your job is to locate the specific gap the user named, not re-do the extraction.
-
-     Phase 2 — PLAN:
-     - Produce a 3–10 item diff plan: which sections of $WORK_DIR/<file> change, and what concretely goes in/out. Keep it terse — this is for your own discipline, not a deliverable.
-
-     Phase 3 — EXECUTE:
-     - Apply the plan with Edit (preferred — targeted in-place patch) or Write (full rewrite) on $WORK_DIR/<file>.
-     - Preserve every untouched section byte-for-byte. Do not reorder, reformat, or rewrite content unrelated to the user's feedback.
-
-     Return exactly three lines to the terminal, in this order:
-     INVESTIGATED: <one sentence — what you found the gap to be>
-     PATCHED: <one sentence — what sections you changed>
-     WROTE: $WORK_DIR/<file>
-     ```
-
-     After re-dispatch, re-run the GATE check for this step. If the GATE fails, surface the failure and stop — do NOT loop on a failing gate. If the GATE passes, loop back to Step A (re-echo the updated Summary) and Step B (re-ask the checkpoint question). The typed text is passed through verbatim — the agent sees the user's own words, not a paraphrase.
-
-**Revision cap: 3 per checkpoint** (counts only specific-feedback revisions). Track the count for this checkpoint in your working state for the run. On the 4th visit to the same checkpoint, prepend `Revised 3 times already — please Continue or Stop.` to the question text; if the user still types free text at that point, treat it as Continue (do not re-dispatch).
+The 3-step Echo Summary → Ask → Branch interaction (used at all 3 review checkpoints) lives in `[skill dir]/checkpoint-pattern.md`. Each PAUSE block below substitutes `<N>`, `<file>`, `<next step>`, and the specific-feedback revision target into that pattern. Read the sibling file once before the first checkpoint fires.
 
 ## Review Workflow
 
@@ -215,9 +132,9 @@ mkdir -p "$WORK_DIR"
 # Stops at Checkpoint 1, 2, or 3.
 ```
 
-`$WORK_DIR` holds every intermediate (01-extraction.*, 02-audit.*, 03*-gaps-*, 03-index.md, lsp/, tree__*.json, report.draft.json, report.json). `$OUT_DIR` holds only the two committable deliverables (`report.md`, `findings.json`) and is what lands in the PR. The legacy single-directory name from earlier versions is retired — every step below uses one of the two new variables.
+`$WORK_DIR` holds every intermediate (01-extraction.*, 02-audit.*, 03*-gaps-*, 03-index.md, lsp/, tree__*.json, report.draft.json, report.json). `$OUT_DIR` holds only the two committable deliverables (`report.md`, `findings.json`) and is what lands in the PR.
 
-**Look for a previous extraction for this unit.** Glob `$HOME/.claude/tdd-contract-review/runs/*-{unit-slug}/01-extraction.md`, exclude `$WORK_DIR` itself, sort results by the `YYYYMMDD-HHMM` timestamp prefix in the directory name (lexicographic order works), pick the most recent. Store its path as `$PREV_EXTRACTION` (empty string if no match). This drives the optional reuse ask in Step 2.6. (Older runs that wrote intermediates into `tdd-contract-review/*-{unit-slug}/01-extraction.md` are not auto-discovered — one fresh extraction migrates the unit forward.)
+**Look for a previous extraction for this unit.** Glob `$HOME/.claude/tdd-contract-review/runs/*-{unit-slug}/01-extraction.json` (the JSON is the source of truth — older `.md`-only runs without a sibling `.json` are not auto-discovered, one fresh extraction migrates the unit forward), exclude `$WORK_DIR` itself, sort results by the `YYYYMMDD-HHMM` timestamp prefix in the directory name (lexicographic order works), pick the most recent. Store its path as `$PREV_EXTRACTION_JSON` (empty string if no match); the sibling `$PREV_EXTRACTION_MD` is `${PREV_EXTRACTION_JSON%.json}.md` and is shown to the user in the path preview at Step 2.6.
 
 **Run preview.** Before proceeding to Step 3, print this 1-screen summary so the user can interrupt before the first agent dispatch:
 
@@ -228,7 +145,7 @@ Source:              <resolved source file:line of handler or class def>
 DB schema snapshot:  <path, or "not found">
 Critical mode:       ON (reason: <one-line signal that triggered it, e.g., "test file mentions 'amount'" or "decimal column 'balance' in db/schema.rb">)
                      OR OFF
-Previous extraction: found at <$PREV_EXTRACTION> (<YYYY-MM-DD HH:MM from dir prefix>)
+Previous extraction: found at <$PREV_EXTRACTION_JSON> (<YYYY-MM-DD HH:MM from dir prefix>)
                      OR "none found (skip reuse ask)"
 Pipeline:            <N> agent dispatches, 3 checkpoints
 Work dir:            $WORK_DIR        (intermediates — ~/.claude, not committed)
@@ -292,13 +209,13 @@ Free-text fallback: text matching "install" / "show" / "yes" / "steps" → treat
 
 ### Step 2.6: Previous Extraction Check (optional reuse)
 
-If `$PREV_EXTRACTION` is empty, skip this step entirely — do not print anything, do not ask — and proceed to Step 3.
+If `$PREV_EXTRACTION_JSON` is empty, skip this step entirely — do not print anything, do not ask — and proceed to Step 3.
 
-If `$PREV_EXTRACTION` is set, offer the user the choice to reuse it or run a fresh extraction. This saves the cost of re-extracting when iterating on the same unit with unchanged source.
+If `$PREV_EXTRACTION_JSON` is set, offer the user the choice to reuse it or run a fresh extraction. This saves the cost of re-extracting when iterating on the same unit with unchanged source.
 
-**Critical-mode mismatch check (do this BEFORE the ask):** Read the `Critical mode:` line from `$PREV_EXTRACTION` (it appears in the file's `## Summary` section) and compare to the current run's critical-mode. If they differ, print a one-line warning with the path preview below: `Previous extraction was Critical mode: <X>, current run is Critical mode: <Y>. Fresh extraction recommended.`
+**Critical-mode mismatch check (do this BEFORE the ask):** Infer the prior run's critical mode from `$PREV_EXTRACTION_JSON` — `jq -r 'if (.fintech_dimensions_md // "") == "" then "OFF" else "ON" end' "$PREV_EXTRACTION_JSON"` (the optional `fintech_dimensions_md` field is only emitted when critical mode is on). If it differs from the current run's critical mode, print a one-line warning above the path preview below: `Previous extraction was Critical mode: <X>, current run is Critical mode: <Y>. Fresh extraction recommended.`
 
-**Path preview (print BEFORE calling AskUserQuestion):** Resolve `$PREV_EXTRACTION` to an absolute filesystem path, then print the clickable markdown link on its own line so the user can open the prior file before choosing:
+**Path preview (print BEFORE calling AskUserQuestion):** Resolve `$PREV_EXTRACTION_MD` (the rendered MD view of `$PREV_EXTRACTION_JSON`) to an absolute filesystem path, then print the clickable markdown link on its own line so the user can open the prior file before choosing:
 
 ```
 Previous extraction: [<ABS_PATH>](<ABS_PATH>) (<timestamp from dir prefix>)
@@ -323,10 +240,18 @@ Free-text fallback (user typed something instead of picking): treat affirmative-
 
 **Branch — Reuse:**
 
-1. Copy the file: `cp "$PREV_EXTRACTION" "$WORK_DIR/01-extraction.md"` via Bash.
-2. Run the **Checkpoint 1 shape GATE** (same grep used in Step 3, described under "GATE (Checkpoint 1 shape)" below): verify all 5 required rows (`API inbound`, `DB`, `Outbound API`, `Jobs`, `UI Props`) appear with a valid three-state status (`Extracted` | `Not detected` | `Not applicable`).
-3. If GATE passes: jump directly to the **Checkpoint 1 PAUSE** in Step 3 — apply the Checkpoint Interaction Pattern with `<N>` = `1`, `<file>` = `01-extraction.md`, `<next step>` = `the test audit step`. Specific-feedback revision re-dispatches the Step 3 Contract extraction agent, overwriting the reused file.
-4. If GATE fails: print `GATE FAILED on reused $PREV_EXTRACTION (file is malformed or from an older skill version) — falling through to fresh extraction`, then proceed to Step 3 normally. Do not leave the malformed copy in `$WORK_DIR` — either remove it first (`rm "$WORK_DIR/01-extraction.md"`) or let Step 3's agent overwrite it.
+1. Copy the JSON (source of truth) and re-render the MD against the *currently installed* renderer (so a renderer upgrade between runs is picked up):
+   ```bash
+   cp "$PREV_EXTRACTION_JSON" "$WORK_DIR/01-extraction.json"
+   [plugin root]/tdd-contract-review/scripts/render.py \
+     --kind extraction \
+     --input  "$WORK_DIR/01-extraction.json" \
+     --output "$WORK_DIR/01-extraction.md"
+   ```
+   `render.py` schema-validates before rendering — a non-zero exit means the prior JSON does not match the current schema.
+2. **GATE on reused extraction.** If `render.py` exited non-zero, treat as GATE failure (skip to step 4 below). Otherwise the schema check has already enforced the 5 coverage_table rows; the legacy grep gate (described under "GATE (Checkpoint 1 shape)" in Step 3) is a redundant backstop.
+3. If GATE passes: jump directly to the **Checkpoint 1 PAUSE** in Step 3 — apply the Checkpoint Interaction Pattern with `<N>` = `1`, `<file>` = `01-extraction.md`, `<next step>` = `the test audit step`. Specific-feedback revision re-dispatches the Step 3 Contract extraction agent, which overwrites both the reused JSON and its rendered MD.
+4. If GATE fails: print `GATE FAILED on reused $PREV_EXTRACTION_JSON (schema mismatch — likely produced by an older skill version) — falling through to fresh extraction`, remove the partial copies (`rm -f "$WORK_DIR/01-extraction.json" "$WORK_DIR/01-extraction.md"`), then proceed to Step 3 normally.
 
 **Branch — Extract fresh:** proceed to Step 3 directly with no file copy.
 
@@ -378,7 +303,7 @@ Prompt:
 ```
 The renderer schema-validates the JSON before rendering and exits non-zero with a diagnostic if validation fails. Treat render failure as a GATE failure — do not proceed.
 
-**GATE (Checkpoint 1 shape):** The renderer enforces schema shape (5 coverage_table rows with `Extracted` | `Not detected` | `Not applicable` statuses). The legacy grep gate on `$WORK_DIR/01-extraction.md` remains as a backstop but should never fail when JSON validation passes.
+**GATE (Checkpoint 1 shape):** The renderer enforces schema shape (5 coverage_table rows with `Extracted` | `Not detected` | `Not applicable` statuses).
 
 **PAUSE for user confirmation:** Apply the **Checkpoint Interaction Pattern** with:
 - `<N>` = `1`
@@ -449,9 +374,13 @@ Gap analysis runs as **parallel per-type sub-dispatches** followed by a single *
 
 #### Step 6a — Determine which types to dispatch
 
-Read `$WORK_DIR/01-extraction.md`. For each Checkpoint 1 row, look at the Status column:
+Read `$WORK_DIR/01-extraction.json` (the source of truth) — for each entry in `coverage_table`, branch on `status`:
 - `Extracted` → dispatch a per-type agent for this type
 - `Not detected` or `Not applicable` → skip this type (no sub-file produced)
+
+```bash
+jq -r '.coverage_table[] | "\(.contract_type)\t\(.status)"' "$WORK_DIR/01-extraction.json"
+```
 
 If critical mode is yes, ALSO dispatch BOTH cross-cutting agents (regardless of which contract types are Extracted):
 - **F1 (money-correctness)** — uses money-correctness checklists (delivered via `PACK_MONEY_FULL`)
@@ -643,9 +572,21 @@ Prompt:
 
 #### Step 6c — Write `03-index.md` (shell, no LLM dispatch)
 
-Prior versions ran an opus "merge" agent that re-ingested every sub-file and rewrote them as a unified `03-gaps.md` — ~100k tokens/run to re-encode information Step 7-8 re-reads anyway. This step is now shell-only: it computes per-priority and per-type gap counts and writes a small index file with clickable links to each sub-file. Dedupe of overlapping gaps (F1 money ↔ A API; F2 security ↔ A API) now happens inside Step 7 while the final report is written.
+Shell-only: computes per-priority and per-type gap counts and writes a small index file with clickable links to each sub-file. Dedupe of overlapping gaps (F1 money ↔ A API; F2 security ↔ A API) happens inside Step 7 while the final report is written.
 
-**Run this bash block.** `CP1_STATUS__<type>` variables are expected to be set by Step 3 based on the Checkpoint 1 Coverage table (`Extracted` | `Not detected` | `Not applicable`). If you did not capture them earlier, re-parse from `$WORK_DIR/01-extraction.md` now.
+**Run this bash block.** `CP1_STATUS__<type>` variables are expected to be set by Step 3 based on the Checkpoint 1 Coverage table (`Extracted` | `Not detected` | `Not applicable`). If you did not capture them earlier, recover them from `$WORK_DIR/01-extraction.json` (the source of truth):
+
+```bash
+get_cp1_status() {  # arg: contract_type label
+  jq -r --arg t "$1" '.coverage_table[] | select(.contract_type==$t) | .status' \
+    "$WORK_DIR/01-extraction.json"
+}
+CP1_STATUS__API=$(get_cp1_status "API inbound")
+CP1_STATUS__DB=$(get_cp1_status "DB")
+CP1_STATUS__OUTBOUND=$(get_cp1_status "Outbound API")
+CP1_STATUS__JOBS=$(get_cp1_status "Jobs")
+CP1_STATUS__UIPROPS=$(get_cp1_status "UI Props")
+```
 
 ```bash
 INDEX="$WORK_DIR/03-index.md"
@@ -823,7 +764,7 @@ No agent dispatch. Run shell checks on `$OUT_DIR/findings.json` (the committable
 
 1. **Valid JSON:** `jq empty $OUT_DIR/findings.json` (or fallback python3 json parse)
 2. **CRITICAL gaps have stubs:** `jq -e '.gaps | map(select(.priority == "CRITICAL" and (.stub == null or .stub == ""))) | length == 0' $OUT_DIR/findings.json` — HIGH/MEDIUM/LOW gaps do NOT require a stub.
-3. **All Extracted types represented:** for each Checkpoint 1 type with status `Extracted` in `$WORK_DIR/01-extraction.md`, `jq` must find at least one gap in `$OUT_DIR/findings.json` OR the report must explicitly note coverage is complete. (Skip this check if the type is `Not detected` or `Not applicable`.)
+3. **All Extracted types represented:** for each Checkpoint 1 type with status `Extracted` in `$WORK_DIR/01-extraction.json` (`jq -r '.coverage_table[] | select(.status=="Extracted") | .contract_type'`), `jq` must find at least one gap in `$OUT_DIR/findings.json` OR the report must explicitly note coverage is complete. (Skip this check if the type is `Not detected` or `Not applicable`.)
 
 Print:
 - **PASS:** `✓ Step 9 checks passed. Report: [<ABS_PATH>](<ABS_PATH>)` — resolve `$OUT_DIR/report.md` to an absolute filesystem path and substitute it into BOTH the link label and target so Claude Code renders a clickable link.

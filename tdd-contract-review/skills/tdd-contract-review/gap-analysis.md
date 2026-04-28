@@ -151,7 +151,7 @@ Critical mode: ON|OFF
 
 Per-type lines appear only when the corresponding sub-file exists on disk. The priority counts are totals across every sub-file that exists — the same gap may be counted twice if F1 money and A API both flagged it (dedupe happens in Step 7, not here).
 
-### 2. `## Checkpoint 2: Gap Coverage`
+### 2. `## Checkpoint 3: Gap Coverage`
 
 STRICT table — the orchestrator greps for literal row labels. Column header MUST be:
 
